@@ -1,4 +1,90 @@
-<!-- Scripts -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SkinTip - AI Tattoo Visualization</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="container">
+            <div class="nav-brand">
+                <h1>SkinTip</h1>
+                <span class="tagline">AI Tattoo Visualization</span>
+            </div>
+            <div class="nav-menu">
+                <span id="userInfo" class="user-info"></span>
+                <button id="logoutBtn" class="btn btn-outline" style="display:none;">Logout</button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Auth Modal -->
+    <div id="authModal" class="modal">
+        <div class="modal-content">
+            <div class="auth-container">
+                <h2 id="authTitle">Login to SkinTip</h2>
+                <form id="authForm">
+                    <div class="form-group">
+                        <label for="email">Email</label>
+                        <input type="email" id="email" name="email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" name="password" required>
+                    </div>
+                    <div id="usernameGroup" class="form-group" style="display: none;">
+                        <label for="username">Username</label>
+                        <input type="text" id="username" name="username">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Login</button>
+                    <p class="auth-switch">
+                        <span id="authSwitchText">Don't have an account?</span>
+                        <a href="#" id="authSwitchLink">Register</a>
+                    </p>
+                </form>
+                <div id="authError" class="error-message"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="container">
+            <!-- Upload Section -->
+            <section id="uploadSection" class="section">
+                <div class="section-header">
+                    <h2>Upload Your Photo</h2>
+                    <p>Choose a photo where you want to visualize your tattoo</p>
+                </div>
+                
+                <div class="upload-area" id="uploadArea">
+                    <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp" hidden>
+                    <div class="upload-placeholder">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <p>Click to upload or drag and drop</p>
+                        <span>PNG, JPG or WebP (max. 5MB)</span>
+                    </div>
+                </div>
+
+                <div id="imagePreview" class="image-preview" style="display: none;">
+                    <img id="previewImg" src="" alt="Preview">
+                    <button id="changeImageBtn" class="btn btn-outline btn-sm">Change Image</button>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Scripts -->
     <script src="js/config.js"></script>
     <script src="js/auth.js"></script>
     <script>
@@ -15,28 +101,6 @@
             
             uploadArea?.addEventListener('click', () => {
                 fileInput.click();
-            });
-            
-            uploadArea?.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                uploadArea.style.borderColor = '#6366f1';
-                uploadArea.style.backgroundColor = 'rgba(99, 102, 241, 0.05)';
-            });
-            
-            uploadArea?.addEventListener('dragleave', () => {
-                uploadArea.style.borderColor = '#e5e7eb';
-                uploadArea.style.backgroundColor = '#f9fafb';
-            });
-            
-            uploadArea?.addEventListener('drop', (e) => {
-                e.preventDefault();
-                uploadArea.style.borderColor = '#e5e7eb';
-                uploadArea.style.backgroundColor = '#f9fafb';
-                
-                const files = e.dataTransfer.files;
-                if (files.length > 0) {
-                    handleFile(files[0]);
-                }
             });
             
             fileInput?.addEventListener('change', (e) => {
@@ -56,8 +120,22 @@
                     return;
                 }
                 
-                alert(`File "${file.name}" uploaded successfully! (Demo mode)`);
+                // Show preview
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    document.getElementById('uploadArea').style.display = 'none';
+                    document.getElementById('imagePreview').style.display = 'block';
+                    document.getElementById('previewImg').src = e.target.result;
+                };
+                reader.readAsDataURL(file);
             }
+            
+            // Change image button
+            document.getElementById('changeImageBtn')?.addEventListener('click', () => {
+                document.getElementById('uploadArea').style.display = 'block';
+                document.getElementById('imagePreview').style.display = 'none';
+                fileInput.value = '';
+            });
             
             console.log('✅ SkinTip ready!');
         });

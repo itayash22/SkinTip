@@ -144,7 +144,7 @@ const drawing = {
         
         // Draw current path
         drawing.ctx.strokeStyle = 'rgba(99, 102, 241, 0.6)';
-        drawing.ctx.lineWidth = 2;
+        drawing.ctx.lineWidth = 1;
         drawing.ctx.setLineDash([5, 5]);
         drawing.ctx.beginPath();
         drawing.ctx.moveTo(drawing.currentPath[0].x, drawing.currentPath[0].y);
@@ -206,7 +206,7 @@ const drawing = {
         // Draw all saved paths
         drawing.ctx.fillStyle = 'rgba(99, 102, 241, 0.3)';
         drawing.ctx.strokeStyle = 'rgba(99, 102, 241, 0.8)';
-        drawing.ctx.lineWidth = 2;
+        drawing.ctx.lineWidth = 1;
         
         drawing.paths.forEach(path => {
             drawing.ctx.beginPath();

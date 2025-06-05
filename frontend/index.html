@@ -107,6 +107,7 @@
     <!-- Scripts -->
     <script src="js/config.js"></script>
     <script src="js/auth.js"></script>
+    <script src="js/drawing.js"></script>
     <script>
         // Initialize the application
         document.addEventListener('DOMContentLoaded', () => {
@@ -146,6 +147,9 @@
                     document.getElementById('uploadArea').style.display = 'none';
                     document.getElementById('imagePreview').style.display = 'block';
                     document.getElementById('previewImg').src = e.target.result;
+                    
+                    // Initialize drawing tool
+                    drawing.init(e.target.result);
                 };
                 reader.readAsDataURL(file);
             }

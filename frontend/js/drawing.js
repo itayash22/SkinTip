@@ -8,7 +8,7 @@ const drawing = {
     originalImage: null,
     isDrawing: false,
     currentTool: 'brush',
-    brushSize: 20,
+    brushSize: 5,
     
     init: (imageUrl) => {
         drawing.canvas = document.getElementById('drawingCanvas');

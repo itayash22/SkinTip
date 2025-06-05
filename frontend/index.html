@@ -81,6 +81,26 @@
                     <button id="changeImageBtn" class="btn btn-outline btn-sm">Change Image</button>
                 </div>
             </section>
+            <!-- Drawing Section -->
+            <section id="drawingSection" class="section" style="display: none;">
+                <div class="section-header">
+                    <h2>Mark Tattoo Area</h2>
+                    <p>Draw on the area where you want your tattoo</p>
+                </div>
+                
+                <div class="drawing-container">
+                    <canvas id="drawingCanvas"></canvas>
+                    <div class="drawing-tools">
+                        <button id="brushTool" class="tool-btn active">✏️ Brush</button>
+                        <button id="eraserTool" class="tool-btn">🧹 Eraser</button>
+                        <label for="brushSize">Size:</label>
+                        <input type="range" id="brushSize" min="5" max="50" value="20">
+                        <button id="clearCanvas" class="btn btn-outline btn-sm">Clear</button>
+                    </div>
+                </div>
+
+                <button id="continueBtn" class="btn btn-primary" style="margin-top: 2rem; display: block; margin-left: auto; margin-right: auto;">Continue to Design</button>
+            </section>
         </div>
     </main>
 

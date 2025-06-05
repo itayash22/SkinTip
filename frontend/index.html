@@ -19,17 +19,24 @@
             </div>
             <div class="nav-menu">
                 <span id="userInfo" class="user-info"></span>
-                <button id="logoutBtn" class="btn btn-outline">Logout</button>
+                <button id="logoutBtn" class="btn btn-outline" style="display:none;">Logout</button>
             </div>
         </div>
     </nav>
 
-    <!-- Main Content -->
-    <main class="main-content">
-        <div class="container">
-            <h2>Welcome to SkinTip</h2>
-            <p>AI-powered tattoo visualization coming soon!</p>
-        </div>
-    </main>
-</body>
-</html>
+    <!-- Auth Modal -->
+    <div id="authModal" class="modal">
+        <div class="modal-content">
+            <div class="auth-container">
+                <h2 id="authTitle">Login to SkinTip</h2>
+                <form id="authForm">
+                    <div class="form-group">
+                        <label for="email">Email</label>
+                        <input type="email" id="email" name="email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" name="password" required>
+                    </div>
+                    <div id="usernameGroup" class="form-group" style="display: none;">
+                        <label for="username">Username</label>

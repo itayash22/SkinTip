@@ -179,6 +179,34 @@
                     <button id="newDesignBtn" class="btn btn-outline">Try New Design</button>
                 </div>
             </section>
+            <!-- Artists Section -->
+            <section id="artistsSection" class="section" style="display: none;">
+                <div class="section-header">
+                    <h2>Find Your Artist</h2>
+                    <p>Connect with talented tattoo artists who can bring your design to life</p>
+                </div>
+
+                <div class="filters">
+                    <input type="text" id="locationFilter" placeholder="Filter by location..." class="filter-input">
+                    <select id="styleFilter" class="filter-select">
+                        <option value="">All Styles</option>
+                        <option value="Traditional">Traditional</option>
+                        <option value="Neo-Traditional">Neo-Traditional</option>
+                        <option value="Realism">Realism</option>
+                        <option value="Blackwork">Blackwork</option>
+                        <option value="Watercolor">Watercolor</option>
+                        <option value="Japanese">Japanese</option>
+                        <option value="Minimalist">Minimalist</option>
+                        <option value="Geometric">Geometric</option>
+                        <option value="Fine Line">Fine Line</option>
+                        <option value="Tribal">Tribal</option>
+                    </select>
+                </div>
+
+                <div id="artistsGrid" class="artists-grid">
+                    <!-- Artists will be loaded here -->
+                </div>
+            </section>
         </div>
     </main>
 
@@ -327,6 +355,16 @@
                     
                     // For now, show demo results
                     document.getElementById('resultsSection').style.display = 'block';
+                    // For now, show demo results
+document.getElementById('resultsSection').style.display = 'block';
+
+// Show artists section
+document.getElementById('artistsSection').style.display = 'block';
+
+// Load sample artists (demo mode)
+loadDemoArtists();
+
+document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
                     document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
                     
                     // Add demo images
@@ -353,6 +391,67 @@
                     alert(`Generating tattoo with prompt: "${promptText}" (Demo mode - Flux API integration coming soon)`);
                 }
             });
+        // Demo artists data
+            function loadDemoArtists() {
+                const artistsGrid = document.getElementById('artistsGrid');
+                const demoArtists = [
+                    {
+                        name: 'Sarah Martinez',
+                        location: 'Los Angeles, CA',
+                        styles: ['Fine Line', 'Minimalist', 'Geometric'],
+                        bio: 'Specializing in delicate designs with 10+ years experience',
+                        likes: 234,
+                        whatsapp: '+1234567890',
+                        portfolio: 'https://images.unsplash.com/photo-1611501275019-9b5cda994e8d'
+                    },
+                    {
+                        name: 'Mike Chen',
+                        location: 'New York, NY',
+                        styles: ['Japanese', 'Neo-Traditional'],
+                        bio: 'Award-winning traditional Japanese artist',
+                        likes: 189,
+                        whatsapp: '+0987654321',
+                        portfolio: 'https://images.unsplash.com/photo-1565058379802-bbe93b2f703a'
+                    },
+                    {
+                        name: 'Emma Thompson',
+                        location: 'Austin, TX',
+                        styles: ['Watercolor', 'Abstract'],
+                        bio: 'Creating unique watercolor tattoos since 2015',
+                        likes: 156,
+                        whatsapp: '+1122334455',
+                        portfolio: 'https://images.unsplash.com/photo-1598371839696-5c5bb00bdc28'
+                    }
+                ];
+                
+                artistsGrid.innerHTML = demoArtists.map(artist => `
+                    <div class="artist-card">
+                        <img src="${artist.portfolio}" alt="${artist.name}" class="artist-portfolio">
+                        <div class="artist-info">
+                            <h3>${artist.name}</h3>
+                            <p class="artist-location">📍 ${artist.location}</p>
+                            <p class="artist-bio">${artist.bio}</p>
+                            <div class="artist-styles">
+                                ${artist.styles.map(style => `<span class="style-tag">${style}</span>`).join('')}
+                            </div>
+                            <div class="artist-footer">
+                                <span class="artist-likes">❤️ ${artist.likes}</span>
+                                <button class="btn btn-primary btn-sm" onclick="contactArtist('${artist.whatsapp}', '${artist.name}')">
+                                    Contact via WhatsApp
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            // Contact artist function
+            function contactArtist(whatsapp, artistName) {
+                const promptText = document.getElementById('tattooPrompt')?.value || 'Custom tattoo design';
+                const message = encodeURIComponent(`Hi, I got this tattoo idea from SkinTip:\n\n${promptText}`);
+                const whatsappUrl = `https://wa.me/${whatsapp.replace(/\D/g, '')}?text=${message}`;
+                window.open(whatsappUrl, '_blank');
+            }
     </script>
 </body>
 </html>

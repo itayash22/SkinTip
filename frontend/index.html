@@ -98,6 +98,87 @@
 
                 <button id="continueBtn" class="btn btn-primary" style="margin-top: 2rem; display: block; margin-left: auto; margin-right: auto;">Continue to Design</button>
             </section>
+            <!-- Design Section -->
+            <section id="designSection" class="section" style="display: none;">
+                <div class="section-header">
+                    <h2>Design Your Tattoo</h2>
+                    <p>Select styles and describe your ideal tattoo</p>
+                </div>
+
+                <div class="styles-container">
+                    <h3>Select Tattoo Styles:</h3>
+                    <div class="styles-grid">
+                        <label class="style-chip">
+                            <input type="checkbox" name="style" value="Traditional">
+                            <span>Traditional</span>
+                        </label>
+                        <label class="style-chip">
+                            <input type="checkbox" name="style" value="Neo-Traditional">
+                            <span>Neo-Traditional</span>
+                        </label>
+                        <label class="style-chip">
+                            <input type="checkbox" name="style" value="Realism">
+                            <span>Realism</span>
+                        </label>
+                        <label class="style-chip">
+                            <input type="checkbox" name="style" value="Blackwork">
+                            <span>Blackwork</span>
+                        </label>
+                        <label class="style-chip">
+                            <input type="checkbox" name="style" value="Watercolor">
+                            <span>Watercolor</span>
+                        </label>
+                        <label class="style-chip">
+                            <input type="checkbox" name="style" value="Japanese">
+                            <span>Japanese</span>
+                        </label>
+                        <label class="style-chip">
+                            <input type="checkbox" name="style" value="Minimalist">
+                            <span>Minimalist</span>
+                        </label>
+                        <label class="style-chip">
+                            <input type="checkbox" name="style" value="Geometric">
+                            <span>Geometric</span>
+                        </label>
+                        <label class="style-chip">
+                            <input type="checkbox" name="style" value="Fine Line">
+                            <span>Fine Line</span>
+                        </label>
+                        <label class="style-chip">
+                            <input type="checkbox" name="style" value="Tribal">
+                            <span>Tribal</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="prompt-container">
+                    <h3>Describe Your Tattoo:</h3>
+                    <textarea id="tattooPrompt" placeholder="e.g., A majestic wolf howling at the moon with geometric patterns..." rows="4"></textarea>
+                </div>
+
+                <div class="credits-info">
+                    <span id="creditsRemaining">2 generations remaining today</span>
+                </div>
+
+                <button id="generateBtn" class="btn btn-primary btn-lg">Generate Tattoo Design</button>
+            </section>
+
+            <!-- Results Section -->
+            <section id="resultsSection" class="section" style="display: none;">
+                <div class="section-header">
+                    <h2>Your Tattoo Designs</h2>
+                    <p>Here are your AI-generated tattoo previews</p>
+                </div>
+
+                <div class="results-grid">
+                    <!-- Results will be inserted here -->
+                </div>
+
+                <div class="results-actions">
+                    <button id="downloadBtn" class="btn btn-primary">Download Selected</button>
+                    <button id="newDesignBtn" class="btn btn-outline">Try New Design</button>
+                </div>
+            </section>
         </div>
     </main>
 

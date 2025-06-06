@@ -49,7 +49,9 @@ const drawing = {
             document.getElementById('drawingSection').scrollIntoView({ behavior: 'smooth' });
         };
         img.src = imageUrl;
-        
+        // Hide continue button initially
+        const continueBtn = document.getElementById('continueBtn');
+        if (continueBtn) continueBtn.style.display = 'none';
         drawing.setupEventListeners();
     },
     
@@ -159,6 +161,13 @@ const drawing = {
                 // Save the selected area (only one allowed)
                 drawing.selectedArea = [...drawing.currentPath];
                 drawing.updateMask();
+                // Save the selected area (only one allowed)
+                drawing.selectedArea = [...drawing.currentPath];
+                drawing.updateMask();
+                
+                // Show continue button
+                const continueBtn = document.getElementById('continueBtn');
+                if (continueBtn) continueBtn.style.display = 'block';
             } else {
                 alert('Please close the shape by drawing near the starting point');
             }
@@ -218,6 +227,9 @@ const drawing = {
         drawing.currentPath = [];
         drawing.redrawCanvas();
         drawing.updateMask();
+        // Hide continue button
+        const continueBtn = document.getElementById('continueBtn');
+        if (continueBtn) continueBtn.style.display = 'none';
     },
     
     getMaskDataURL: () => {

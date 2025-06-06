@@ -241,6 +241,101 @@
             
             console.log('✅ SkinTip ready!');
         });
+        // Style checkbox handling
+            let userCustomText = '';
+            let selectedStyles = [];
+            
+            // Function to update prompt with styles
+            function updatePromptWithStyles() {
+                const promptTextarea = document.getElementById('tattooPrompt');
+                if (!promptTextarea) return;
+                
+                // Build the prompt
+                let fullPrompt = '';
+                if (selectedStyles.length > 0) {
+                    fullPrompt = `Styles: ${selectedStyles.join(', ')}`;
+                    if (userCustomText.trim()) {
+                        fullPrompt += `\n\n${userCustomText}`;
+                    }
+                } else {
+                    fullPrompt = userCustomText;
+                }
+                
+                promptTextarea.value = fullPrompt;
+            }
+            
+            // Handle style checkbox changes
+            document.addEventListener('change', (e) => {
+                if (e.target.type === 'checkbox' && e.target.name === 'style') {
+                    const style = e.target.value;
+                    
+                    if (e.target.checked) {
+                        // Add style if not already present
+                        if (!selectedStyles.includes(style)) {
+                            selectedStyles.push(style);
+                        }
+                    } else {
+                        // Remove style
+                        selectedStyles = selectedStyles.filter(s => s !== style);
+                    }
+                    
+                    updatePromptWithStyles();
+                }
+            });
+            
+            // Handle prompt text changes
+            document.addEventListener('input', (e) => {
+                if (e.target.id === 'tattooPrompt') {
+                    const fullText = e.target.value;
+                    
+                    // Extract custom text (everything after styles section)
+                    if (fullText.startsWith('Styles:')) {
+                        const parts = fullText.split('\n\n');
+                        userCustomText = parts.slice(1).join('\n\n');
+                    } else {
+                        userCustomText = fullText;
+                    }
+                }
+            });
+            
+            // Generate button handler
+            document.addEventListener('click', (e) => {
+                if (e.target.id === 'generateBtn') {
+                    const promptText = document.getElementById('tattooPrompt').value;
+                    
+                    if (!promptText.trim()) {
+                        alert('Please describe your tattoo or select at least one style');
+                        return;
+                    }
+                    
+                    // For now, show demo results
+                    document.getElementById('resultsSection').style.display = 'block';
+                    document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
+                    
+                    // Add demo images
+                    const resultsGrid = document.querySelector('.results-grid');
+                    resultsGrid.innerHTML = `
+                        <div class="result-item">
+                            <img src="https://via.placeholder.com/300x300/6366f1/ffffff?text=Tattoo+1" alt="Result 1">
+                            <p>Demo Result 1</p>
+                        </div>
+                        <div class="result-item">
+                            <img src="https://via.placeholder.com/300x300/ec4899/ffffff?text=Tattoo+2" alt="Result 2">
+                            <p>Demo Result 2</p>
+                        </div>
+                        <div class="result-item">
+                            <img src="https://via.placeholder.com/300x300/10b981/ffffff?text=Tattoo+3" alt="Result 3">
+                            <p>Demo Result 3</p>
+                        </div>
+                        <div class="result-item">
+                            <img src="https://via.placeholder.com/300x300/f59e0b/ffffff?text=Tattoo+4" alt="Result 4">
+                            <p>Demo Result 4</p>
+                        </div>
+                    `;
+                    
+                    alert(`Generating tattoo with prompt: "${promptText}" (Demo mode - Flux API integration coming soon)`);
+                }
+            });
     </script>
 </body>
 </html>

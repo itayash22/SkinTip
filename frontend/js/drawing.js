@@ -7,10 +7,8 @@ const drawing = {
     maskCtx: null,
     originalImage: null,
     isDrawing: false,
-    currentTool: 'brush',
-    brushSize: 5,
     currentPath: [],
-    paths: [],
+    selectedArea: null,
     
     init: (imageUrl) => {
         drawing.canvas = document.getElementById('drawingCanvas');
@@ -20,9 +18,9 @@ const drawing = {
         drawing.maskCanvas = document.createElement('canvas');
         drawing.maskCtx = drawing.maskCanvas.getContext('2d');
         
-        // Reset paths
-        drawing.paths = [];
+        // Reset
         drawing.currentPath = [];
+        drawing.selectedArea = null;
         
         // Load image
         const img = new Image();
@@ -40,7 +38,7 @@ const drawing = {
             drawing.maskCanvas.height = img.height;
             
             // Draw image on display canvas
-            drawing.ctx.drawImage(img, 0, 0, drawing.canvas.width, drawing.canvas.height);
+            drawing.redrawCanvas();
             
             // Initialize mask canvas with black background
             drawing.maskCtx.fillStyle = 'black';
@@ -66,6 +64,7 @@ const drawing = {
         drawing.canvas.addEventListener('touchstart', (e) => {
             e.preventDefault();
             const touch = e.touches[0];
+            const rect = drawing.canvas.getBoundingClientRect();
             drawing.startDrawing({
                 clientX: touch.clientX,
                 clientY: touch.clientY
@@ -81,20 +80,9 @@ const drawing = {
             });
         });
         
-        drawing.canvas.addEventListener('touchend', drawing.stopDrawing);
-        
-        // Tool buttons
-        document.getElementById('brushTool')?.addEventListener('click', () => {
-            drawing.setTool('brush');
-        });
-        
-        document.getElementById('eraserTool')?.addEventListener('click', () => {
-            drawing.setTool('eraser');
-        });
-        
-        // Brush size
-        document.getElementById('brushSize')?.addEventListener('input', (e) => {
-            drawing.brushSize = parseInt(e.target.value);
+        drawing.canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            drawing.stopDrawing();
         });
         
         // Clear canvas
@@ -104,18 +92,14 @@ const drawing = {
         
         // Continue button
         document.getElementById('continueBtn')?.addEventListener('click', () => {
+            if (!drawing.selectedArea) {
+                alert('Please draw an area for your tattoo first!');
+                return;
+            }
             STATE.currentMask = drawing.maskCanvas.toDataURL('image/png');
             console.log('Mask saved for Flux API');
             alert('Area selection saved! Ready for tattoo design (Demo mode)');
         });
-    },
-    
-    setTool: (tool) => {
-        drawing.currentTool = tool;
-        document.querySelectorAll('.tool-btn').forEach(btn => {
-            btn.classList.remove('active');
-        });
-        document.getElementById(`${tool}Tool`)?.classList.add('active');
     },
     
     startDrawing: (e) => {
@@ -142,17 +126,20 @@ const drawing = {
         // Redraw everything
         drawing.redrawCanvas();
         
-        // Draw current path
-        drawing.ctx.strokeStyle = 'rgba(99, 102, 241, 0.6)';
-        drawing.ctx.lineWidth = 1;
-        drawing.ctx.setLineDash([5, 5]);
-        drawing.ctx.beginPath();
-        drawing.ctx.moveTo(drawing.currentPath[0].x, drawing.currentPath[0].y);
-        for (let i = 1; i < drawing.currentPath.length; i++) {
-            drawing.ctx.lineTo(drawing.currentPath[i].x, drawing.currentPath[i].y);
+        // Draw current path (thin dotted line)
+        if (drawing.currentPath.length > 1) {
+            drawing.ctx.save();
+            drawing.ctx.strokeStyle = 'rgba(99, 102, 241, 0.8)';
+            drawing.ctx.lineWidth = 1;
+            drawing.ctx.setLineDash([3, 3]);
+            drawing.ctx.beginPath();
+            drawing.ctx.moveTo(drawing.currentPath[0].x, drawing.currentPath[0].y);
+            for (let i = 1; i < drawing.currentPath.length; i++) {
+                drawing.ctx.lineTo(drawing.currentPath[i].x, drawing.currentPath[i].y);
+            }
+            drawing.ctx.stroke();
+            drawing.ctx.restore();
         }
-        drawing.ctx.stroke();
-        drawing.ctx.setLineDash([]);
     },
     
     stopDrawing: () => {
@@ -160,89 +147,71 @@ const drawing = {
         drawing.isDrawing = false;
         
         // Check if path is closed (last point near first point)
-        if (drawing.currentPath.length > 3) {
+        if (drawing.currentPath.length > 10) {
             const first = drawing.currentPath[0];
             const last = drawing.currentPath[drawing.currentPath.length - 1];
             const distance = Math.sqrt(Math.pow(last.x - first.x, 2) + Math.pow(last.y - first.y, 2));
             
             if (distance < 30) { // If closed
-                if (drawing.currentTool === 'brush') {
-                    drawing.paths.push(drawing.currentPath);
-                } else {
-                    // For eraser, remove the area
-                    drawing.paths = drawing.paths.filter(path => {
-                        // Check if click is inside any path
-                        const testPoint = drawing.currentPath[0];
-                        return !drawing.isPointInPath(testPoint, path);
-                    });
-                }
-                drawing.redrawCanvas();
+                // Save the selected area (only one allowed)
+                drawing.selectedArea = [...drawing.currentPath];
                 drawing.updateMask();
+            } else {
+                alert('Please close the shape by drawing near the starting point');
             }
         }
         
         drawing.currentPath = [];
-    },
-    
-    isPointInPath: (point, path) => {
-        // Ray casting algorithm to check if point is inside polygon
-        let inside = false;
-        for (let i = 0, j = path.length - 1; i < path.length; j = i++) {
-            const xi = path[i].x, yi = path[i].y;
-            const xj = path[j].x, yj = path[j].y;
-            
-            const intersect = ((yi > point.y) !== (yj > point.y))
-                && (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
-            if (intersect) inside = !inside;
-        }
-        return inside;
+        drawing.redrawCanvas();
     },
     
     redrawCanvas: () => {
-        // Clear and redraw image
+        // Always start fresh with the original image
         drawing.ctx.clearRect(0, 0, drawing.canvas.width, drawing.canvas.height);
         drawing.ctx.drawImage(drawing.originalImage, 0, 0, drawing.canvas.width, drawing.canvas.height);
         
-        // Draw all saved paths
-        drawing.ctx.fillStyle = 'rgba(99, 102, 241, 0.3)';
-        drawing.ctx.strokeStyle = 'rgba(99, 102, 241, 0.8)';
-        drawing.ctx.lineWidth = 1;
-        
-        drawing.paths.forEach(path => {
+        // Draw selected area if exists
+        if (drawing.selectedArea && drawing.selectedArea.length > 0) {
+            drawing.ctx.save();
+            drawing.ctx.fillStyle = 'rgba(99, 102, 241, 0.3)';
+            drawing.ctx.strokeStyle = 'rgba(99, 102, 241, 0.8)';
+            drawing.ctx.lineWidth = 1;
+            
             drawing.ctx.beginPath();
-            drawing.ctx.moveTo(path[0].x, path[0].y);
-            for (let i = 1; i < path.length; i++) {
-                drawing.ctx.lineTo(path[i].x, path[i].y);
+            drawing.ctx.moveTo(drawing.selectedArea[0].x, drawing.selectedArea[0].y);
+            for (let i = 1; i < drawing.selectedArea.length; i++) {
+                drawing.ctx.lineTo(drawing.selectedArea[i].x, drawing.selectedArea[i].y);
             }
             drawing.ctx.closePath();
             drawing.ctx.fill();
             drawing.ctx.stroke();
-        });
+            drawing.ctx.restore();
+        }
     },
     
     updateMask: () => {
-        // Clear mask
+        // Clear mask to black
         drawing.maskCtx.fillStyle = 'black';
         drawing.maskCtx.fillRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
         
-        // Draw white areas for tattoo placement
-        const scaleX = drawing.maskCanvas.width / drawing.canvas.width;
-        const scaleY = drawing.maskCanvas.height / drawing.canvas.height;
-        
-        drawing.maskCtx.fillStyle = 'white';
-        drawing.paths.forEach(path => {
+        // Draw white area for tattoo placement
+        if (drawing.selectedArea && drawing.selectedArea.length > 0) {
+            const scaleX = drawing.maskCanvas.width / drawing.canvas.width;
+            const scaleY = drawing.maskCanvas.height / drawing.canvas.height;
+            
+            drawing.maskCtx.fillStyle = 'white';
             drawing.maskCtx.beginPath();
-            drawing.maskCtx.moveTo(path[0].x * scaleX, path[0].y * scaleY);
-            for (let i = 1; i < path.length; i++) {
-                drawing.maskCtx.lineTo(path[i].x * scaleX, path[i].y * scaleY);
+            drawing.maskCtx.moveTo(drawing.selectedArea[0].x * scaleX, drawing.selectedArea[0].y * scaleY);
+            for (let i = 1; i < drawing.selectedArea.length; i++) {
+                drawing.maskCtx.lineTo(drawing.selectedArea[i].x * scaleX, drawing.selectedArea[i].y * scaleY);
             }
             drawing.maskCtx.closePath();
             drawing.maskCtx.fill();
-        });
+        }
     },
     
     clearCanvas: () => {
-        drawing.paths = [];
+        drawing.selectedArea = null;
         drawing.currentPath = [];
         drawing.redrawCanvas();
         drawing.updateMask();

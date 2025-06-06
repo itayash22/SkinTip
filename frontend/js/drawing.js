@@ -98,7 +98,10 @@ const drawing = {
             }
             STATE.currentMask = drawing.maskCanvas.toDataURL('image/png');
             console.log('Mask saved for Flux API');
-            alert('Area selection saved! Ready for tattoo design (Demo mode)');
+            
+            // Show design section
+            document.getElementById('designSection').style.display = 'block';
+            document.getElementById('designSection').scrollIntoView({ behavior: 'smooth' });
         });
     },
     

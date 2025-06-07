@@ -466,7 +466,103 @@ document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' })
                     </div>
                 `).join('');
             }
+            // Artist filtering
+            let allArtists = [];
             
+            // Store artists when loaded
+            function loadDemoArtistsWithFilter() {
+                allArtists = [
+                    {
+                        name: 'Sarah Martinez',
+                        location: 'Los Angeles, CA',
+                        styles: ['Fine Line', 'Minimalist', 'Geometric'],
+                        bio: 'Specializing in delicate designs with 10+ years experience',
+                        likes: 234,
+                        whatsapp: '+1234567890',
+                        portfolio: 'https://images.unsplash.com/photo-1611501275019-9b5cda994e8d'
+                    },
+                    {
+                        name: 'Mike Chen',
+                        location: 'New York, NY',
+                        styles: ['Japanese', 'Neo-Traditional'],
+                        bio: 'Award-winning traditional Japanese artist',
+                        likes: 189,
+                        whatsapp: '+0987654321',
+                        portfolio: 'https://images.unsplash.com/photo-1565058379802-bbe93b2f703a'
+                    },
+                    {
+                        name: 'Emma Thompson',
+                        location: 'Austin, TX',
+                        styles: ['Watercolor', 'Abstract'],
+                        bio: 'Creating unique watercolor tattoos since 2015',
+                        likes: 156,
+                        whatsapp: '+1122334455',
+                        portfolio: 'https://images.unsplash.com/photo-1598371839696-5c5bb00bdc28'
+                    },
+                    {
+                        name: 'Carlos Rodriguez',
+                        location: 'Miami, FL',
+                        styles: ['Blackwork', 'Geometric', 'Tribal'],
+                        bio: 'Bold designs with precision and passion',
+                        likes: 298,
+                        whatsapp: '+9988776655',
+                        portfolio: 'https://images.unsplash.com/photo-1590736969955-71cc94901144'
+                    }
+                ];
+                
+                displayArtists(allArtists);
+            }
+            
+            // Display filtered artists
+            function displayArtists(artists) {
+                const artistsGrid = document.getElementById('artistsGrid');
+                
+                if (artists.length === 0) {
+                    artistsGrid.innerHTML = '<div class="empty-state"><p>No artists found matching your criteria</p></div>';
+                    return;
+                }
+                
+                artistsGrid.innerHTML = artists.map(artist => `
+                    <div class="artist-card">
+                        <img src="${artist.portfolio}" alt="${artist.name}" class="artist-portfolio">
+                        <div class="artist-info">
+                            <h3>${artist.name}</h3>
+                            <p class="artist-location">📍 ${artist.location}</p>
+                            <p class="artist-bio">${artist.bio}</p>
+                            <div class="artist-styles">
+                                ${artist.styles.map(style => `<span class="style-tag">${style}</span>`).join('')}
+                            </div>
+                            <div class="artist-footer">
+                                <span class="artist-likes">❤️ ${artist.likes}</span>
+                                <button class="btn btn-primary btn-sm" onclick="contactArtist('${artist.whatsapp}', '${artist.name}')">
+                                    Contact via WhatsApp
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            // Filter artists
+            function filterArtists() {
+                const locationFilter = document.getElementById('locationFilter').value.toLowerCase();
+                const styleFilter = document.getElementById('styleFilter').value;
+                
+                const filtered = allArtists.filter(artist => {
+                    const matchesLocation = !locationFilter || 
+                        artist.location.toLowerCase().includes(locationFilter);
+                    const matchesStyle = !styleFilter || 
+                        artist.styles.includes(styleFilter);
+                    
+                    return matchesLocation && matchesStyle;
+                });
+                
+                displayArtists(filtered);
+            }
+            
+            // Add filter event listeners
+            document.getElementById('locationFilter')?.addEventListener('input', filterArtists);
+            document.getElementById('styleFilter')?.addEventListener('change', filterArtists);
             // Contact artist function
             function contactArtist(whatsapp, artistName) {
                 const promptText = document.getElementById('tattooPrompt')?.value || 'Custom tattoo design';

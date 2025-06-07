@@ -209,6 +209,13 @@
                 </div>
             </section>
         </div>
+        <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <p id="loadingText">Generating your tattoo designs...</p>
+        </div>
+    </div>
     </main>
 
     <!-- Scripts -->
@@ -313,7 +320,12 @@
                         alert('Please describe your tattoo or select at least one style');
                         return;
                     }
+                    // Show loading
+                    document.getElementById('loadingOverlay').style.display = 'flex';
                     
+                    // Simulate API call
+                    setTimeout(() => {
+                        document.getElementById('loadingOverlay').style.display = 'none';
                     // For now, show demo results
                     document.getElementById('resultsSection').style.display = 'block';
                     

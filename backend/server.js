@@ -1,95 +1,38 @@
-// backend/server.js
-require('dotenv').config();
 const express = require('express');
-const cors = require('cors');
-const multer = require('multer');
-const { createClient } = require('@supabase/supabase-js');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-
-// Initialize Express
 const app = express();
 const PORT = process.env.PORT || 3000;
-console.log('Railway PORT:', process.env.PORT);
 
-// Initialize Supabase
-const supabase = createClient(
-    process.env.SUPABASE_URL || 'https://cimakagbgcbkwosavbyk.supabase.co',
-    process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpbWFrYWdiZ2Nia3dvc2F2YnlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg3Nzc5MDMsImV4cCI6MjA2NDM1MzkwM30.Qj3ZKq-sZZWVdCoFEus5ggEIXSncGFm_FQZ9pEoLcaA'
-);
+console.log('Starting server...');
 
-
-// Middleware
-// Request logging
-app.use((req, res, next) => {
-    console.log(`${req.method} ${req.path}`);
-    next();
-});
-app.use(cors({
-    origin: process.env.FRONTEND_URL || '*',
-    credentials: true
-}));
+// Basic middleware
 app.use(express.json());
 
-// Multer setup for file uploads (memory storage - no persistence)
-const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: {
-        fileSize: 5 * 1024 * 1024 // 5MB
-    }
+// Logging
+app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+    next();
 });
 
-// JWT Middleware
-const authenticateToken = async (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-
-    if (!token) {
-        return res.status(401).json({ error: 'Access token required' });
-    }
-
-    try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.userId = decoded.userId;
-        next();
-    } catch (error) {
-        return res.status(403).json({ error: 'Invalid token' });
-    }
-};
-
-
-// Health check routes
+// Routes
 app.get('/', (req, res) => {
-    console.log('Root route hit');
-    res.status(200).json({ status: 'OK', message: 'SkinTip API is running' });
+    console.log('Root route handler executed');
+    res.json({ status: 'OK', message: 'SkinTip API is running' });
 });
 
 app.get('/api/health', (req, res) => {
-    console.log('Health route hit');
-    res.status(200).json({ status: 'OK', message: 'SkinTip API is running' });
+    console.log('Health route handler executed');
+    res.json({ status: 'OK', message: 'SkinTip API health check' });
 });
 
-app.get('/favicon.ico', (req, res) => {
-    res.status(204).end();
-});
-// Global error handler
+// Error handling
 app.use((err, req, res, next) => {
-    console.error('Error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-});
-
-// 404 handler
-app.use((req, res) => {
-    res.status(404).json({ error: 'Route not found' });
+    console.error('Error:', err.stack);
+    res.status(500).json({ error: 'Something went wrong!' });
 });
 
 // Start server
-const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server listening on 0.0.0.0:${PORT}`);
-    console.log(`Environment: ${process.env.NODE_ENV}`);
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server is running on port ${PORT}`);
 });
 
-// Handle server errors
-server.on('error', (error) => {
-    console.error('Server error:', error);
-});
+console.log('Server setup complete');

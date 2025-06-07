@@ -57,13 +57,20 @@ const authenticateToken = async (req, res, next) => {
     }
 };
 
-// Health check
+
+// Health check routes
 app.get('/', (req, res) => {
-    res.json({ status: 'OK', message: 'SkinTip API is running' });
+    console.log('Root route hit');
+    res.status(200).json({ status: 'OK', message: 'SkinTip API is running' });
 });
 
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'OK', message: 'SkinTip API is running' });
+    console.log('Health route hit');
+    res.status(200).json({ status: 'OK', message: 'SkinTip API is running' });
+});
+
+app.get('/favicon.ico', (req, res) => {
+    res.status(204).end();
 });
 
 

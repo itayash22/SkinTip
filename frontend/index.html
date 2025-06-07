@@ -153,7 +153,8 @@
 
                 <div class="prompt-container">
                     <h3>Describe Your Tattoo:</h3>
-                    <textarea id="tattooPrompt" placeholder="e.g., A majestic wolf howling at the moon with geometric patterns..." rows="4"></textarea>
+                    <div id="selectedStylesDisplay" class="selected-styles-display"></div>
+                    <textarea id="tattooPrompt" placeholder="Describe your tattoo idea in detail..." rows="4"></textarea>
                 </div>
 
                 <div class="credits-info">
@@ -272,81 +273,33 @@
     // Style checkbox handling
             let selectedStyles = [];
             
+            // Update styles display
+            function updateStylesDisplay() {
+                const display = document.getElementById('selectedStylesDisplay');
+                if (selectedStyles.length > 0) {
+                    display.innerHTML = `<strong>Selected Styles:</strong> ${selectedStyles.join(', ')}`;
+                    display.style.display = 'block';
+                } else {
+                    display.style.display = 'none';
+                }
+            }
+            
             // Handle style checkbox changes
             document.addEventListener('change', (e) => {
                 if (e.target.type === 'checkbox' && e.target.name === 'style') {
                     const style = e.target.value;
-                    const promptTextarea = document.getElementById('tattooPrompt');
-                    
-                    if (!promptTextarea) return;
-                    
-                    let currentText = promptTextarea.value;
                     
                     if (e.target.checked) {
-                        // Add style
                         if (!selectedStyles.includes(style)) {
                             selectedStyles.push(style);
-                            
-                            // Add to textarea
-                            if (currentText.trim() === '') {
-                                // Empty textarea
-                                promptTextarea.value = `Styles: ${style}`;
-                            } else if (currentText.startsWith('Styles:')) {
-                                // Already has styles section - add to it
-                                const stylesLineEnd = currentText.indexOf('\n');
-                                if (stylesLineEnd > -1) {
-                                    // Has content after styles
-                                    const beforeNewline = currentText.substring(0, stylesLineEnd);
-                                    const afterNewline = currentText.substring(stylesLineEnd);
-                                    promptTextarea.value = beforeNewline + ', ' + style + afterNewline;
-                                } else {
-                                    // Only styles line
-                                    promptTextarea.value = currentText + ', ' + style;
-                                }
-                            } else {
-                                // No styles yet, add at beginning
-                                promptTextarea.value = `Styles: ${style}\n\n${currentText}`;
-                            }
                         }
                     } else {
-                        // Remove style
                         selectedStyles = selectedStyles.filter(s => s !== style);
-                        
-                        if (selectedStyles.length === 0) {
-                            // No more styles - remove entire styles line
-                            if (currentText.startsWith('Styles:')) {
-                                const doubleNewline = currentText.indexOf('\n\n');
-                                if (doubleNewline > -1) {
-                                    // Remove styles line and keep rest
-                                    promptTextarea.value = currentText.substring(doubleNewline + 2);
-                                } else if (currentText.indexOf('\n') > -1) {
-                                    // Single newline
-                                    promptTextarea.value = currentText.substring(currentText.indexOf('\n') + 1);
-                                } else {
-                                    // Only styles, clear all
-                                    promptTextarea.value = '';
-                                }
-                            }
-                        } else {
-                            // Still have other styles - rebuild styles line
-                            const newStylesLine = `Styles: ${selectedStyles.join(', ')}`;
-                            
-                            if (currentText.startsWith('Styles:')) {
-                                // Replace existing styles line
-                                const firstNewline = currentText.indexOf('\n');
-                                if (firstNewline > -1) {
-                                    // Has content after styles
-                                    promptTextarea.value = newStylesLine + currentText.substring(firstNewline);
-                                } else {
-                                    // Only styles
-                                    promptTextarea.value = newStylesLine;
-                                }
-                            }
-                        }
                     }
+                    
+                    updateStylesDisplay();
                 }
-            });
-            
+            });        
                         
        // Generate button handler
             document.addEventListener('click', (e) => {

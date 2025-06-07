@@ -56,7 +56,10 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'OK', message: 'SkinTip API is running' });
 });
 
+
 // Start server
-app.listen(PORT, () => {
+const HOST = '0.0.0.0';
+app.listen(PORT, HOST, () => {
     console.log(`SkinTip backend running on port ${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });

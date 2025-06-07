@@ -435,7 +435,12 @@
                         bio: 'Specializing in delicate designs with 10+ years experience',
                         likes: 234,
                         whatsapp: '+1234567890',
-                        portfolio: 'https://images.unsplash.com/photo-1611501275019-9b5cda994e8d'
+                        portfolio: [
+                            'https://images.unsplash.com/photo-1611501275019-9b5cda994e8d',
+                            'https://images.unsplash.com/photo-1598371839696-5c5bb00bdc28',
+                            'https://images.unsplash.com/photo-1567406889330-43e4639e8d4f',
+                            'https://images.unsplash.com/photo-1475695752828-6d2b0a83cf8a'
+                        ]
                     },
                     {
                         name: 'Mike Chen',
@@ -444,7 +449,12 @@
                         bio: 'Award-winning traditional Japanese artist',
                         likes: 189,
                         whatsapp: '+0987654321',
-                        portfolio: 'https://images.unsplash.com/photo-1565058379802-bbe93b2f703a'
+                        portfolio: [
+                            'https://images.unsplash.com/photo-1565058379802-bbe93b2f703a',
+                            'https://images.unsplash.com/photo-1540202403-b7abd6747a18',
+                            'https://images.unsplash.com/photo-1582736317441-e6937f84b6b3',
+                            'https://images.unsplash.com/photo-1552627019-947c3789ffb5'
+                        ]
                     },
                     {
                         name: 'Emma Thompson',
@@ -453,7 +463,12 @@
                         bio: 'Creating unique watercolor tattoos since 2015',
                         likes: 156,
                         whatsapp: '+1122334455',
-                        portfolio: 'https://images.unsplash.com/photo-1598371839696-5c5bb00bdc28'
+                        portfolio: [
+                            'https://images.unsplash.com/photo-1598371839696-5c5bb00bdc28',
+                            'https://images.unsplash.com/photo-1604881991720-f91add269bed',
+                            'https://images.unsplash.com/photo-1590736969955-71cc94901144',
+                            'https://images.unsplash.com/photo-1611501275019-9b5cda994e8d'
+                        ]
                     },
                     {
                         name: 'Carlos Rodriguez',
@@ -462,7 +477,12 @@
                         bio: 'Bold designs with precision and passion',
                         likes: 298,
                         whatsapp: '+9988776655',
-                        portfolio: 'https://images.unsplash.com/photo-1590736969955-71cc94901144'
+                        portfolio: [
+                            'https://images.unsplash.com/photo-1590736969955-71cc94901144',
+                            'https://images.unsplash.com/photo-1568515045052-f9a854d70bfd',
+                            'https://images.unsplash.com/photo-1582731478949-884de7283343',
+                            'https://images.unsplash.com/photo-1604881991720-f91add269bed'
+                        ]
                     }
                 ];
                 
@@ -520,11 +540,38 @@
             document.getElementById('locationFilter')?.addEventListener('input', filterArtists);
             document.getElementById('styleFilter')?.addEventListener('change', filterArtists);
             // Contact artist function
+                    
             function contactArtist(whatsapp, artistName) {
                 const promptText = document.getElementById('tattooPrompt')?.value || 'Custom tattoo design';
                 const message = encodeURIComponent(`Hi, I got this tattoo idea from SkinTip:\n\n${promptText}`);
                 const whatsappUrl = `https://wa.me/${whatsapp.replace(/\D/g, '')}?text=${message}`;
                 window.open(whatsappUrl, '_blank');
+            }
+                    // Portfolio gallery navigation
+            function changePortfolioImage(button, direction) {
+                const gallery = button.parentElement;
+                const images = gallery.querySelectorAll('.portfolio-image');
+                let currentIndex = 0;
+                
+                // Find current active image
+                images.forEach((img, index) => {
+                    if (img.classList.contains('active')) {
+                        currentIndex = index;
+                    }
+                });
+                
+                // Hide current image
+                images[currentIndex].classList.remove('active');
+                images[currentIndex].style.display = 'none';
+                
+                // Calculate new index
+                let newIndex = currentIndex + direction;
+                if (newIndex < 0) newIndex = images.length - 1;
+                if (newIndex >= images.length) newIndex = 0;
+                
+                // Show new image
+                images[newIndex].classList.add('active');
+                images[newIndex].style.display = 'block';
             }
         // Navigation buttons
             document.addEventListener('click', (e) => {

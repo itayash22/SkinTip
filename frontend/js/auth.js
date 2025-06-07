@@ -65,16 +65,37 @@ const auth = {
         const password = document.getElementById('password').value;
         const username = document.getElementById('username').value || email.split('@')[0];
         
-        // Demo mode - just save to localStorage
-        const user = { email, username };
-        localStorage.setItem('skintip_user', JSON.stringify(user));
-        STATE.user = user;
+        const endpoint = auth.isLogin ? '/auth/login' : '/auth/register';
+        const body = auth.isLogin ? 
+            { email, password } : 
+            { email, password, username };
         
-        auth.updateUI();
-        auth.hideModal();
-        
-        // Show success message
-        utils.showError(`Welcome to SkinTip, ${username}! (Demo mode - no backend yet)`);
+        try {
+            const response = await fetch(`${CONFIG.API_URL}${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            
+            const data = await response.json();
+            
+            if (!response.ok) {
+                throw new Error(data.error || 'Authentication failed');
+            }
+            
+            // Save token and user data
+            STATE.token = data.token;
+            STATE.user = data.user;
+            localStorage.setItem('skintip_token', data.token);
+            localStorage.setItem('skintip_user', JSON.stringify(data.user));
+            
+            // Update UI
+            auth.updateUI();
+            auth.hideModal();
+            
+        } catch (error) {
+            document.getElementById('authError').textContent = error.message;
+        }
     },
     
     updateUI: () => {

@@ -16,7 +16,7 @@ const supabase = createClient(
     process.env.SUPABASE_URL || 'https://cimakagbgcbkwosavbyk.supabase.co',
     process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpbWFrYWdiZ2Nia3dvc2F2YnlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg3Nzc5MDMsImV4cCI6MjA2NDM1MzkwM30.Qj3ZKq-sZZWVdCoFEus5ggEIXSncGFm_FQZ9pEoLcaA'
 );
-);
+
 
 // Middleware
 app.use(cors({

@@ -490,6 +490,7 @@
             }
             
             // Display filtered artists
+            // Display filtered artists
             function displayArtists(artists) {
                 const artistsGrid = document.getElementById('artistsGrid');
                 
@@ -498,33 +499,49 @@
                     return;
                 }
                 
-                artistsGrid.innerHTML = artists.map(artist => `
-                    <div class="artist-card">
-                        <div class="portfolio-gallery">
-                            ${artist.portfolio.map((img, index) => `
-                                <img src="${img}" alt="${artist.name} work ${index + 1}" 
-                                     class="portfolio-image ${index === 0 ? 'active' : ''}" 
-                                     style="display: ${index === 0 ? 'block' : 'none'}">
-                            `).join('')}
-                            <button class="gallery-prev" onclick="changePortfolioImage(this, -1)">‹</button>
-                            <button class="gallery-next" onclick="changePortfolioImage(this, 1)">›</button>
-                        </div>
-                        <div class="artist-info">
-                            <h3>${artist.name}</h3>
-                            <p class="artist-location">📍 ${artist.location}</p>
-                            <p class="artist-bio">${artist.bio}</p>
-                            <div class="artist-styles">
-                                ${artist.styles.map(style => `<span class="style-tag">${style}</span>`).join('')}
+                artistsGrid.innerHTML = artists.map(artist => {
+                    // Build portfolio images HTML
+                    let portfolioImages = '';
+                    if (Array.isArray(artist.portfolio)) {
+                        portfolioImages = artist.portfolio.map((img, index) => 
+                            `<img src="${img}" alt="${artist.name} work ${index + 1}" 
+                                 class="portfolio-image ${index === 0 ? 'active' : ''}" 
+                                 style="display: ${index === 0 ? 'block' : 'none'}">`
+                        ).join('');
+                    } else {
+                        // Fallback for single image
+                        portfolioImages = `<img src="${artist.portfolio}" alt="${artist.name}" class="portfolio-image active" style="display: block">`;
+                    }
+                    
+                    // Build styles HTML
+                    const stylesHTML = artist.styles.map(style => 
+                        `<span class="style-tag">${style}</span>`
+                    ).join('');
+                    
+                    return `
+                        <div class="artist-card">
+                            <div class="portfolio-gallery">
+                                ${portfolioImages}
+                                <button class="gallery-prev" onclick="changePortfolioImage(this, -1)">‹</button>
+                                <button class="gallery-next" onclick="changePortfolioImage(this, 1)">›</button>
                             </div>
-                            <div class="artist-footer">
-                                <span class="artist-likes">❤️ ${artist.likes}</span>
-                                <button class="btn btn-primary btn-sm" onclick="contactArtist('${artist.whatsapp}', '${artist.name}')">
-                                    Contact via WhatsApp
-                                </button>
+                            <div class="artist-info">
+                                <h3>${artist.name}</h3>
+                                <p class="artist-location">📍 ${artist.location}</p>
+                                <p class="artist-bio">${artist.bio}</p>
+                                <div class="artist-styles">
+                                    ${stylesHTML}
+                                </div>
+                                <div class="artist-footer">
+                                    <span class="artist-likes">❤️ ${artist.likes}</span>
+                                    <button class="btn btn-primary btn-sm" onclick="contactArtist('${artist.whatsapp}', '${artist.name}')">
+                                        Contact via WhatsApp
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
             }
             
             // Filter artists

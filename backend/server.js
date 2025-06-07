@@ -31,8 +31,22 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server is running on port ${PORT}`);
+// Start server
+const server = app.listen(PORT, '0.0.0.0', (err) => {
+    if (err) {
+        console.error('Failed to start server:', err);
+        process.exit(1);
+    }
+    console.log(`Server is running on http://0.0.0.0:${PORT}`);
+    console.log(`Railway should proxy to this server`);
+});
+
+// Keep the process alive
+process.on('SIGTERM', () => {
+    console.log('SIGTERM received, closing server');
+    server.close(() => {
+        console.log('Server closed');
+    });
 });
 
 console.log('Server setup complete');

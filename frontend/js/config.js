@@ -1,7 +1,7 @@
 // frontend/js/config.js
 
 const CONFIG = {
-    API_URL: 'https://skintip-backend.up.railway.app/api', // Update this when you deploy backend
+    API_URL: 'https://skintip-backend.onrender.com/api', // Update this when you deploy backend
     MAX_FILE_SIZE: 5 * 1024 * 1024, // 5MB
     ALLOWED_FILE_TYPES: ['image/jpeg', 'image/png', 'image/webp'],
     DEFAULT_BRUSH_SIZE: 20,

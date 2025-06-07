@@ -269,80 +269,81 @@
             
             console.log('✅ SkinTip ready!');
         });
-        // // Style checkbox handling
+        // Style checkbox handling
             let userCustomText = '';
             let selectedStyles = [];
-            let isUpdatingPrompt = false; // Prevent feedback loop
             
-            // Function to update prompt with styles
-            function updatePromptWithStyles() {
+            // Initialize - capture any existing text in the textarea
+            document.addEventListener('DOMContentLoaded', () => {
                 const promptTextarea = document.getElementById('tattooPrompt');
-                if (!promptTextarea || isUpdatingPrompt) return;
-                
-                isUpdatingPrompt = true;
-                
-                // Build the prompt
-                let fullPrompt = '';
-                if (selectedStyles.length > 0) {
-                    fullPrompt = `Styles: ${selectedStyles.join(', ')}`;
-                    if (userCustomText.trim()) {
-                        fullPrompt += `\n\n${userCustomText}`;
-                    }
-                } else {
-                    fullPrompt = userCustomText;
+                if (promptTextarea && promptTextarea.value) {
+                    userCustomText = promptTextarea.value;
                 }
-                
-                promptTextarea.value = fullPrompt;
-                isUpdatingPrompt = false;
-            }
+            });
             
-            // Function to extract user text from the full prompt
-            function extractUserText(fullText) {
-                if (fullText.startsWith('Styles:') && fullText.includes('\n\n')) {
-                    // Find the first double newline and take everything after it
-                    const styleEndIndex = fullText.indexOf('\n\n');
-                    return fullText.substring(styleEndIndex + 2);
-                } else if (fullText.startsWith('Styles:')) {
-                    // Only styles, no custom text
-                    return '';
-                } else {
-                    // No styles prefix, it's all custom text
-                    return fullText;
+            // Function to build the full prompt
+            function buildFullPrompt() {
+                let parts = [];
+                
+                if (selectedStyles.length > 0) {
+                    parts.push(`Styles: ${selectedStyles.join(', ')}`);
                 }
+                
+                if (userCustomText.trim()) {
+                    parts.push(userCustomText.trim());
+                }
+                
+                return parts.join('\n\n');
             }
             
             // Handle style checkbox changes
             document.addEventListener('change', (e) => {
                 if (e.target.type === 'checkbox' && e.target.name === 'style') {
                     const style = e.target.value;
-                    
-                    // First, extract current user text before updating
                     const promptTextarea = document.getElementById('tattooPrompt');
-                    if (promptTextarea) {
-                        userCustomText = extractUserText(promptTextarea.value);
-                    }
+                    
+                    if (!promptTextarea) return;
                     
                     if (e.target.checked) {
-                        // Add style if not already present
                         if (!selectedStyles.includes(style)) {
                             selectedStyles.push(style);
                         }
                     } else {
-                        // Remove style
                         selectedStyles = selectedStyles.filter(s => s !== style);
                     }
                     
-                    updatePromptWithStyles();
+                    // Update textarea with new combined content
+                    promptTextarea.value = buildFullPrompt();
                 }
             });
             
-            // Handle prompt text changes
+            // Handle prompt text changes - only update userCustomText
             document.addEventListener('input', (e) => {
-                if (e.target.id === 'tattooPrompt' && !isUpdatingPrompt) {
+                if (e.target.id === 'tattooPrompt') {
                     const fullText = e.target.value;
-                    userCustomText = extractUserText(fullText);
+                    
+                    // Remove the styles prefix if it exists to get only user text
+                    let textWithoutStyles = fullText;
+                    
+                    if (selectedStyles.length > 0) {
+                        const stylesPrefix = `Styles: ${selectedStyles.join(', ')}\n\n`;
+                        if (fullText.startsWith(stylesPrefix)) {
+                            textWithoutStyles = fullText.substring(stylesPrefix.length);
+                        } else if (fullText.startsWith('Styles:')) {
+                            // Handle case where user might have edited the styles line
+                            const doubleNewline = fullText.indexOf('\n\n');
+                            if (doubleNewline > -1) {
+                                textWithoutStyles = fullText.substring(doubleNewline + 2);
+                            } else {
+                                // No double newline, assume it's all user text
+                                textWithoutStyles = '';
+                            }
+                        }
+                    }
+                    
+                    userCustomText = textWithoutStyles;
                 }
-            }); 
+            });
             // Generate button handler
             document.addEventListener('click', (e) => {
                 if (e.target.id === 'generateBtn') {

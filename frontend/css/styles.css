@@ -601,3 +601,12 @@ body {
         width: 100%;
     }
 }
+/* Selected Styles Display */
+.selected-styles-display {
+    background-color: var(--surface);
+    padding: 0.75rem;
+    border-radius: 0.375rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.875rem;
+    display: none;
+}

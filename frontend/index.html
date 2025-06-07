@@ -304,9 +304,12 @@
        // Generate button handler
             document.addEventListener('click', (e) => {
                 if (e.target.id === 'generateBtn') {
-                    const promptText = document.getElementById('tattooPrompt').value;
+                    const userText = document.getElementById('tattooPrompt').value;
+                    const fullPrompt = selectedStyles.length > 0 
+                        ? `Styles: ${selectedStyles.join(', ')}\n\n${userText}`
+                        : userText;
                     
-                    if (!promptText.trim()) {
+                    if (!fullPrompt.trim()) {
                         alert('Please describe your tattoo or select at least one style');
                         return;
                     }
@@ -344,7 +347,7 @@
                         </div>
                     `;
                     
-                    alert(`Generating tattoo with prompt: "${promptText}" (Demo mode - Flux API integration coming soon)`);
+                    alert(`Generating tattoo with prompt: "${fullPrompt}" (Demo mode - Flux API integration coming soon)`);
                 }
             });
         // Demo artists data

@@ -326,9 +326,15 @@
                     // Simulate API call
                     setTimeout(() => {
                         document.getElementById('loadingOverlay').style.display = 'none';
-                    // For now, show demo results
-                    document.getElementById('resultsSection').style.display = 'block';
+                   // Show loading
+                    document.getElementById('loadingOverlay').style.display = 'flex';
                     
+                    // Simulate API call
+                    setTimeout(() => {
+                        document.getElementById('loadingOverlay').style.display = 'none';
+                        
+                        // For now, show demo results
+                        document.getElementById('resultsSection').style.display = 'block';
                     // Show artists section
                     document.getElementById('artistsSection').style.display = 'block';
                     
@@ -360,6 +366,7 @@
                     `;
                     
                     alert(`Generating tattoo with prompt: "${fullPrompt}" (Demo mode - Flux API integration coming soon)`);
+                    }, 2000); // 2 second delay to simulate API call
                 }
             });
         // Demo artists data

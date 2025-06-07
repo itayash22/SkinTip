@@ -1,4 +1,7 @@
 const express = require('express');
+console.log('Environment check:');
+console.log('PORT:', process.env.PORT);
+console.log('NODE_ENV:', process.env.NODE_ENV);
 const app = express();
 const PORT = process.env.PORT || 3000;
 

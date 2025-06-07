@@ -347,25 +347,8 @@
                 }
             });
             
-            // Track selected styles on page load
-            document.addEventListener('input', (e) => {
-                if (e.target.id === 'tattooPrompt') {
-                    // Update selected styles array based on current text
-                    const text = e.target.value;
-                    if (text.startsWith('Styles:')) {
-                        const stylesLineEnd = text.indexOf('\n') > -1 ? text.indexOf('\n') : text.length;
-                        const stylesLine = text.substring(7, stylesLineEnd); // Skip "Styles: "
-                        const styles = stylesLine.split(',').map(s => s.trim()).filter(s => s);
                         
-                        // Update checkboxes to match
-                        document.querySelectorAll('input[name="style"]').forEach(checkbox => {
-                            checkbox.checked = styles.includes(checkbox.value);
-                        });
-                        
-                        selectedStyles = styles;
-                    }
-                }
-            });            // Generate button handler
+       // Generate button handler
             document.addEventListener('click', (e) => {
                 if (e.target.id === 'generateBtn') {
                     const promptText = document.getElementById('tattooPrompt').value;
@@ -377,16 +360,14 @@
                     
                     // For now, show demo results
                     document.getElementById('resultsSection').style.display = 'block';
-                    // For now, show demo results
-document.getElementById('resultsSection').style.display = 'block';
-
-// Show artists section
-document.getElementById('artistsSection').style.display = 'block';
-
-// Load sample artists (demo mode)
-loadDemoArtists();
-
-document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
+                    
+                    // Show artists section
+                    document.getElementById('artistsSection').style.display = 'block';
+                    
+                    // Load sample artists (demo mode)
+                    loadDemoArtistsWithFilter();
+                    
+                    // Scroll to results
                     document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
                     
                     // Add demo images

@@ -10,6 +10,7 @@ const jwt = require('jsonwebtoken');
 // Initialize Express
 const app = express();
 const PORT = process.env.PORT || 3000;
+console.log('Railway PORT:', process.env.PORT);
 
 // Initialize Supabase
 const supabase = createClient(

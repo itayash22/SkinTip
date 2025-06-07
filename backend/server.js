@@ -20,6 +20,11 @@ const supabase = createClient(
 
 
 // Middleware
+// Request logging
+app.use((req, res, next) => {
+    console.log(`${req.method} ${req.path}`);
+    next();
+});
 app.use(cors({
     origin: process.env.FRONTEND_URL || '*',
     credentials: true
@@ -53,6 +58,10 @@ const authenticateToken = async (req, res, next) => {
 };
 
 // Health check
+app.get('/', (req, res) => {
+    res.json({ status: 'OK', message: 'SkinTip API is running' });
+});
+
 app.get('/api/health', (req, res) => {
     res.json({ status: 'OK', message: 'SkinTip API is running' });
 });

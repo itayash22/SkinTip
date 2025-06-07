@@ -320,13 +320,8 @@
                         alert('Please describe your tattoo or select at least one style');
                         return;
                     }
-                    // Show loading
-                    document.getElementById('loadingOverlay').style.display = 'flex';
                     
-                    // Simulate API call
-                    setTimeout(() => {
-                        document.getElementById('loadingOverlay').style.display = 'none';
-                   // Show loading
+                    // Show loading
                     document.getElementById('loadingOverlay').style.display = 'flex';
                     
                     // Simulate API call
@@ -335,40 +330,40 @@
                         
                         // For now, show demo results
                         document.getElementById('resultsSection').style.display = 'block';
-                    // Show artists section
-                    document.getElementById('artistsSection').style.display = 'block';
-                    
-                    // Load sample artists (demo mode)
-                    loadDemoArtistsWithFilter();
-                    
-                    // Scroll to results
-                    document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
-                    
-                    // Add demo images
-                    const resultsGrid = document.querySelector('.results-grid');
-                    resultsGrid.innerHTML = `
-                        <div class="result-item">
-                            <img src="https://via.placeholder.com/300x300/6366f1/ffffff?text=Tattoo+1" alt="Result 1">
-                            <p>Demo Result 1</p>
-                        </div>
-                        <div class="result-item">
-                            <img src="https://via.placeholder.com/300x300/ec4899/ffffff?text=Tattoo+2" alt="Result 2">
-                            <p>Demo Result 2</p>
-                        </div>
-                        <div class="result-item">
-                            <img src="https://via.placeholder.com/300x300/10b981/ffffff?text=Tattoo+3" alt="Result 3">
-                            <p>Demo Result 3</p>
-                        </div>
-                        <div class="result-item">
-                            <img src="https://via.placeholder.com/300x300/f59e0b/ffffff?text=Tattoo+4" alt="Result 4">
-                            <p>Demo Result 4</p>
-                        </div>
-                    `;
-                    
-                    alert(`Generating tattoo with prompt: "${fullPrompt}" (Demo mode - Flux API integration coming soon)`);
+                        
+                        // Show artists section
+                        document.getElementById('artistsSection').style.display = 'block';
+                        
+                        // Load sample artists (demo mode)
+                        loadDemoArtistsWithFilter();
+                        
+                        // Scroll to results
+                        document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
+                        
+                        // Add demo images
+                        const resultsGrid = document.querySelector('.results-grid');
+                        resultsGrid.innerHTML = `
+                            <div class="result-item">
+                                <img src="https://via.placeholder.com/300x300/6366f1/ffffff?text=Tattoo+1" alt="Result 1">
+                                <p>Demo Result 1</p>
+                            </div>
+                            <div class="result-item">
+                                <img src="https://via.placeholder.com/300x300/ec4899/ffffff?text=Tattoo+2" alt="Result 2">
+                                <p>Demo Result 2</p>
+                            </div>
+                            <div class="result-item">
+                                <img src="https://via.placeholder.com/300x300/10b981/ffffff?text=Tattoo+3" alt="Result 3">
+                                <p>Demo Result 3</p>
+                            </div>
+                            <div class="result-item">
+                                <img src="https://via.placeholder.com/300x300/f59e0b/ffffff?text=Tattoo+4" alt="Result 4">
+                                <p>Demo Result 4</p>
+                            </div>
+                        `;
+                        
+                        alert(`Generating tattoo with prompt: "${fullPrompt}" (Demo mode - Flux API integration coming soon)`);
                     }, 2000); // 2 second delay to simulate API call
                 }
-                               }
             });
         // Demo artists data
             function loadDemoArtists() {

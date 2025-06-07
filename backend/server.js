@@ -33,14 +33,15 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: 'Something went wrong!' });
 });
 
+
 // Start server
-// Start server
-const server = app.listen(PORT, '0.0.0.0', (err) => {
+const HOST = process.env.HOST || '0.0.0.0';
+const server = app.listen(PORT, HOST, (err) => {
     if (err) {
         console.error('Failed to start server:', err);
         process.exit(1);
     }
-    console.log(`Server is running on http://0.0.0.0:${PORT}`);
+    console.log(`Server is running on http://${HOST}:${PORT}`);
     console.log(`Railway should proxy to this server`);
 });
 

@@ -68,8 +68,12 @@ app.get('/api/health', (req, res) => {
 
 
 // Start server
-const HOST = '0.0.0.0';
-app.listen(PORT, HOST, () => {
-    console.log(`SkinTip backend running on port ${PORT}`);
-    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server listening on 0.0.0.0:${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV}`);
+});
+
+// Handle server errors
+server.on('error', (error) => {
+    console.error('Server error:', error);
 });

@@ -551,6 +551,31 @@
                 const whatsappUrl = `https://wa.me/${whatsapp.replace(/\D/g, '')}?text=${message}`;
                 window.open(whatsappUrl, '_blank');
             }
+        // Navigation buttons
+            document.addEventListener('click', (e) => {
+                // New Design button
+                if (e.target.id === 'newDesignBtn') {
+                    // Reset everything
+                    document.getElementById('designSection').style.display = 'none';
+                    document.getElementById('resultsSection').style.display = 'none';
+                    document.getElementById('artistsSection').style.display = 'none';
+                    document.getElementById('uploadSection').scrollIntoView({ behavior: 'smooth' });
+                    
+                    // Clear prompt
+                    document.getElementById('tattooPrompt').value = '';
+                    
+                    // Uncheck all styles
+                    document.querySelectorAll('input[name="style"]').forEach(checkbox => {
+                        checkbox.checked = false;
+                    });
+                    selectedStyles = [];
+                }
+                
+                // Download button
+                if (e.target.id === 'downloadBtn') {
+                    alert('Download feature coming soon! For now, right-click on the image to save.');
+                }
+            });
     </script>
 </body>
 </html>

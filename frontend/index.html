@@ -500,7 +500,15 @@
                 
                 artistsGrid.innerHTML = artists.map(artist => `
                     <div class="artist-card">
-                        <img src="${artist.portfolio}" alt="${artist.name}" class="artist-portfolio">
+                        <div class="portfolio-gallery">
+                            ${artist.portfolio.map((img, index) => `
+                                <img src="${img}" alt="${artist.name} work ${index + 1}" 
+                                     class="portfolio-image ${index === 0 ? 'active' : ''}" 
+                                     style="display: ${index === 0 ? 'block' : 'none'}">
+                            `).join('')}
+                            <button class="gallery-prev" onclick="changePortfolioImage(this, -1)">‹</button>
+                            <button class="gallery-next" onclick="changePortfolioImage(this, 1)">›</button>
+                        </div>
                         <div class="artist-info">
                             <h3>${artist.name}</h3>
                             <p class="artist-location">📍 ${artist.location}</p>

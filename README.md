@@ -45,3 +45,22 @@ Live Demo: https://itayash22.github.io/SkinTip/frontend/
 The entire app is designed mobile-first and works great on all devices!
 
 ## 🔗 Project Structure
+SkinTip/
+├── frontend/          # Live on GitHub Pages
+│   ├── index.html    # Main app
+│   ├── css/          # Styles
+│   └── js/           # JavaScript modules
+├── backend/          # API server (ready to deploy)
+├── scripts/          # Database setup
+└── docs/            # Documentation
+
+## 🎯 Next Steps
+
+1. Deploy backend to Railway/Render
+2. Add Flux API key for real tattoo generation
+3. Enable Stripe payments
+4. Launch to production!
+
+---
+
+Made with ❤️ by @itayash22

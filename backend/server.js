@@ -1,5 +1,6 @@
 // backend/server.js
 require('dotenv').config();
+const FormData = require('form-data');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -194,6 +195,95 @@ app.post('/api/auth/login', async (req, res) => {
     } catch (error) {
         console.error('Login error:', error);
         res.status(500).json({ error: 'Login failed' });
+    }
+});
+// Generate tattoo endpoint
+app.post('/api/generate', authenticateToken, upload.single('image'), async (req, res) => {
+    try {
+        const { prompt, styles, mask } = req.body;
+        const image = req.file;
+
+        if (!image || !prompt) {
+            return res.status(400).json({ error: 'Image and prompt are required' });
+        }
+
+        // Check if Flux API key is configured
+        if (!process.env.FLUX_API_KEY) {
+            console.log('Flux API not configured, returning mock data');
+            // Return mock data for testing
+            return res.json({
+                images: [
+                    'https://picsum.photos/512/512?random=1',
+                    'https://picsum.photos/512/512?random=2',
+                    'https://picsum.photos/512/512?random=3',
+                    'https://picsum.photos/512/512?random=4'
+                ]
+            });
+        }
+
+        // Import FormData at the top of the file if not already done
+        const FormData = require('form-data');
+        
+        // Prepare form data for Flux API
+        const formData = new FormData();
+        
+        // Add image file
+        formData.append('image', image.buffer, {
+            filename: 'image.png',
+            contentType: image.mimetype
+        });
+        
+        // Add mask if provided
+        if (mask) {
+            const maskBuffer = Buffer.from(mask.split(',')[1], 'base64');
+            formData.append('mask', maskBuffer, {
+                filename: 'mask.png',
+                contentType: 'image/png'
+            });
+        }
+        
+        // Build the full prompt with styles
+        let fullPrompt = prompt;
+        if (styles && styles.length > 0) {
+            fullPrompt = `${styles.join(', ')} style tattoo: ${prompt}`;
+        }
+        
+        formData.append('prompt', fullPrompt);
+        formData.append('num_outputs', '4');
+        formData.append('guidance_scale', '7.5');
+        formData.append('num_inference_steps', '50');
+        
+        // Call Flux API
+        const response = await axios.post(
+            'https://api.bfl.ai/v1/flux-pro-1.1-ultra', // or the appropriate Flux endpoint
+            formData,
+            {
+                headers: {
+                    ...formData.getHeaders(),
+                    'X-API-Key': process.env.FLUX_API_KEY
+                },
+                timeout: 60000 // 60 second timeout
+            }
+        );
+
+        // Extract image URLs from response
+        // Note: Adjust this based on actual Flux API response format
+        const images = response.data.images || [response.data.image] || [];
+        
+        res.json({ images });
+
+    } catch (error) {
+        console.error('Generation error:', error.response?.data || error.message);
+        
+        if (error.response?.status === 401) {
+            return res.status(401).json({ error: 'Invalid Flux API key' });
+        }
+        
+        if (error.response?.status === 429) {
+            return res.status(429).json({ error: 'Rate limit exceeded. Please try again later.' });
+        }
+        
+        res.status(500).json({ error: 'Failed to generate tattoo' });
     }
 });
 

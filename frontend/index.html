@@ -352,7 +352,7 @@
                 }
             });        
                         
-       // Generate button handler
+   // Generate button handler
 document.addEventListener('click', async (e) => {
     if (e.target.id === 'generateBtn') {
         const userText = document.getElementById('tattooPrompt').value;
@@ -392,14 +392,16 @@ document.addEventListener('click', async (e) => {
                 },
                 body: formData
             });
-            const data = await response.json();
-            console.log('API Response:', data); // ADD THIS LINE
             
+            // Check response status FIRST
             if (!response.ok) {
                 const error = await response.json();
                 throw new Error(error.error || 'Failed to generate tattoo');
             }
             
+            // Then read the data
+            const data = await response.json();
+            console.log('API Response:', data);
             
             // Hide loading
             document.getElementById('loadingOverlay').style.display = 'none';

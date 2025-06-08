@@ -1,6 +1,5 @@
 // backend/server.js
 require('dotenv').config();
-const FormData = require('form-data');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -158,56 +157,6 @@ app.post('/api/auth/login', async (req, res) => {
         if (!email || !password) {
             return res.status(400).json({ error: 'Email and password required' });
         }
-// Alternative: Generate 4 variations with different seeds
-async function generateMultipleVariations(prompt, imageBase64, apiKey) {
-    const promises = [];
-    
-    for (let i = 0; i < 4; i++) {
-        promises.push(
-            axios.post(
-                'https://api.bfl.ai/v1/flux-kontext-pro',
-                {
-                    prompt: prompt,
-                    input_image: imageBase64,
-                    seed: Math.floor(Math.random() * 1000000),
-                    output_format: 'jpeg',
-                    safety_tolerance: 2
-                },
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-key': apiKey
-                    }
-                }
-            )
-        );
-    }
-    
-    const submissions = await Promise.all(promises);
-    const taskIds = submissions.map(r => r.data.id);
-    
-    // Poll all tasks
-    const images = [];
-    for (const taskId of taskIds) {
-        let attempts = 0;
-        while (attempts < 60) {
-            attempts++;
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            
-            const result = await axios.get(
-                `https://api.bfl.ai/v1/get_result?id=${taskId}`,
-                { headers: { 'x-key': apiKey } }
-            );
-            
-            if (result.data.status === 'Ready') {
-                images.push(result.data.result.sample);
-                break;
-            }
-        }
-    }
-    
-    return images;
-}
 
         // Get user
         const { data: user, error } = await supabase
@@ -248,86 +197,6 @@ async function generateMultipleVariations(prompt, imageBase64, apiKey) {
     }
 });
 
-
-        // Check if Flux API key is configured
-        if (!process.env.FLUX_API_KEY) {
-            console.log('Flux API not configured, returning mock data');
-            // Return mock data for testing
-            return res.json({
-                images: [
-                    'https://picsum.photos/512/512?random=1',
-                    'https://picsum.photos/512/512?random=2',
-                    'https://picsum.photos/512/512?random=3',
-                    'https://picsum.photos/512/512?random=4'
-                ]
-            });
-        }
-
-        // Import FormData at the top of the file if not already done
-        const FormData = require('form-data');
-        
-        // Prepare form data for Flux API
-        const formData = new FormData();
-        
-        // Add image file
-        formData.append('image', image.buffer, {
-            filename: 'image.png',
-            contentType: image.mimetype
-        });
-        
-        // Add mask if provided
-        if (mask) {
-            const maskBuffer = Buffer.from(mask.split(',')[1], 'base64');
-            formData.append('mask', maskBuffer, {
-                filename: 'mask.png',
-                contentType: 'image/png'
-            });
-        }
-        
-        // Build the full prompt with styles
-        let fullPrompt = prompt;
-        if (styles && styles.length > 0) {
-            fullPrompt = `${styles.join(', ')} style tattoo: ${prompt}`;
-        }
-        
-        formData.append('prompt', fullPrompt);
-        formData.append('num_outputs', '4');
-        formData.append('guidance_scale', '7.5');
-        formData.append('num_inference_steps', '50');
-        
-        // Call Flux API
-        const response = await axios.post(
-            'https://api.bfl.ai/v1/flux-pro-1.1-ultra', // or the appropriate Flux endpoint
-            formData,
-            {
-                headers: {
-                    ...formData.getHeaders(),
-                    'X-API-Key': process.env.FLUX_API_KEY
-                },
-                timeout: 60000 // 60 second timeout
-            }
-        );
-
-        // Extract image URLs from response
-        // Note: Adjust this based on actual Flux API response format
-        const images = response.data.images || [response.data.image] || [];
-        
-        res.json({ images });
-
-    } catch (error) {
-        console.error('Generation error:', error.response?.data || error.message);
-        
-        if (error.response?.status === 401) {
-            return res.status(401).json({ error: 'Invalid Flux API key' });
-        }
-        
-        if (error.response?.status === 429) {
-            return res.status(429).json({ error: 'Rate limit exceeded. Please try again later.' });
-        }
-        
-        res.status(500).json({ error: 'Failed to generate tattoo' });
-    }
-});
 // Helper function to generate multiple variations
 async function generateMultipleVariations(prompt, imageBase64, apiKey) {
     const promises = [];
@@ -391,6 +260,15 @@ async function generateMultipleVariations(prompt, imageBase64, apiKey) {
     return images.filter(img => img !== null); // Return only successful images
 }
 
+// Generate tattoo endpoint
+app.post('/api/generate', authenticateToken, upload.single('image'), async (req, res) => {
+    try {
+        const { prompt, styles, mask } = req.body;
+        const image = req.file;
+
+        if (!image || !prompt) {
+            return res.status(400).json({ error: 'Image and prompt are required' });
+        }
 
         // Check if Flux API key is configured
         if (!process.env.FLUX_API_KEY) {
@@ -444,149 +322,6 @@ async function generateMultipleVariations(prompt, imageBase64, apiKey) {
         res.status(500).json({ error: 'Failed to generate tattoo' });
     }
 });
-
-// Convert image buffer to base64
-        const imageBase64 = image.buffer.toString('base64');
-        
-        // Build the full prompt with styles
-        let fullPrompt = prompt;
-        if (styles && styles.length > 0) {
-            fullPrompt = `${styles.join(', ')} style tattoo: ${prompt}`;
-        }
-        
-        // Step 1: Submit the generation request
-        const submitResponse = await axios.post(
-            'https://api.bfl.ai/v1/flux-kontext-pro',
-            {
-                prompt: fullPrompt,
-                input_image: imageBase64,
-                output_format: 'jpeg',
-                safety_tolerance: 2
-            },
-            {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-key': process.env.FLUX_API_KEY
-                },
-                timeout: 30000
-            }
-        );
-
-        const taskId = submitResponse.data.id;
-        console.log('Flux task submitted:', taskId);
-
-        // Step 2: Poll for results
-        let attempts = 0;
-        const maxAttempts = 60; // 60 attempts * 2 seconds = 2 minutes max
-        
-        while (attempts < maxAttempts) {
-            attempts++;
-            
-            // Wait 2 seconds before polling
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            
-            // Check task status
-            const resultResponse = await axios.get(
-                `https://api.bfl.ai/v1/get_result?id=${taskId}`,
-                {
-                    headers: {
-                        'x-key': process.env.FLUX_API_KEY
-                    }
-                }
-            );
-
-            if (resultResponse.data.status === 'Ready') {
-                // Extract the image URL from the result
-                const imageUrl = resultResponse.data.result.sample;
-                
-                // Since we want 4 variations, we'll need to make multiple requests
-                // For now, return the one image duplicated (or make 4 separate requests)
-                console.log('Flux generation complete:', imageUrl);
-                
-                // For demo purposes, return the same image 4 times
-                // In production, you might want to make 4 separate API calls with different seeds
-                return res.json({
-                    images: [imageUrl, imageUrl, imageUrl, imageUrl]
-                });
-            }
-            
-            if (resultResponse.data.status === 'Error') {
-                console.error('Flux generation failed:', resultResponse.data);
-                return res.status(500).json({ error: 'Image generation failed' });
-            }
-            
-            // Status is still "Pending", continue polling
-            console.log(`Polling attempt ${attempts}: ${resultResponse.data.status}`);
-        }
-
-        // Timeout after max attempts
-        return res.status(504).json({ error: 'Generation timeout - please try again' });
-
-    } catch (error) {
-        console.error('Generation error:', error.response?.data || error.message);
-        
-        if (error.response?.status === 401) {
-            return res.status(401).json({ error: 'Invalid Flux API key' });
-        }
-        
-        if (error.response?.status === 429) {
-            return res.status(429).json({ error: 'Rate limit exceeded. Please try again later.' });
-        }
-        
-        res.status(500).json({ error: 'Failed to generate tattoo' });
-    }
-});
-
-// Alternative: Generate 4 variations with different seeds
-async function generateMultipleVariations(prompt, imageBase64, apiKey) {
-    const promises = [];
-    
-    for (let i = 0; i < 4; i++) {
-        promises.push(
-            axios.post(
-                'https://api.bfl.ai/v1/flux-kontext-pro',
-                {
-                    prompt: prompt,
-                    input_image: imageBase64,
-                    seed: Math.floor(Math.random() * 1000000),
-                    output_format: 'jpeg',
-                    safety_tolerance: 2
-                },
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-key': apiKey
-                    }
-                }
-            )
-        );
-    }
-    
-    const submissions = await Promise.all(promises);
-    const taskIds = submissions.map(r => r.data.id);
-    
-    // Poll all tasks
-    const images = [];
-    for (const taskId of taskIds) {
-        let attempts = 0;
-        while (attempts < 60) {
-            attempts++;
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            
-            const result = await axios.get(
-                `https://api.bfl.ai/v1/get_result?id=${taskId}`,
-                { headers: { 'x-key': apiKey } }
-            );
-            
-            if (result.data.status === 'Ready') {
-                images.push(result.data.result.sample);
-                break;
-            }
-        }
-    }
-    
-    return images;
-}
 
 // Error handling middleware
 app.use((error, req, res, next) => {

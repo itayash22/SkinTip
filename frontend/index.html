@@ -393,14 +393,13 @@ document.addEventListener('click', async (e) => {
                 body: formData
             });
             const data = await response.json();
-console.log('API Response:', data); // ADD THIS LINE
+            console.log('API Response:', data); // ADD THIS LINE
             
             if (!response.ok) {
                 const error = await response.json();
                 throw new Error(error.error || 'Failed to generate tattoo');
             }
             
-            const data = await response.json();
             
             // Hide loading
             document.getElementById('loadingOverlay').style.display = 'none';

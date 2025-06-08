@@ -286,7 +286,68 @@ app.post('/api/generate', authenticateToken, upload.single('image'), async (req,
         res.status(500).json({ error: 'Failed to generate tattoo' });
     }
 });
-
+// Helper function to generate multiple variations
+async function generateMultipleVariations(prompt, imageBase64, apiKey) {
+    const promises = [];
+    
+    // Create 4 requests with different seeds
+    for (let i = 0; i < 4; i++) {
+        promises.push(
+            axios.post(
+                'https://api.bfl.ai/v1/flux-kontext-pro',
+                {
+                    prompt: prompt,
+                    input_image: imageBase64,
+                    seed: Math.floor(Math.random() * 1000000),
+                    output_format: 'jpeg',
+                    safety_tolerance: 2
+                },
+                {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-key': apiKey
+                    }
+                }
+            )
+        );
+    }
+    
+    // Submit all requests at once
+    const submissions = await Promise.all(promises);
+    const taskIds = submissions.map(r => r.data.id);
+    console.log('Submitted 4 variations, task IDs:', taskIds);
+    
+    // Poll all tasks for results
+    const images = [];
+    for (let i = 0; i < taskIds.length; i++) {
+        const taskId = taskIds[i];
+        let attempts = 0;
+        
+        while (attempts < 60) {
+            attempts++;
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            const result = await axios.get(
+                `https://api.bfl.ai/v1/get_result?id=${taskId}`,
+                { headers: { 'x-key': apiKey } }
+            );
+            
+            if (result.data.status === 'Ready') {
+                images.push(result.data.result.sample);
+                console.log(`Variation ${i + 1} complete`);
+                break;
+            }
+            
+            if (result.data.status === 'Error') {
+                console.error(`Variation ${i + 1} failed:`, result.data);
+                images.push(null); // Push null for failed generations
+                break;
+            }
+        }
+    }
+    
+    return images.filter(img => img !== null); // Return only successful images
+}
 // Generate tattoo endpoint
 app.post('/api/generate', authenticateToken, upload.single('image'), async (req, res) => {
     try {
@@ -312,6 +373,95 @@ app.post('/api/generate', authenticateToken, upload.single('image'), async (req,
         }
 
         // Convert image buffer to base64
+        const imageBase64 = image.buffer.toString('base64');
+        
+        // Build the full prompt with styles
+        let fullPrompt = prompt;
+        if (styles && styles.length > 0) {
+            fullPrompt = `${styles.join(', ')} style tattoo: ${prompt}`;
+        }
+        
+        // Generate 4 variations with different seeds
+        console.log('Generating 4 tattoo variations...');
+        const images = await generateMultipleVariations(
+            fullPrompt, 
+            imageBase64, 
+            process.env.FLUX_API_KEY
+        );
+        
+        if (images.length === 0) {
+            return res.status(500).json({ error: 'All generation attempts failed' });
+        }
+        
+        console.log(`Successfully generated ${images.length} variations`);
+        res.json({ images });
+
+    } catch (error) {
+        console.error('Generation error:', error.response?.data || error.message);
+        
+        if (error.response?.status === 401) {
+            return res.status(401).json({ error: 'Invalid Flux API key' });
+        }
+        
+        if (error.response?.status === 429) {
+            return res.status(429).json({ error: 'Rate limit exceeded. Please try again later.' });
+        }
+        
+        res.status(500).json({ error: 'Failed to generate tattoo' });
+    }
+});
+
+// Alternative: Generate 4 variations with different seeds
+async function generateMultipleVariations(prompt, imageBase64, apiKey) {
+    const promises = [];
+    
+    for (let i = 0; i < 4; i++) {
+        promises.push(
+            axios.post(
+                'https://api.bfl.ai/v1/flux-kontext-pro',
+                {
+                    prompt: prompt,
+                    input_image: imageBase64,
+                    seed: Math.floor(Math.random() * 1000000),
+                    output_format: 'jpeg',
+                    safety_tolerance: 2
+                },
+                {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-key': apiKey
+                    }
+                }
+            )
+        );
+    }
+    
+    const submissions = await Promise.all(promises);
+    const taskIds = submissions.map(r => r.data.id);
+    
+    // Poll all tasks
+    const images = [];
+    for (const taskId of taskIds) {
+        let attempts = 0;
+        while (attempts < 60) {
+            attempts++;
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            const result = await axios.get(
+                `https://api.bfl.ai/v1/get_result?id=${taskId}`,
+                { headers: { 'x-key': apiKey } }
+            );
+            
+            if (result.data.status === 'Ready') {
+                images.push(result.data.result.sample);
+                break;
+            }
+        }
+    }
+    
+    return images;
+}
+// Convert image buffer to base64
         const imageBase64 = image.buffer.toString('base64');
         
         // Build the full prompt with styles

@@ -256,25 +256,27 @@ if (drawing.currentPath.length > 1) {
 },
     
     updateMask: () => {
-        // Clear mask to black
+    // Create mask with WHITE background (preserve)
+    drawing.maskCtx.fillStyle = 'white';
+    drawing.maskCtx.fillRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
+    
+    // Draw BLACK area where tattoo should go (inpaint)
+    if (drawing.currentPathCoords && drawing.currentPathCoords.length > 0) {
         drawing.maskCtx.fillStyle = 'black';
-        drawing.maskCtx.fillRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
+        drawing.maskCtx.beginPath();
+        drawing.maskCtx.moveTo(drawing.currentPathCoords[0].x, drawing.currentPathCoords[0].y);
         
-        // Draw white area for tattoo placement
-        if (drawing.selectedArea && drawing.selectedArea.length > 0) {
-            const scaleX = drawing.maskCanvas.width / drawing.canvas.width;
-            const scaleY = drawing.maskCanvas.height / drawing.canvas.height;
-            
-            drawing.maskCtx.fillStyle = 'white';
-            drawing.maskCtx.beginPath();
-            drawing.maskCtx.moveTo(drawing.selectedArea[0].x * scaleX, drawing.selectedArea[0].y * scaleY);
-            for (let i = 1; i < drawing.selectedArea.length; i++) {
-                drawing.maskCtx.lineTo(drawing.selectedArea[i].x * scaleX, drawing.selectedArea[i].y * scaleY);
-            }
-            drawing.maskCtx.closePath();
-            drawing.maskCtx.fill();
+        for (let i = 1; i < drawing.currentPathCoords.length; i++) {
+            drawing.maskCtx.lineTo(drawing.currentPathCoords[i].x, drawing.currentPathCoords[i].y);
         }
-    },
+        
+        drawing.maskCtx.closePath();
+        drawing.maskCtx.fill();
+    }
+    
+    // Debug log
+    console.log('Mask updated - black area is where tattoo will be placed');
+},
     
     clearCanvas: () => {
     drawing.ctx.clearRect(0, 0, drawing.canvas.width, drawing.canvas.height);

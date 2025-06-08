@@ -392,6 +392,8 @@ document.addEventListener('click', async (e) => {
                 },
                 body: formData
             });
+            const data = await response.json();
+console.log('API Response:', data); // ADD THIS LINE
             
             if (!response.ok) {
                 const error = await response.json();

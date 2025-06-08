@@ -171,61 +171,79 @@ if (drawing.currentPath.length > 1) {
     },
     
     stopDrawing: () => {
-        if (!drawing.isDrawing) return;
-        drawing.isDrawing = false;
-        
-        // Check if path is closed (last point near first point)
-        if (drawing.currentPath.length > 10) {
-            const first = drawing.currentPath[0];
-            const last = drawing.currentPath[drawing.currentPath.length - 1];
-            const distance = Math.sqrt(Math.pow(last.x - first.x, 2) + Math.pow(last.y - first.y, 2));
-            
-            if (distance < 30) { // If closed
-                // Save the selected area (only one allowed)
-                drawing.selectedArea = [...drawing.currentPath];
-                drawing.updateMask();
-                // Save the selected area (only one allowed)
-                drawing.selectedArea = [...drawing.currentPath];
-                drawing.updateMask();
-                
-                // Show continue button
-                const continueBtn = document.getElementById('continueBtn');
-                if (continueBtn) continueBtn.style.display = 'block';
-            } else {
-                alert('Please close the shape by drawing near the starting point');
-            }
-        }
-        
-        drawing.currentPath = [];
-        drawing.redrawCanvas();
-    },
+    if (!drawing.isDrawing) return;
+    drawing.isDrawing = false;
     
-    redrawCanvas: () => {
-        // Always start fresh with the original image
-        drawing.ctx.clearRect(0, 0, drawing.canvas.width, drawing.canvas.height);
-        drawing.ctx.drawImage(drawing.originalImage, 0, 0, drawing.canvas.width, drawing.canvas.height);
+    // Check if path is closed (last point near first point)
+    if (drawing.currentPath.length > 10) {
+        const first = drawing.currentPath[0];
+        const last = drawing.currentPath[drawing.currentPath.length - 1];
+        const distance = Math.sqrt(Math.pow(last.x - first.x, 2) + Math.pow(last.y - first.y, 2));
         
-        // Draw selected area if exists
-        if (drawing.selectedArea && drawing.selectedArea.length > 0) {
-            drawing.ctx.save();
-// Luminescent fill
-drawing.ctx.fillStyle = 'rgba(99, 102, 241, 0.2)';
-drawing.ctx.strokeStyle = '#818cf8';
-drawing.ctx.lineWidth = 3;
-drawing.ctx.shadowColor = '#6366f1';
-drawing.ctx.shadowBlur = 15;
+        if (distance < 30) { // If closed
+            // Save the path coordinates for drawing
+            drawing.currentPathCoords = [...drawing.currentPath];
+            drawing.updateMask();
             
-            drawing.ctx.beginPath();
-            drawing.ctx.moveTo(drawing.selectedArea[0].x, drawing.selectedArea[0].y);
-            for (let i = 1; i < drawing.selectedArea.length; i++) {
-                drawing.ctx.lineTo(drawing.selectedArea[i].x, drawing.selectedArea[i].y);
-            }
-            drawing.ctx.closePath();
-            drawing.ctx.fill();
-            drawing.ctx.stroke();
-            drawing.ctx.restore();
+            // Save the mask as base64 image for API
+            drawing.selectedArea = drawing.maskCanvas.toDataURL('image/png');
+            
+            // Show continue button
+            const continueBtn = document.getElementById('continueBtn');
+            if (continueBtn) continueBtn.style.display = 'block';
+        } else {
+            alert('Please close the shape by drawing near the starting point');
         }
-    },
+    }
+    
+    drawing.currentPath = [];
+    drawing.redrawCanvas();
+},
+    redrawCanvas: () => {
+    // Always start fresh with the original image
+    drawing.ctx.clearRect(0, 0, drawing.canvas.width, drawing.canvas.height);
+    drawing.ctx.drawImage(drawing.originalImage, 0, 0, drawing.canvas.width, drawing.canvas.height);
+    
+    // Draw selected area if exists (using coordinates, not the mask)
+    if (drawing.currentPathCoords && drawing.currentPathCoords.length > 0) {
+        drawing.ctx.save();
+        
+        // Luminescent fill
+        drawing.ctx.fillStyle = 'rgba(99, 102, 241, 0.2)';
+        drawing.ctx.strokeStyle = '#818cf8';
+        drawing.ctx.lineWidth = 3;
+        drawing.ctx.shadowColor = '#6366f1';
+        drawing.ctx.shadowBlur = 15;
+        
+        drawing.ctx.beginPath();
+        drawing.ctx.moveTo(drawing.currentPathCoords[0].x, drawing.currentPathCoords[0].y);
+        for (let i = 1; i < drawing.currentPathCoords.length; i++) {
+            drawing.ctx.lineTo(drawing.currentPathCoords[i].x, drawing.currentPathCoords[i].y);
+        }
+        drawing.ctx.closePath();
+        drawing.ctx.fill();
+        drawing.ctx.stroke();
+        drawing.ctx.restore();
+    }
+    
+    // Also draw the current path being drawn (if any)
+    if (drawing.currentPath && drawing.currentPath.length > 0) {
+        drawing.ctx.save();
+        
+        // Current drawing style (slightly different to show it's in progress)
+        drawing.ctx.strokeStyle = '#a5b4fc';
+        drawing.ctx.lineWidth = 2;
+        drawing.ctx.setLineDash([5, 5]);
+        
+        drawing.ctx.beginPath();
+        drawing.ctx.moveTo(drawing.currentPath[0].x, drawing.currentPath[0].y);
+        for (let i = 1; i < drawing.currentPath.length; i++) {
+            drawing.ctx.lineTo(drawing.currentPath[i].x, drawing.currentPath[i].y);
+        }
+        drawing.ctx.stroke();
+        drawing.ctx.restore();
+    }
+},
     
     updateMask: () => {
         // Clear mask to black
@@ -249,14 +267,16 @@ drawing.ctx.shadowBlur = 15;
     },
     
     clearCanvas: () => {
-        drawing.selectedArea = null;
-        drawing.currentPath = [];
-        drawing.redrawCanvas();
-        drawing.updateMask();
-        // Hide continue button
-        const continueBtn = document.getElementById('continueBtn');
-        if (continueBtn) continueBtn.style.display = 'none';
-    },
+    drawing.ctx.clearRect(0, 0, drawing.canvas.width, drawing.canvas.height);
+    drawing.maskCtx.clearRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
+    drawing.currentPath = [];
+    drawing.selectedArea = null;
+    drawing.currentPathCoords = null; // Add this
+    drawing.redrawCanvas();
+    
+    const continueBtn = document.getElementById('continueBtn');
+    if (continueBtn) continueBtn.style.display = 'none';
+},
     
     getMaskDataURL: () => {
         return drawing.maskCanvas.toDataURL('image/png');

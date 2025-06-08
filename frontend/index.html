@@ -409,6 +409,12 @@ if (typeof drawing.selectedArea !== 'string') {
             
             // Hide loading
             document.getElementById('loadingOverlay').style.display = 'none';
+            const data = await response.json();
+console.log('API Response:', data);
+console.log('Generated image URLs:', data.images);
+
+// Store generated images
+STATE.generatedImages = data.images;
             
             // Store generated images
             STATE.generatedImages = data.images;

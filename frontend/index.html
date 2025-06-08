@@ -383,7 +383,14 @@ document.addEventListener('click', async (e) => {
             formData.append('prompt', userText);
             formData.append('styles', JSON.stringify(selectedStyles));
             formData.append('mask', drawing.selectedArea);
-            
+
+            console.log('Drawing selectedArea type:', typeof drawing.selectedArea);
+console.log('Drawing selectedArea preview:', drawing.selectedArea);
+
+// If it's not a string, we need to extract the actual image data
+if (typeof drawing.selectedArea !== 'string') {
+    console.error('Mask is not a string!', drawing.selectedArea);
+}
             // Make API call
             const response = await fetch(`${CONFIG.API_URL}/generate`, {
     method: 'POST',

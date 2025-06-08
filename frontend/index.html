@@ -386,12 +386,9 @@ document.addEventListener('click', async (e) => {
             
             // Make API call
             const response = await fetch(`${CONFIG.API_URL}/generate`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${STATE.token}`
-                },
-                body: formData
-            });
+    method: 'POST',
+    body: formData
+});
             
             // Check response status FIRST
             if (!response.ok) {

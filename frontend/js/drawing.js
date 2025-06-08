@@ -17,6 +17,16 @@ const drawing = {
         // Create hidden mask canvas for Flux API
         drawing.maskCanvas = document.createElement('canvas');
         drawing.maskCtx = drawing.maskCanvas.getContext('2d');
+        // In updateMask function
+console.log('Mask canvas data URL preview:', drawing.maskCanvas.toDataURL().substring(0, 100));
+
+// Check if mask is actually white where drawn
+const imageData = drawing.maskCtx.getImageData(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
+let whitePixels = 0;
+for(let i = 0; i < imageData.data.length; i += 4) {
+    if(imageData.data[i] === 255) whitePixels++;
+}
+console.log('White pixels in mask:', whitePixels);
         
         // Reset
         drawing.currentPath = [];

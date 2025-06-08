@@ -276,7 +276,14 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
         if (!mask) {
             return res.status(400).json({ error: 'Mask is required - please draw the tattoo area' });
         }
+// Add these debug logs after extracting the mask
+console.log('Mask data type:', typeof mask);
+console.log('Mask starts with:', mask.substring(0, 50));
+console.log('Mask length:', mask.length);
 
+// Convert mask to base64 (it's already in data:image/png;base64,... format)
+const maskBase64 = mask.split(',')[1];
+console.log('Mask base64 length:', maskBase64 ? maskBase64.length : 'No base64 data');
         // Check if Flux API key is configured
         if (!process.env.FLUX_API_KEY) {
             console.log('Flux API not configured, returning mock data');

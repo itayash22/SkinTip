@@ -372,6 +372,25 @@ document.addEventListener('click', async (e) => {
             return;
         }
         
+        // Debug the mask BEFORE sending
+        console.log('=== MASK DEBUG ===');
+        console.log('Drawing selectedArea type:', typeof drawing.selectedArea);
+        console.log('STATE.currentMask type:', typeof STATE.currentMask);
+        const maskToSend = STATE.currentMask || drawing.selectedArea;
+        console.log('Mask being sent (first 100 chars):', maskToSend.substring(0, 100));
+        
+        // Create a debug preview of the mask
+        const debugImg = document.createElement('img');
+        debugImg.src = maskToSend;
+        debugImg.style.width = '200px';
+        debugImg.style.border = '2px solid red';
+        debugImg.style.position = 'fixed';
+        debugImg.style.bottom = '10px';
+        debugImg.style.right = '10px';
+        debugImg.style.zIndex = '9999';
+        debugImg.title = 'This is the mask being sent';
+        document.body.appendChild(debugImg);
+        
         // Show loading
         document.getElementById('loadingOverlay').style.display = 'flex';
         document.getElementById('loadingText').textContent = 'Generating your tattoo designs (this may take 30-60 seconds)...';
@@ -382,20 +401,15 @@ document.addEventListener('click', async (e) => {
             formData.append('image', STATE.currentImage);
             formData.append('prompt', userText);
             formData.append('styles', JSON.stringify(selectedStyles));
-            formData.append('mask', STATE.currentMask || drawing.selectedArea);
-
-            console.log('Drawing selectedArea type:', typeof drawing.selectedArea);
-console.log('Drawing selectedArea preview:', drawing.selectedArea);
-
-// If it's not a string, we need to extract the actual image data
-if (typeof drawing.selectedArea !== 'string') {
-    console.error('Mask is not a string!', drawing.selectedArea);
-}
+            formData.append('mask', maskToSend);
+            
+            console.log('Sending request to:', `${CONFIG.API_URL}/generate`);
+            
             // Make API call
             const response = await fetch(`${CONFIG.API_URL}/generate`, {
-    method: 'POST',
-    body: formData
-});
+                method: 'POST',
+                body: formData
+            });
             
             // Check response status FIRST
             if (!response.ok) {
@@ -403,21 +417,24 @@ if (typeof drawing.selectedArea !== 'string') {
                 throw new Error(error.error || 'Failed to generate tattoo');
             }
             
-            // Then read the data
+            // Read the data ONLY ONCE
             const data = await response.json();
-            console.log('API Response:', data);
+            console.log('=== API RESPONSE ===');
+            console.log('Full response:', data);
+            console.log('Generated image URLs:', data.images);
             
             // Hide loading
             document.getElementById('loadingOverlay').style.display = 'none';
-            const data = await response.json();
-console.log('API Response:', data);
-console.log('Generated image URLs:', data.images);
-
-// Store generated images
-STATE.generatedImages = data.images;
             
             // Store generated images
             STATE.generatedImages = data.images;
+            
+            // Debug: Check if images are different from original
+            if (data.images && data.images.length > 0) {
+                console.log('First generated image URL:', data.images[0]);
+                console.log('Opening first image in new tab to verify...');
+                window.open(data.images[0], '_blank');
+            }
             
             // Display results
             document.getElementById('resultsSection').style.display = 'block';
@@ -429,22 +446,33 @@ STATE.generatedImages = data.images;
             // Scroll to results
             document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
             
-            
             // Display the generated images
-const resultsGrid = document.querySelector('.results-grid');
-resultsGrid.innerHTML = STATE.generatedImages.map((imageUrl, index) => `
-    <div class="result-item">
-        <img src="${imageUrl}" alt="Generated tattoo ${index + 1}">
-        <div class="result-actions">
-            <button class="btn btn-sm btn-outline" onclick="window.open('${imageUrl}', '_blank')">View Full Size</button>
-        </div>
-    </div>
-`).join('');
+            const resultsGrid = document.querySelector('.results-grid');
+            resultsGrid.innerHTML = STATE.generatedImages.map((imageUrl, index) => `
+                <div class="result-item">
+                    <img src="${imageUrl}" alt="Generated tattoo ${index + 1}">
+                    <div class="result-actions">
+                        <button class="btn btn-sm btn-outline" onclick="window.open('${imageUrl}', '_blank')">View Full Size</button>
+                    </div>
+                </div>
+            `).join('');
+            
+            // Remove debug image after 10 seconds
+            setTimeout(() => {
+                if (debugImg.parentNode) {
+                    debugImg.parentNode.removeChild(debugImg);
+                }
+            }, 10000);
             
         } catch (error) {
             console.error('Generation error:', error);
             document.getElementById('loadingOverlay').style.display = 'none';
-            alert(`Error: ${error.message}\n\nPlease make sure your backend is running and your API key is configured.`);
+            alert(`Error: ${error.message}\n\nCheck the console for more details.`);
+            
+            // Remove debug image on error
+            if (debugImg && debugImg.parentNode) {
+                debugImg.parentNode.removeChild(debugImg);
+            }
         }
     }
 });

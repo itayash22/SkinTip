@@ -199,6 +199,7 @@ app.post('/api/auth/login', async (req, res) => {
 
 // Helper function to generate multiple variations
 // Helper function to generate multiple variations
+// Helper function to generate multiple variations
 async function generateMultipleVariations(prompt, imageBase64, maskBase64, apiKey) {
     const promises = [];
     
@@ -206,11 +207,11 @@ async function generateMultipleVariations(prompt, imageBase64, maskBase64, apiKe
     for (let i = 0; i < 4; i++) {
         promises.push(
             axios.post(
-                'https://api.bfl.ai/v1/flux-fill-pro', // Changed from flux-kontext-pro
+                'https://api.bfl.ai/v1/flux-pro-1.0-fill', // CORRECT ENDPOINT
                 {
                     prompt: prompt,
                     image: imageBase64,
-                    mask: maskBase64, // Now we properly use the mask!
+                    mask: maskBase64,
                     seed: Math.floor(Math.random() * 1000000),
                     output_format: 'jpeg',
                     safety_tolerance: 2
@@ -223,8 +224,7 @@ async function generateMultipleVariations(prompt, imageBase64, maskBase64, apiKe
                 }
             )
         );
-    }
-    
+    }    
     // Submit all requests at once
     const submissions = await Promise.all(promises);
     const taskIds = submissions.map(r => r.data.id);

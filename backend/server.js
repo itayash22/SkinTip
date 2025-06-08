@@ -28,16 +28,18 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// Remove the trust proxy setting
+app.set('trust proxy', false);  // or remove this line entirely
 
-// Rate limiting
+// Update rate limiter
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 100, // limit each IP to 100 requests per windowMs
-    standardHeaders: 'draft-7',
+    standardHeaders: true,
     legacyHeaders: false,
-    handler: (req, res) => {
-        res.status(429).json({ error: 'Too many requests, please try again later.' });
-    }
+    // Remove trustProxy setting - let it use defaults
+    skipFailedRequests: false,
+    skipSuccessfulRequests: false
 });
 app.use('/api/', limiter);
 

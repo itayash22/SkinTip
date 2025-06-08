@@ -360,6 +360,8 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
         fullPrompt += " inked on the skin, realistic tattoo on human skin texture, professional tattoo with proper shading, natural skin tone around the tattoo";
         
         console.log('Final prompt:', fullPrompt);
+        fullPrompt = "solid bright red color";  // This should make the masked area bright red
+console.log('TEST PROMPT:', fullPrompt);
         
         // Generate variations
         try {

@@ -188,7 +188,17 @@
                 </div>
 
                 <div class="filters">
-                    <input type="text" id="locationFilter" placeholder="Filter by location..." class="filter-input">
+                    <select id="locationFilter" class="filter-select">
+    <option value="">All Locations</option>
+    <option value="Los Angeles, CA">Los Angeles, CA</option>
+    <option value="New York, NY">New York, NY</option>
+    <option value="Austin, TX">Austin, TX</option>
+    <option value="Miami, FL">Miami, FL</option>
+    <option value="Seattle, WA">Seattle, WA</option>
+    <option value="Denver, CO">Denver, CO</option>
+    <option value="Portland, OR">Portland, OR</option>
+    <option value="Chicago, IL">Chicago, IL</option>
+</select>
                     <select id="styleFilter" class="filter-select">
                         <option value="">All Styles</option>
                         <option value="Traditional">Traditional</option>
@@ -573,12 +583,12 @@
             
             // Filter artists
             function filterArtists() {
-                const locationFilter = document.getElementById('locationFilter').value.toLowerCase();
+                const locationFilter = document.getElementById('locationFilter').value;
                 const styleFilter = document.getElementById('styleFilter').value;
                 
                 const filtered = allArtists.filter(artist => {
                     const matchesLocation = !locationFilter || 
-                        artist.location.toLowerCase().includes(locationFilter);
+    artist.location === locationFilter;
                     const matchesStyle = !styleFilter || 
                         artist.styles.includes(styleFilter);
                     

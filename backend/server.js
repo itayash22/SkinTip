@@ -32,7 +32,10 @@ app.use(express.urlencoded({ extended: true }));
 // Rate limiting
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100 // limit each IP to 100 requests per windowMs
+    max: 100, // limit each IP to 100 requests per windowMs
+    trustProxy: 'loopback', // Trust only loopback proxy
+    standardHeaders: true,
+    legacyHeaders: false,
 });
 app.use('/api/', limiter);
 
@@ -198,6 +201,7 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // Helper function to generate multiple variations
+// Helper function to generate multiple variations
 async function generateMultipleVariations(prompt, imageBase64, maskBase64, apiKey) {
     const promises = [];
     
@@ -208,13 +212,13 @@ async function generateMultipleVariations(prompt, imageBase64, maskBase64, apiKe
                 'https://api.bfl.ai/v1/flux-pro-1.0-fill',
                 {
                     prompt: prompt,
-                    image: `data:image/jpeg;base64,${imageBase64}`, // Try with data URI format
-                    mask: `data:image/png;base64,${maskBase64}`,   // Try with data URI format
+                    image: imageBase64,  // Already has data:image prefix from frontend
+                    mask: maskBase64,    // Already has data:image prefix from frontend
                     seed: Math.floor(Math.random() * 1000000),
                     output_format: 'jpeg',
                     safety_tolerance: 2,
-                    guidance_scale: 30,  // Add this for better adherence
-                    num_inference_steps: 50  // Add this for quality
+                    guidance_scale: 30,
+                    num_inference_steps: 50
                 },
                 {
                     headers: {
@@ -225,8 +229,7 @@ async function generateMultipleVariations(prompt, imageBase64, maskBase64, apiKe
             )
         );
     }
-    
-    // Rest remains the same...    // Submit all requests at once
+     // Submit all requests at once
     const submissions = await Promise.all(promises);
     const taskIds = submissions.map(r => r.data.id);
     console.log('Submitted 4 variations with masks, task IDs:', taskIds);
@@ -266,22 +269,21 @@ async function generateMultipleVariations(prompt, imageBase64, maskBase64, apiKe
 // Generate tattoo endpoint
 app.post('/api/generate', upload.single('image'), async (req, res) => {
     try {
+        console.log('Generate endpoint called');
+        
         const { prompt, mask } = req.body;
         const styles = req.body.styles ? JSON.parse(req.body.styles) : [];
         const image = req.file;
-
+        
+        // Validate inputs
         if (!image || !prompt) {
             return res.status(400).json({ error: 'Image and prompt are required' });
         }
-
+        
         if (!mask) {
             return res.status(400).json({ error: 'Mask is required - please draw the tattoo area' });
         }
-
-        // Debug logs
-        console.log('Mask type:', typeof mask);
-        console.log('Mask preview:', mask.substring(0, 100));
-
+        
         // Check if Flux API key is configured
         if (!process.env.FLUX_API_KEY) {
             console.log('Flux API not configured, returning mock data');
@@ -294,56 +296,85 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
                 ]
             });
         }
-
-        // Convert image buffer to base64
+        
+        // Convert image buffer to base64 (just the data, no prefix)
         const imageBase64 = image.buffer.toString('base64');
         
-        // Handle mask - try different approaches
+        // Extract mask base64 (remove the data URL prefix if present)
         let maskBase64;
-        
-        // If mask is a data URL (data:image/png;base64,xxxxx)
         if (mask.startsWith('data:')) {
             maskBase64 = mask.split(',')[1];
         } else {
-            // If it's already base64
             maskBase64 = mask;
         }
         
-        // Remove any whitespace
-        maskBase64 = maskBase64.replace(/\s/g, '');
+        // Validate base64 data
+        if (!imageBase64 || imageBase64.length < 100) {
+            return res.status(400).json({ error: 'Invalid image data' });
+        }
+        
+        if (!maskBase64 || maskBase64.length < 100) {
+            return res.status(400).json({ error: 'Invalid mask data' });
+        }
         
         console.log('Image base64 length:', imageBase64.length);
         console.log('Mask base64 length:', maskBase64.length);
         
-        // Build the prompt for inpainting
-        let fullPrompt = "tattoo design";
+        // Build a better prompt for tattoo generation
+        let fullPrompt = "";
+        
+        // Add style information
         if (styles.length > 0) {
-            fullPrompt = `${styles.join(' and ')} style tattoo`;
+            fullPrompt = `${styles.join(' and ')} style `;
         }
-        if (prompt) {
+        
+        // Add the main subject
+        fullPrompt += `tattoo design`;
+        
+        // Add the specific request
+        if (prompt && prompt.trim()) {
             fullPrompt += ` of ${prompt}`;
         }
-        fullPrompt += ", high quality, professional tattoo art, on skin";
         
-        // Generate 4 variations with masks
-        console.log('Generating tattoo with prompt:', fullPrompt);
+        // Add quality descriptors
+        fullPrompt += ", high quality, professional tattoo art, realistic on skin, detailed shading";
         
-        const images = await generateMultipleVariations(
-            fullPrompt, 
-            imageBase64,
-            maskBase64,
-            process.env.FLUX_API_KEY
-        );
+        console.log('Final prompt:', fullPrompt);
         
-        if (images.length === 0) {
-            return res.status(500).json({ error: 'All generation attempts failed' });
+        // Generate 4 variations
+        try {
+            const images = await generateMultipleVariations(
+                fullPrompt, 
+                imageBase64,  // Just base64, no prefix
+                maskBase64,   // Just base64, no prefix
+                process.env.FLUX_API_KEY
+            );
+            
+            if (!images || images.length === 0) {
+                return res.status(500).json({ error: 'No images were generated' });
+            }
+            
+            console.log(`Successfully generated ${images.length} tattoo variations`);
+            res.json({ images });
+            
+        } catch (generationError) {
+            console.error('Generation failed:', generationError.response?.data || generationError.message);
+            
+            // More specific error messages
+            if (generationError.response?.data?.detail) {
+                const detail = generationError.response.data.detail;
+                if (typeof detail === 'string') {
+                    return res.status(500).json({ error: detail });
+                } else if (Array.isArray(detail) && detail[0]?.msg) {
+                    return res.status(500).json({ error: detail[0].msg });
+                }
+            }
+            
+            throw generationError;
         }
         
-        console.log(`Successfully generated ${images.length} variations`);
-        res.json({ images });
-
     } catch (error) {
-        console.error('Generation error:', error.response?.data || error.message);
+        console.error('Endpoint error:', error);
         
         if (error.response?.status === 401) {
             return res.status(401).json({ error: 'Invalid Flux API key' });
@@ -353,7 +384,10 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
             return res.status(429).json({ error: 'Rate limit exceeded. Please try again later.' });
         }
         
-        res.status(500).json({ error: 'Failed to generate tattoo' });
+        res.status(500).json({ 
+            error: 'Failed to generate tattoo',
+            details: error.message 
+        });
     }
 });
 

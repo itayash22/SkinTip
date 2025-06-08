@@ -263,7 +263,7 @@ async function generateMultipleVariations(prompt, imageBase64, apiKey) {
 // Generate tattoo endpoint
 app.post('/api/generate', upload.single('image'), async (req, res) => {
     try {
-       const { prompt, mask } = req.body;
+        const { prompt, mask } = req.body;
         const styles = req.body.styles ? JSON.parse(req.body.styles) : [];
         const image = req.file;
 
@@ -274,7 +274,6 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
         // Check if Flux API key is configured
         if (!process.env.FLUX_API_KEY) {
             console.log('Flux API not configured, returning mock data');
-            // Return mock data for testing
             return res.json({
                 images: [
                     'https://picsum.photos/512/512?random=1',
@@ -288,16 +287,42 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
         // Convert image buffer to base64
         const imageBase64 = image.buffer.toString('base64');
         
-        // Build the full prompt with styles
-        let fullPrompt = prompt;
-        if (styles && styles.length > 0) {
-            fullPrompt = `${styles.join(', ')} style tattoo: ${prompt}`;
-        }
+        // Build a context-aware prompt for Flux Kontext Pro
+        const buildKontextPrompt = (userPrompt, selectedStyles) => {
+            // Base instruction for adding tattoo
+            let kontextPrompt = "Add a tattoo design ";
+            
+            // Add location if mentioned in the prompt
+            if (userPrompt.toLowerCase().includes('arm')) {
+                kontextPrompt += "on the arm ";
+            } else if (userPrompt.toLowerCase().includes('back')) {
+                kontextPrompt += "on the back ";
+            } else if (userPrompt.toLowerCase().includes('chest')) {
+                kontextPrompt += "on the chest ";
+            } else if (userPrompt.toLowerCase().includes('leg')) {
+                kontextPrompt += "on the leg ";
+            } else {
+                kontextPrompt += "on the visible skin area ";
+            }
+            
+            // Add style specifications
+            if (selectedStyles.length > 0) {
+                kontextPrompt += `in ${selectedStyles.join(' and ')} style `;
+            }
+            
+            // Add the user's description
+            kontextPrompt += `depicting ${userPrompt}. `;
+            
+            // Important: Preserve everything else
+            kontextPrompt += "Keep the person, clothing, background, and all other elements exactly the same. Only add the tattoo design on the skin, making it look realistic and naturally integrated with the skin tone and lighting.";
+            
+            return kontextPrompt;
+        };
         
-        // Generate 4 variations with different seeds
+        // Generate 4 variations with different prompts/seeds
         console.log('Generating 4 tattoo variations...');
         const images = await generateMultipleVariations(
-            fullPrompt, 
+            buildKontextPrompt(prompt, styles), 
             imageBase64, 
             process.env.FLUX_API_KEY
         );

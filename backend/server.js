@@ -263,7 +263,8 @@ async function generateMultipleVariations(prompt, imageBase64, apiKey) {
 // Generate tattoo endpoint
 app.post('/api/generate', upload.single('image'), async (req, res) => {
     try {
-        const { prompt, styles, mask } = req.body;
+       const { prompt, mask } = req.body;
+        const styles = req.body.styles ? JSON.parse(req.body.styles) : [];
         const image = req.file;
 
         if (!image || !prompt) {

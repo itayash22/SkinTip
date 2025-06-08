@@ -158,6 +158,56 @@ app.post('/api/auth/login', async (req, res) => {
         if (!email || !password) {
             return res.status(400).json({ error: 'Email and password required' });
         }
+// Alternative: Generate 4 variations with different seeds
+async function generateMultipleVariations(prompt, imageBase64, apiKey) {
+    const promises = [];
+    
+    for (let i = 0; i < 4; i++) {
+        promises.push(
+            axios.post(
+                'https://api.bfl.ai/v1/flux-kontext-pro',
+                {
+                    prompt: prompt,
+                    input_image: imageBase64,
+                    seed: Math.floor(Math.random() * 1000000),
+                    output_format: 'jpeg',
+                    safety_tolerance: 2
+                },
+                {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-key': apiKey
+                    }
+                }
+            )
+        );
+    }
+    
+    const submissions = await Promise.all(promises);
+    const taskIds = submissions.map(r => r.data.id);
+    
+    // Poll all tasks
+    const images = [];
+    for (const taskId of taskIds) {
+        let attempts = 0;
+        while (attempts < 60) {
+            attempts++;
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            const result = await axios.get(
+                `https://api.bfl.ai/v1/get_result?id=${taskId}`,
+                { headers: { 'x-key': apiKey } }
+            );
+            
+            if (result.data.status === 'Ready') {
+                images.push(result.data.result.sample);
+                break;
+            }
+        }
+    }
+    
+    return images;
+}
 
         // Get user
         const { data: user, error } = await supabase
@@ -197,15 +247,7 @@ app.post('/api/auth/login', async (req, res) => {
         res.status(500).json({ error: 'Login failed' });
     }
 });
-// Generate tattoo endpoint
-app.post('/api/generate', authenticateToken, upload.single('image'), async (req, res) => {
-    try {
-        const { prompt, styles, mask } = req.body;
-        const image = req.file;
 
-        if (!image || !prompt) {
-            return res.status(400).json({ error: 'Image and prompt are required' });
-        }
 
         // Check if Flux API key is configured
         if (!process.env.FLUX_API_KEY) {
@@ -348,15 +390,7 @@ async function generateMultipleVariations(prompt, imageBase64, apiKey) {
     
     return images.filter(img => img !== null); // Return only successful images
 }
-// Generate tattoo endpoint
-app.post('/api/generate', authenticateToken, upload.single('image'), async (req, res) => {
-    try {
-        const { prompt, styles, mask } = req.body;
-        const image = req.file;
 
-        if (!image || !prompt) {
-            return res.status(400).json({ error: 'Image and prompt are required' });
-        }
 
         // Check if Flux API key is configured
         if (!process.env.FLUX_API_KEY) {
@@ -411,56 +445,6 @@ app.post('/api/generate', authenticateToken, upload.single('image'), async (req,
     }
 });
 
-// Alternative: Generate 4 variations with different seeds
-async function generateMultipleVariations(prompt, imageBase64, apiKey) {
-    const promises = [];
-    
-    for (let i = 0; i < 4; i++) {
-        promises.push(
-            axios.post(
-                'https://api.bfl.ai/v1/flux-kontext-pro',
-                {
-                    prompt: prompt,
-                    input_image: imageBase64,
-                    seed: Math.floor(Math.random() * 1000000),
-                    output_format: 'jpeg',
-                    safety_tolerance: 2
-                },
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-key': apiKey
-                    }
-                }
-            )
-        );
-    }
-    
-    const submissions = await Promise.all(promises);
-    const taskIds = submissions.map(r => r.data.id);
-    
-    // Poll all tasks
-    const images = [];
-    for (const taskId of taskIds) {
-        let attempts = 0;
-        while (attempts < 60) {
-            attempts++;
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            
-            const result = await axios.get(
-                `https://api.bfl.ai/v1/get_result?id=${taskId}`,
-                { headers: { 'x-key': apiKey } }
-            );
-            
-            if (result.data.status === 'Ready') {
-                images.push(result.data.result.sample);
-                break;
-            }
-        }
-    }
-    
-    return images;
-}
 // Convert image buffer to base64
         const imageBase64 = image.buffer.toString('base64');
         

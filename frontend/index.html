@@ -416,16 +416,17 @@ document.addEventListener('click', async (e) => {
             // Scroll to results
             document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
             
+            
             // Display the generated images
-            const resultsGrid = document.querySelector('.results-grid');
-            resultsGrid.innerHTML = STATE.generatedImages.map((imageUrl, index) => `
-                <div class="result-item">
-                    <img src="${imageUrl}" alt="Generated tattoo ${index + 1}" crossorigin="anonymous">
-                    <div class="result-actions">
-                        <button class="btn btn-sm btn-outline" onclick="window.open('${imageUrl}', '_blank')">View Full Size</button>
-                    </div>
-                </div>
-            `).join('');
+const resultsGrid = document.querySelector('.results-grid');
+resultsGrid.innerHTML = STATE.generatedImages.map((imageUrl, index) => `
+    <div class="result-item">
+        <img src="${imageUrl}" alt="Generated tattoo ${index + 1}">
+        <div class="result-actions">
+            <button class="btn btn-sm btn-outline" onclick="window.open('${imageUrl}', '_blank')">View Full Size</button>
+        </div>
+    </div>
+`).join('');
             
         } catch (error) {
             console.error('Generation error:', error);

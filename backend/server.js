@@ -33,9 +33,11 @@ app.use(express.urlencoded({ extended: true }));
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 100, // limit each IP to 100 requests per windowMs
-    trustProxy: 'loopback', // Trust only loopback proxy
-    standardHeaders: true,
+    standardHeaders: 'draft-7',
     legacyHeaders: false,
+    handler: (req, res) => {
+        res.status(429).json({ error: 'Too many requests, please try again later.' });
+    }
 });
 app.use('/api/', limiter);
 
@@ -200,70 +202,81 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
+
 // Helper function to generate multiple variations
 // Helper function to generate multiple variations
 async function generateMultipleVariations(prompt, imageBase64, maskBase64, apiKey) {
     const promises = [];
     
-    // Create 4 requests with different seeds
-    for (let i = 0; i < 4; i++) {
-        promises.push(
-            axios.post(
-                'https://api.bfl.ai/v1/flux-pro-1.0-fill',
-                {
-                    prompt: prompt,
-                    image: imageBase64,  // Already has data:image prefix from frontend
-                    mask: maskBase64,    // Already has data:image prefix from frontend
-                    seed: Math.floor(Math.random() * 1000000),
-                    output_format: 'jpeg',
-                    safety_tolerance: 2,
-                    guidance_scale: 30,
-                    num_inference_steps: 50
-                },
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-key': apiKey
-                    }
-                }
-            )
-        );
-    }
-     // Submit all requests at once
-    const submissions = await Promise.all(promises);
-    const taskIds = submissions.map(r => r.data.id);
-    console.log('Submitted 4 variations with masks, task IDs:', taskIds);
+    // Create only 1 request first to test
+    console.log('Submitting to BFL API...');
     
-    // Poll all tasks for results
-    const images = [];
-    for (let i = 0; i < taskIds.length; i++) {
-        const taskId = taskIds[i];
-        let attempts = 0;
+    try {
+        const response = await axios.post(
+            'https://api.bfl.ai/v1/flux-pro-1.0-fill',
+            {
+                prompt: prompt,
+                image: imageBase64,
+                mask: maskBase64,
+                seed: Math.floor(Math.random() * 1000000),
+                output_format: 'jpeg',
+                safety_tolerance: 2,
+                guidance_scale: 30,
+                num_inference_steps: 50
+            },
+            {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-key': apiKey
+                },
+                timeout: 30000, // 30 second timeout
+                maxContentLength: Infinity,
+                maxBodyLength: Infinity
+            }
+        );
         
+        console.log('BFL Response:', response.data);
+        const taskId = response.data.id;
+        
+        // Poll for result
+        let attempts = 0;
         while (attempts < 60) {
             attempts++;
             await new Promise(resolve => setTimeout(resolve, 2000));
             
             const result = await axios.get(
                 `https://api.bfl.ai/v1/get_result?id=${taskId}`,
-                { headers: { 'x-key': apiKey } }
+                { 
+                    headers: { 'x-key': apiKey },
+                    timeout: 10000
+                }
             );
             
             if (result.data.status === 'Ready') {
-                images.push(result.data.result.sample);
-                console.log(`Variation ${i + 1} complete`);
-                break;
+                return [result.data.result.sample]; // Return single image for now
             }
             
             if (result.data.status === 'Error') {
-                console.error(`Variation ${i + 1} failed:`, result.data);
-                images.push(null);
-                break;
+                console.error('BFL Error:', result.data);
+                throw new Error('Image generation failed');
             }
+            
+            console.log(`Polling attempt ${attempts}: ${result.data.status}`);
         }
+        
+        throw new Error('Generation timeout');
+        
+    } catch (error) {
+        console.error('BFL API Error:', error.response?.data || error.message);
+        throw error;
     }
-    
-    return images.filter(img => img !== null);
+}
+
+// Helper to convert base64 to smaller base64
+function resizeBase64Image(base64String, maxWidth = 1024, maxHeight = 1024) {
+    // For now, just return the original - in production you'd resize
+    // This is just to show where you'd add image resizing
+    return base64String;
 }
 
 // Generate tattoo endpoint
@@ -340,7 +353,22 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
         fullPrompt += ", high quality, professional tattoo art, realistic on skin, detailed shading";
         
         console.log('Final prompt:', fullPrompt);
-        
+        // In your generate endpoint, before calling generateMultipleVariations:
+
+// Optionally resize images to reduce payload
+const resizedImageBase64 = resizeBase64Image(imageBase64, 1024, 1024);
+const resizedMaskBase64 = resizeBase64Image(maskBase64, 1024, 1024);
+
+console.log('Resized image length:', resizedImageBase64.length);
+console.log('Resized mask length:', resizedMaskBase64.length);
+
+// Generate with smaller images
+const images = await generateMultipleVariations(
+    fullPrompt, 
+    resizedImageBase64,
+    resizedMaskBase64,
+    process.env.FLUX_API_KEY
+);
         // Generate 4 variations
         try {
             const images = await generateMultipleVariations(
@@ -390,7 +418,29 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
         });
     }
 });
-
+// Test function
+async function testBFLAPI(apiKey) {
+    try {
+        const response = await axios.post(
+            'https://api.bfl.ai/v1/flux-pro-1.1',
+            {
+                prompt: "a simple test image",
+                width: 512,
+                height: 512
+            },
+            {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-key': apiKey
+                },
+                timeout: 30000
+            }
+        );
+        console.log('Test response:', response.data);
+    } catch (error) {
+        console.error('Test failed:', error.response?.data || error.message);
+    }
+}
 // Error handling middleware
 app.use((error, req, res, next) => {
     if (error instanceof multer.MulterError) {

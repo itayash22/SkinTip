@@ -276,14 +276,11 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
         if (!mask) {
             return res.status(400).json({ error: 'Mask is required - please draw the tattoo area' });
         }
-// Add these debug logs after extracting the mask
-console.log('Mask data type:', typeof mask);
-console.log('Mask starts with:', mask.substring(0, 50));
-console.log('Mask length:', mask.length);
 
-// Convert mask to base64 (it's already in data:image/png;base64,... format)
-const maskBase64 = mask.split(',')[1];
-console.log('Mask base64 length:', maskBase64 ? maskBase64.length : 'No base64 data');
+        // Debug logs
+        console.log('Mask type:', typeof mask);
+        console.log('Mask preview:', mask.substring(0, 100));
+
         // Check if Flux API key is configured
         if (!process.env.FLUX_API_KEY) {
             console.log('Flux API not configured, returning mock data');
@@ -300,8 +297,22 @@ console.log('Mask base64 length:', maskBase64 ? maskBase64.length : 'No base64 d
         // Convert image buffer to base64
         const imageBase64 = image.buffer.toString('base64');
         
-        // Convert mask to base64 (it's already in data:image/png;base64,... format)
-        const maskBase64 = mask.split(',')[1];
+        // Handle mask - try different approaches
+        let maskBase64;
+        
+        // If mask is a data URL (data:image/png;base64,xxxxx)
+        if (mask.startsWith('data:')) {
+            maskBase64 = mask.split(',')[1];
+        } else {
+            // If it's already base64
+            maskBase64 = mask;
+        }
+        
+        // Remove any whitespace
+        maskBase64 = maskBase64.replace(/\s/g, '');
+        
+        console.log('Image base64 length:', imageBase64.length);
+        console.log('Mask base64 length:', maskBase64.length);
         
         // Build the prompt for inpainting
         let fullPrompt = "tattoo design";
@@ -314,8 +325,7 @@ console.log('Mask base64 length:', maskBase64 ? maskBase64.length : 'No base64 d
         fullPrompt += ", high quality, professional tattoo art, on skin";
         
         // Generate 4 variations with masks
-        console.log('Generating 4 tattoo variations with FLUX Fill Pro...');
-        console.log('Prompt:', fullPrompt);
+        console.log('Generating tattoo with prompt:', fullPrompt);
         
         const images = await generateMultipleVariations(
             fullPrompt, 

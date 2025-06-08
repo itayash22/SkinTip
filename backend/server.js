@@ -280,7 +280,6 @@ function resizeBase64Image(base64String, maxWidth = 1024, maxHeight = 1024) {
     // This is just to show where you'd add image resizing
     return base64String;
 }
-
 // Generate tattoo endpoint
 app.post('/api/generate', upload.single('image'), async (req, res) => {
     try {
@@ -335,48 +334,39 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
         console.log('Image base64 length:', imageBase64.length);
         console.log('Mask base64 length:', maskBase64.length);
         
-        // Build a better prompt for tattoo generation
+        // BUILD BETTER INPAINTING PROMPT
+        // The key is to describe what should appear IN the masked area
         let fullPrompt = "";
         
-        // Add style information
+        // Start by describing it's skin with a tattoo
+        fullPrompt = "human skin with ";
+        
+        // Add style if specified
         if (styles.length > 0) {
-            fullPrompt = `${styles.join(' and ')} style `;
+            fullPrompt += `a ${styles.join(' and ')} style `;
+        } else {
+            fullPrompt += "a ";
         }
         
-        // Add the main subject
-        fullPrompt += `tattoo design`;
+        // Add the tattoo description
+        fullPrompt += `tattoo`;
         
-        // Add the specific request
+        // Add the specific design
         if (prompt && prompt.trim()) {
             fullPrompt += ` of ${prompt}`;
         }
         
-        // Add quality descriptors
-        fullPrompt += ", high quality, professional tattoo art, realistic on skin, detailed shading";
+        // Add realistic skin details
+        fullPrompt += " inked on the skin, realistic tattoo on human skin texture, professional tattoo with proper shading, natural skin tone around the tattoo";
         
         console.log('Final prompt:', fullPrompt);
-        // In your generate endpoint, before calling generateMultipleVariations:
-
-// Optionally resize images to reduce payload
-const resizedImageBase64 = resizeBase64Image(imageBase64, 1024, 1024);
-const resizedMaskBase64 = resizeBase64Image(maskBase64, 1024, 1024);
-
-console.log('Resized image length:', resizedImageBase64.length);
-console.log('Resized mask length:', resizedMaskBase64.length);
-
-// Generate with smaller images
-const images = await generateMultipleVariations(
-    fullPrompt, 
-    resizedImageBase64,
-    resizedMaskBase64,
-    process.env.FLUX_API_KEY
-);
-        // Generate 4 variations
+        
+        // Generate variations
         try {
             const images = await generateMultipleVariations(
                 fullPrompt, 
-                imageBase64,  // Just base64, no prefix
-                maskBase64,   // Just base64, no prefix
+                imageBase64,
+                maskBase64,
                 process.env.FLUX_API_KEY
             );
             

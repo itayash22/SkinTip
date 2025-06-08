@@ -93,18 +93,21 @@ const drawing = {
         });
         
         // Continue button
-        document.getElementById('continueBtn')?.addEventListener('click', () => {
-            if (!drawing.selectedArea) {
-                alert('Please draw an area for your tattoo first!');
-                return;
-            }
-            STATE.currentMask = drawing.maskCanvas.toDataURL('image/png');
-            console.log('Mask saved for Flux API');
-            
-            // Show design section
-            document.getElementById('designSection').style.display = 'block';
-            document.getElementById('designSection').scrollIntoView({ behavior: 'smooth' });
-        });
+document.getElementById('continueBtn')?.addEventListener('click', () => {
+    if (!drawing.selectedArea) {
+        alert('Please draw an area for your tattoo first!');
+        return;
+    }
+    
+    // Save BOTH the mask and selectedArea
+    STATE.currentMask = drawing.maskCanvas.toDataURL('image/png');
+    drawing.selectedArea = STATE.currentMask; // ADD THIS LINE
+    console.log('Mask saved for Flux API');
+    
+    // Show design section
+    document.getElementById('designSection').style.display = 'block';
+    document.getElementById('designSection').scrollIntoView({ behavior: 'smooth' });
+});
     },
     
     startDrawing: (e) => {

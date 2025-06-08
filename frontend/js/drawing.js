@@ -132,19 +132,39 @@ const drawing = {
         drawing.redrawCanvas();
         
         // Draw current path (thin dotted line)
-        if (drawing.currentPath.length > 1) {
-            drawing.ctx.save();
-            drawing.ctx.strokeStyle = 'rgba(99, 102, 241, 0.8)';
-            drawing.ctx.lineWidth = 1;
-            drawing.ctx.setLineDash([3, 3]);
-            drawing.ctx.beginPath();
-            drawing.ctx.moveTo(drawing.currentPath[0].x, drawing.currentPath[0].y);
-            for (let i = 1; i < drawing.currentPath.length; i++) {
-                drawing.ctx.lineTo(drawing.currentPath[i].x, drawing.currentPath[i].y);
-            }
-            drawing.ctx.stroke();
-            drawing.ctx.restore();
-        }
+        // Draw current path (luminescent line)
+if (drawing.currentPath.length > 1) {
+    drawing.ctx.save();
+    
+    // Create glow effect with multiple strokes
+    // Outer glow
+    drawing.ctx.strokeStyle = 'rgba(99, 102, 241, 0.2)';
+    drawing.ctx.lineWidth = 12;
+    drawing.ctx.setLineDash([]);
+    drawing.ctx.shadowColor = '#6366f1';
+    drawing.ctx.shadowBlur = 20;
+    drawing.ctx.beginPath();
+    drawing.ctx.moveTo(drawing.currentPath[0].x, drawing.currentPath[0].y);
+    for (let i = 1; i < drawing.currentPath.length; i++) {
+        drawing.ctx.lineTo(drawing.currentPath[i].x, drawing.currentPath[i].y);
+    }
+    drawing.ctx.stroke();
+    
+    // Middle glow
+    drawing.ctx.strokeStyle = 'rgba(129, 140, 248, 0.4)';
+    drawing.ctx.lineWidth = 6;
+    drawing.ctx.shadowBlur = 10;
+    drawing.ctx.stroke();
+    
+    // Inner bright line
+    drawing.ctx.strokeStyle = '#e0e7ff';
+    drawing.ctx.lineWidth = 2;
+    drawing.ctx.shadowBlur = 5;
+    drawing.ctx.setLineDash([5, 5]);
+    drawing.ctx.stroke();
+    
+    drawing.ctx.restore();
+}
     },
     
     stopDrawing: () => {
@@ -185,9 +205,12 @@ const drawing = {
         // Draw selected area if exists
         if (drawing.selectedArea && drawing.selectedArea.length > 0) {
             drawing.ctx.save();
-            drawing.ctx.fillStyle = 'rgba(99, 102, 241, 0.3)';
-            drawing.ctx.strokeStyle = 'rgba(99, 102, 241, 0.8)';
-            drawing.ctx.lineWidth = 1;
+// Luminescent fill
+drawing.ctx.fillStyle = 'rgba(99, 102, 241, 0.2)';
+drawing.ctx.strokeStyle = '#818cf8';
+drawing.ctx.lineWidth = 3;
+drawing.ctx.shadowColor = '#6366f1';
+drawing.ctx.shadowBlur = 15;
             
             drawing.ctx.beginPath();
             drawing.ctx.moveTo(drawing.selectedArea[0].x, drawing.selectedArea[0].y);

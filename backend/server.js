@@ -198,17 +198,19 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // Helper function to generate multiple variations
-async function generateMultipleVariations(prompt, imageBase64, apiKey) {
+// Helper function to generate multiple variations
+async function generateMultipleVariations(prompt, imageBase64, maskBase64, apiKey) {
     const promises = [];
     
     // Create 4 requests with different seeds
     for (let i = 0; i < 4; i++) {
         promises.push(
             axios.post(
-                'https://api.bfl.ai/v1/flux-kontext-pro',
+                'https://api.bfl.ai/v1/flux-fill-pro', // Changed from flux-kontext-pro
                 {
                     prompt: prompt,
-                    input_image: imageBase64,
+                    image: imageBase64,
+                    mask: maskBase64, // Now we properly use the mask!
                     seed: Math.floor(Math.random() * 1000000),
                     output_format: 'jpeg',
                     safety_tolerance: 2
@@ -226,7 +228,7 @@ async function generateMultipleVariations(prompt, imageBase64, apiKey) {
     // Submit all requests at once
     const submissions = await Promise.all(promises);
     const taskIds = submissions.map(r => r.data.id);
-    console.log('Submitted 4 variations, task IDs:', taskIds);
+    console.log('Submitted 4 variations with masks, task IDs:', taskIds);
     
     // Poll all tasks for results
     const images = [];
@@ -251,13 +253,13 @@ async function generateMultipleVariations(prompt, imageBase64, apiKey) {
             
             if (result.data.status === 'Error') {
                 console.error(`Variation ${i + 1} failed:`, result.data);
-                images.push(null); // Push null for failed generations
+                images.push(null);
                 break;
             }
         }
     }
     
-    return images.filter(img => img !== null); // Return only successful images
+    return images.filter(img => img !== null);
 }
 
 // Generate tattoo endpoint
@@ -269,6 +271,10 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
 
         if (!image || !prompt) {
             return res.status(400).json({ error: 'Image and prompt are required' });
+        }
+
+        if (!mask) {
+            return res.status(400).json({ error: 'Mask is required - please draw the tattoo area' });
         }
 
         // Check if Flux API key is configured
@@ -287,43 +293,27 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
         // Convert image buffer to base64
         const imageBase64 = image.buffer.toString('base64');
         
-        // Build a context-aware prompt for Flux Kontext Pro
-        const buildKontextPrompt = (userPrompt, selectedStyles) => {
-            // Base instruction for adding tattoo
-            let kontextPrompt = "Add a tattoo design ";
-            
-            // Add location if mentioned in the prompt
-            if (userPrompt.toLowerCase().includes('arm')) {
-                kontextPrompt += "on the arm ";
-            } else if (userPrompt.toLowerCase().includes('back')) {
-                kontextPrompt += "on the back ";
-            } else if (userPrompt.toLowerCase().includes('chest')) {
-                kontextPrompt += "on the chest ";
-            } else if (userPrompt.toLowerCase().includes('leg')) {
-                kontextPrompt += "on the leg ";
-            } else {
-                kontextPrompt += "on the visible skin area ";
-            }
-            
-            // Add style specifications
-            if (selectedStyles.length > 0) {
-                kontextPrompt += `in ${selectedStyles.join(' and ')} style `;
-            }
-            
-            // Add the user's description
-            kontextPrompt += `depicting ${userPrompt}. `;
-            
-            // Important: Preserve everything else
-            kontextPrompt += "Keep the person, clothing, background, and all other elements exactly the same. Only add the tattoo design on the skin, making it look realistic and naturally integrated with the skin tone and lighting.";
-            
-            return kontextPrompt;
-        };
+        // Convert mask to base64 (it's already in data:image/png;base64,... format)
+        const maskBase64 = mask.split(',')[1];
         
-        // Generate 4 variations with different prompts/seeds
-        console.log('Generating 4 tattoo variations...');
+        // Build the prompt for inpainting
+        let fullPrompt = "tattoo design";
+        if (styles.length > 0) {
+            fullPrompt = `${styles.join(' and ')} style tattoo`;
+        }
+        if (prompt) {
+            fullPrompt += ` of ${prompt}`;
+        }
+        fullPrompt += ", high quality, professional tattoo art, on skin";
+        
+        // Generate 4 variations with masks
+        console.log('Generating 4 tattoo variations with FLUX Fill Pro...');
+        console.log('Prompt:', fullPrompt);
+        
         const images = await generateMultipleVariations(
-            buildKontextPrompt(prompt, styles), 
-            imageBase64, 
+            fullPrompt, 
+            imageBase64,
+            maskBase64,
             process.env.FLUX_API_KEY
         );
         

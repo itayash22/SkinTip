@@ -205,21 +205,17 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 
-// Helper function to generate multiple variations
-// Helper function to generate multiple variations
 async function generateMultipleVariations(prompt, imageBase64, maskBase64, apiKey) {
-    const promises = [];
-    
-    // Create only 1 request first to test
     console.log('Submitting to BFL API...');
     
     try {
+        // IMPORTANT: Add data URI prefixes - Flux Fill needs complete data URIs
         const response = await axios.post(
             'https://api.bfl.ai/v1/flux-pro-1.0-fill',
             {
                 prompt: prompt,
-                image: imageBase64,
-                mask: maskBase64,
+                image: `data:image/jpeg;base64,${imageBase64}`,  // ADD THIS PREFIX
+                mask: `data:image/png;base64,${maskBase64}`,     // ADD THIS PREFIX
                 seed: Math.floor(Math.random() * 1000000),
                 output_format: 'jpeg',
                 safety_tolerance: 2,
@@ -231,7 +227,7 @@ async function generateMultipleVariations(prompt, imageBase64, maskBase64, apiKe
                     'Content-Type': 'application/json',
                     'x-key': apiKey
                 },
-                timeout: 30000, // 30 second timeout
+                timeout: 60000, // Increase to 60 seconds
                 maxContentLength: Infinity,
                 maxBodyLength: Infinity
             }
@@ -255,12 +251,18 @@ async function generateMultipleVariations(prompt, imageBase64, maskBase64, apiKe
             );
             
             if (result.data.status === 'Ready') {
-                return [result.data.result.sample]; // Return single image for now
+                const imageUrl = result.data.result.sample;
+                
+                // DEBUG: Log what we got back
+                console.log('Flux Fill returned:', imageUrl);
+                console.log('This should be your ORIGINAL IMAGE with the tattoo ADDED in the masked area');
+                
+                return [imageUrl];
             }
             
             if (result.data.status === 'Error') {
                 console.error('BFL Error:', result.data);
-                throw new Error('Image generation failed');
+                throw new Error('Image generation failed: ' + JSON.stringify(result.data));
             }
             
             console.log(`Polling attempt ${attempts}: ${result.data.status}`);

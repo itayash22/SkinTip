@@ -16,7 +16,7 @@ const PORT = process.env.PORT || 3000;
 
 // Initialize Supabase
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://cimakagbgcbkwosavbyk.supabase.co';
-const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpbWFrYWdiZ2Nia3dvc2F2YnlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg3Nzc5MDMsImV4cCI6MjA2NDM1MzkwM30.Qj3ZKq-sZZWVdCoFEus5ggEIXSncGFm_FQZ9pEoLcaA';
+const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpbWFrYWdiZ2Nia3dvc2avbyfdfvbykIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg3Nzc5MDMsImV4cCI6MjA2NDM1MzkwM30.Qj3ZKq-sZZWVdCoFEus5ggEIXSncGFm_FQZ9pEoLcaA';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -35,7 +35,6 @@ const limiter = rateLimit({
     max: 100, // limit each IP to 100 requests per windowMs
     standardHeaders: true,
     legacyHeaders: false,
-    // Remove trustProxy setting - let it use defaults
     skipFailedRequests: false,
     skipSuccessfulRequests: false
 });
@@ -104,21 +103,21 @@ app.post('/api/auth/register', async (req, res) => {
         }
 
         // Check if user exists
-        const { data: existing } = await supabase
+        const { data: existingUser } = await supabase
             .from('users')
             .select('id')
             .or(`email.eq.${email},username.eq.${username}`)
             .single();
 
-        if (existing) {
-            return res.status(409).json({ error: 'User already exists' });
+        if (existingUser) {
+            return res.status(409).json({ error: 'User with this email or username already exists' });
         }
 
         // Hash password
         const passwordHash = await bcrypt.hash(password, 10);
 
         // Create user
-        const { data: user, error } = await supabase
+        const { data: newUser, error } = await supabase
             .from('users')
             .insert({
                 email,
@@ -135,7 +134,7 @@ app.post('/api/auth/register', async (req, res) => {
 
         // Generate JWT
         const token = jwt.sign(
-            { userId: user.id, email: user.email },
+            { userId: newUser.id, email: newUser.email },
             process.env.JWT_SECRET,
             { expiresIn: '7d' }
         );
@@ -144,9 +143,9 @@ app.post('/api/auth/register', async (req, res) => {
             message: 'Registration successful',
             token,
             user: {
-                id: user.id,
-                email: user.email,
-                username: user.username
+                id: newUser.id,
+                email: newUser.email,
+                username: newUser.username
             }
         });
     } catch (error) {
@@ -207,12 +206,12 @@ app.post('/api/auth/login', async (req, res) => {
 
 async function generateMultipleVariations(prompt, imageBase64, maskBase64, apiKey) {
     console.log('Submitting to BFL API...');
-    
-    // Validate base64 inputs
+
+    // Validate base64 inputs using Node.js Buffer
     if (!isValidBase64(imageBase64) || !isValidBase64(maskBase64)) {
         throw new Error('Invalid base64 data');
     }
-    
+
     try {
         const response = await axios.post(
             'https://api.bfl.ai/v1/flux-pro-1.0-fill',
@@ -223,7 +222,7 @@ async function generateMultipleVariations(prompt, imageBase64, maskBase64, apiKe
                 seed: Math.floor(Math.random() * 1000000),
                 output_format: 'jpeg',
                 safety_tolerance: 2,
-                guidance_scale: 20,  // Reduced from 30 for more natural results
+                guidance_scale: 20,
                 num_inference_steps: 50
             },
             {
@@ -236,101 +235,78 @@ async function generateMultipleVariations(prompt, imageBase64, maskBase64, apiKe
                 maxBodyLength: Infinity
             }
         );
-        
+
         console.log('BFL Response:', response.data);
         const taskId = response.data.id;
-        
+
         // Poll for result
         let attempts = 0;
         while (attempts < 60) {
             attempts++;
             await new Promise(resolve => setTimeout(resolve, 2000));
-            
+
             const result = await axios.get(
                 `https://api.bfl.ai/v1/get_result?id=${taskId}`,
-                { 
+                {
                     headers: { 'x-key': apiKey },
                     timeout: 10000
                 }
             );
-            
+
             if (result.data.status === 'Ready') {
                 const imageUrl = result.data.result.sample;
                 console.log('Flux Fill returned:', imageUrl);
                 return [imageUrl];
             }
-            
+
             if (result.data.status === 'Error') {
                 console.error('BFL Error:', result.data);
                 throw new Error('Image generation failed: ' + JSON.stringify(result.data));
             }
-            
+
             console.log(`Polling attempt ${attempts}: ${result.data.status}`);
         }
-        
+
         throw new Error('Generation timeout');
-        
+
     } catch (error) {
         console.error('BFL API Error:', error.response?.data || error.message);
         throw error;
     }
 }
 
-// Helper function to validate base64
+// Helper function to validate base64 for Node.js
 function isValidBase64(str) {
+    // Check if the string is empty or null
+    if (!str) return false;
+    // Check if it's a valid base64 string using Buffer
     try {
-        return btoa(atob(str)) === str;
-    } catch (err) {
-        // For Node.js environment
-        try {
-            return Buffer.from(str, 'base64').toString('base64') === str;
-        } catch (e) {
-            return false;
-        }
+        // Attempt to decode and re-encode to check validity
+        return Buffer.from(str, 'base64').toString('base64') === str;
+    } catch (e) {
+        return false;
     }
 }
 
-// In the /api/generate endpoint, improve the prompt construction:
-
-// BUILD BETTER INPAINTING PROMPT
-let fullPrompt = "realistic ";
-
-// Add style modifiers
-if (styles.length > 0) {
-    fullPrompt += `${styles.join(' ')} style `;
-}
-
-// Core tattoo description with skin context
-fullPrompt += `tattoo of ${prompt}, detailed tattoo artwork on human skin, professional tattoo photography`;
-
-// This helps Flux understand it should blend the tattoo naturally with the skin
-console.log('Inpainting prompt:', fullPrompt);
-
-// Helper to convert base64 to smaller base64
-function resizeBase64Image(base64String, maxWidth = 1024, maxHeight = 1024) {
-    // For now, just return the original - in production you'd resize
-    // This is just to show where you'd add image resizing
-    return base64String;
-}
 
 // Generate tattoo endpoint
 app.post('/api/generate', upload.single('image'), async (req, res) => {
     try {
         console.log('Generate endpoint called');
-        
+
         const { prompt, mask } = req.body;
         const styles = req.body.styles ? JSON.parse(req.body.styles) : [];
         const image = req.file;
-        
+
         // Validate inputs
         if (!image || !prompt) {
             return res.status(400).json({ error: 'Image and prompt are required' });
         }
-        
+
         if (!mask) {
             return res.status(400).json({ error: 'Mask is required - please draw the tattoo area' });
         }
-        
+
         // Check if Flux API key is configured
         if (!process.env.FLUX_API_KEY) {
             console.log('Flux API not configured, returning mock data');
@@ -343,10 +319,10 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
                 ]
             });
         }
-        
+
         // Convert image buffer to base64 (just the data, no prefix)
         const imageBase64 = image.buffer.toString('base64');
-        
+
         // Extract mask base64 (remove the data URL prefix if present)
         let maskBase64;
         if (mask.startsWith('data:')) {
@@ -354,61 +330,55 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
         } else {
             maskBase64 = mask;
         }
-        
+
         // Validate base64 data
-        if (!imageBase64 || imageBase64.length < 100) {
+        if (!imageBase64 || !isValidBase64(imageBase64)) {
             return res.status(400).json({ error: 'Invalid image data' });
         }
-        
-        if (!maskBase64 || maskBase64.length < 100) {
+
+        if (!maskBase64 || !isValidBase64(maskBase64)) {
             return res.status(400).json({ error: 'Invalid mask data' });
         }
-        
+
         console.log('Image base64 length:', imageBase64.length);
         console.log('Mask base64 length:', maskBase64.length);
-        
+
         // BUILD INPAINTING PROMPT FOR FLUX FILL
-        // For inpainting, we need to describe what appears IN THE MASKED AREA ONLY
         let fullPrompt = "";
-        
-        // Simple and direct - just describe the tattoo
+
         if (styles.length > 0) {
             fullPrompt = `${styles.join(' and ')} style `;
         }
-        
+
         fullPrompt += `tattoo of ${prompt}`;
-        
+
         // Add skin context for better blending
-        fullPrompt += ", on skin";
-        
+        fullPrompt += ", on human skin, professional tattoo photography, high detail";
+
         console.log('Inpainting prompt:', fullPrompt);
-        
-        // Debug: Let's also try a very simple prompt to test
-        // Uncomment this line to test with a simple prompt:
-        // fullPrompt = "black star tattoo on skin";
-        
+
         // Generate tattoo using inpainting
         try {
             const images = await generateMultipleVariations(
-                fullPrompt, 
+                fullPrompt,
                 imageBase64,
                 maskBase64,
                 process.env.FLUX_API_KEY
             );
-            
+
             if (!images || images.length === 0) {
                 return res.status(500).json({ error: 'No images were generated' });
             }
-            
+
             console.log(`Successfully generated ${images.length} inpainted images`);
             console.log('Note: Result should be original image with tattoo added in masked area');
-            
+
             // The returned images should be the original photo with tattoo inpainted
             res.json({ images });
-            
+
         } catch (generationError) {
             console.error('Generation failed:', generationError.response?.data || generationError.message);
-            
+
             // More specific error messages
             if (generationError.response?.data?.detail) {
                 const detail = generationError.response.data.detail;
@@ -418,29 +388,29 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
                     return res.status(500).json({ error: detail[0].msg });
                 }
             }
-            
+
             throw generationError;
         }
-        
+
     } catch (error) {
         console.error('Endpoint error:', error);
-        
+
         if (error.response?.status === 401) {
             return res.status(401).json({ error: 'Invalid Flux API key' });
         }
-        
+
         if (error.response?.status === 429) {
             return res.status(429).json({ error: 'Rate limit exceeded. Please try again later.' });
         }
-        
-        res.status(500).json({ 
+
+        res.status(500).json({
             error: 'Failed to generate tattoo',
-            details: error.message 
+            details: error.message
         });
     }
 });
 
-// Test function
+// Test function (kept for reference, not used in main flow)
 async function testBFLAPI(apiKey) {
     try {
         const response = await axios.post(

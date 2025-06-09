@@ -379,17 +379,6 @@ document.addEventListener('click', async (e) => {
         const maskToSend = STATE.currentMask || drawing.selectedArea;
         console.log('Mask being sent (first 100 chars):', maskToSend.substring(0, 100));
         
-        // Create a debug preview of the mask
-        const debugImg = document.createElement('img');
-        debugImg.src = maskToSend;
-        debugImg.style.width = '200px';
-        debugImg.style.border = '2px solid red';
-        debugImg.style.position = 'fixed';
-        debugImg.style.bottom = '10px';
-        debugImg.style.right = '10px';
-        debugImg.style.zIndex = '9999';
-        debugImg.title = 'This is the mask being sent';
-        document.body.appendChild(debugImg);
         
         // Show loading
         document.getElementById('loadingOverlay').style.display = 'flex';
@@ -457,12 +446,6 @@ document.addEventListener('click', async (e) => {
                 </div>
             `).join('');
             
-            // Remove debug image after 10 seconds
-            setTimeout(() => {
-                if (debugImg.parentNode) {
-                    debugImg.parentNode.removeChild(debugImg);
-                }
-            }, 10000);
             
         } catch (error) {
             console.error('Generation error:', error);

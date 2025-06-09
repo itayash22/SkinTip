@@ -282,6 +282,47 @@
             images[newIndex].style.display = 'block';
         }
 
+        /**
+         * Resizes an image Data URL to a maximum width/height while maintaining aspect ratio.
+         * Returns a Promise that resolves with the new Data URL (JPEG).
+         * @param {string} dataURL The input image data URL.
+         * @param {number} maxWidth Max width for the resized image.
+         * @param {number} maxHeight Max height for the resized image.
+         * @param {number} quality JPEG compression quality (0-1).
+         * @returns {Promise<string>} Promise resolving with the resized image Data URL.
+         */
+        function resizeImage(dataURL, maxWidth, maxHeight, quality = 0.9) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    let width = img.width;
+                    let height = img.height;
+
+                    // Calculate new dimensions
+                    if (width > height) {
+                        if (width > maxWidth) {
+                            height *= maxWidth / width;
+                            width = maxWidth;
+                        }
+                    } else {
+                        if (height > maxHeight) {
+                            width *= maxHeight / height;
+                            height = maxHeight;
+                        }
+                    }
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    resolve(canvas.toDataURL('image/jpeg', quality));
+                };
+                img.src = dataURL;
+            });
+        }
+
 
         document.addEventListener('DOMContentLoaded', () => {
             console.log('🎨 SkinTip initializing...');
@@ -307,7 +348,7 @@
                 }
             });
 
-            function handleFile(file) {
+            async function handleFile(file) { // Made async to await resizeImage
                 if (!CONFIG.ALLOWED_FILE_TYPES.includes(file.type)) {
                     alert('Please upload a JPEG, PNG, or WebP image.');
                     return;
@@ -318,19 +359,31 @@
                     return;
                 }
 
-                // Store the file in STATE for later use
-                STATE.currentImage = file;
-
-                // Show preview
                 const reader = new FileReader();
-                reader.onload = (e) => {
+                reader.onload = async (e) => { // Made onload async
+                    const originalDataURL = e.target.result;
+
+                    // Resize image before storing and displaying
+                    // Recommended size for Flux fill is typically around 512x512 or 768x768
+                    const resizedDataURL = await resizeImage(originalDataURL, 768, 768, 0.8); // Resize to 768px max, 80% quality
+
+                    // Convert resized Data URL back to a File object for FormData
+                    const resizedFile = await (await fetch(resizedDataURL)).blob();
+                    // Give it a name and type similar to original
+                    Object.defineProperty(resizedFile, 'name', { value: file.name });
+                    Object.defineProperty(resizedFile, 'type', { value: 'image/jpeg' });
+
+
+                    // Store the resized file in STATE for later use
+                    STATE.currentImage = resizedFile;
+
                     document.getElementById('uploadSection').style.display = 'none';
                     document.getElementById('imagePreview').style.display = 'block';
-                    document.getElementById('previewImg').src = e.target.result;
+                    document.getElementById('previewImg').src = resizedDataURL; // Display the resized image
 
-                    // Initialize drawing tool
+                    // Initialize drawing tool with the RESIZED image Data URL
                     if (window.drawing) {
-                        drawing.init(e.target.result);
+                        drawing.init(resizedDataURL); // Pass the resized Data URL
                     } else {
                         console.error("drawing.js module not loaded correctly or 'drawing' object not exposed.");
                     }
@@ -431,10 +484,10 @@
                 try {
                     // Prepare form data
                     const formData = new FormData();
-                    formData.append('image', STATE.currentImage);
+                    formData.append('image', STATE.currentImage); // This is now a resized File/Blob
                     formData.append('prompt', userText);
                     formData.append('styles', JSON.stringify(selectedStyles));
-                    formData.append('mask', STATE.currentMask); // Use the stored mask
+                    formData.append('mask', STATE.currentMask); // This is the mask Data URL
 
                     console.log('Sending request to:', `${CONFIG.API_URL}/generate`);
 

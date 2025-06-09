@@ -209,13 +209,12 @@ async function generateMultipleVariations(prompt, imageBase64, maskBase64, apiKe
     console.log('Submitting to BFL API...');
     
     try {
-        // IMPORTANT: Add data URI prefixes - Flux Fill needs complete data URIs
         const response = await axios.post(
             'https://api.bfl.ai/v1/flux-pro-1.0-fill',
             {
                 prompt: prompt,
-                image: `data:image/jpeg;base64,${imageBase64}`,  // ADD THIS PREFIX
-                mask: `data:image/png;base64,${maskBase64}`,     // ADD THIS PREFIX
+                image: imageBase64,    // REMOVE THE PREFIX - just base64
+                mask: maskBase64,      // REMOVE THE PREFIX - just base64
                 seed: Math.floor(Math.random() * 1000000),
                 output_format: 'jpeg',
                 safety_tolerance: 2,
@@ -227,7 +226,7 @@ async function generateMultipleVariations(prompt, imageBase64, maskBase64, apiKe
                     'Content-Type': 'application/json',
                     'x-key': apiKey
                 },
-                timeout: 60000, // Increase to 60 seconds
+                timeout: 60000,
                 maxContentLength: Infinity,
                 maxBodyLength: Infinity
             }
@@ -252,11 +251,8 @@ async function generateMultipleVariations(prompt, imageBase64, maskBase64, apiKe
             
             if (result.data.status === 'Ready') {
                 const imageUrl = result.data.result.sample;
-                
-                // DEBUG: Log what we got back
                 console.log('Flux Fill returned:', imageUrl);
-                console.log('This should be your ORIGINAL IMAGE with the tattoo ADDED in the masked area');
-                
+                console.log('Expected: Original image with tattoo inpainted in masked area');
                 return [imageUrl];
             }
             

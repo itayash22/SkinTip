@@ -9,6 +9,7 @@ const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const sizeOf = require('image-size'); // Import image-size
 
 // Initialize Express
 const app = express();
@@ -202,12 +203,9 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 
-// Improved generateMultipleVariations function for server.js
-
 async function generateMultipleVariations(prompt, imageBase64, maskBase64, apiKey) {
     console.log('Submitting to BFL API...');
 
-    // Validate base64 inputs using Node.js Buffer
     if (!isValidBase64(imageBase64) || !isValidBase64(maskBase64)) {
         throw new Error('Invalid base64 data');
     }
@@ -239,9 +237,8 @@ async function generateMultipleVariations(prompt, imageBase64, maskBase64, apiKe
         console.log('BFL Response:', response.data);
         const taskId = response.data.id;
 
-        // Poll for result
         let attempts = 0;
-        while (attempts < 60) {
+        while (attempts < 60) { // Max 2 minutes polling
             attempts++;
             await new Promise(resolve => setTimeout(resolve, 2000));
 
@@ -277,13 +274,12 @@ async function generateMultipleVariations(prompt, imageBase64, maskBase64, apiKe
 
 // Helper function to validate base64 for Node.js
 function isValidBase64(str) {
-    // Check if the string is empty or null
-    if (!str) return false;
-    // Check if it's a valid base64 string using Buffer
+    if (!str || str.length < 100) return false; // Basic length check to avoid processing tiny strings
     try {
         // Attempt to decode and re-encode to check validity
         return Buffer.from(str, 'base64').toString('base64') === str;
     } catch (e) {
+        console.warn("isValidBase64 check failed for string:", str.substring(0, 50) + "...");
         return false;
     }
 }
@@ -298,7 +294,6 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
         const styles = req.body.styles ? JSON.parse(req.body.styles) : [];
         const image = req.file;
 
-        // Validate inputs
         if (!image || !prompt) {
             return res.status(400).json({ error: 'Image and prompt are required' });
         }
@@ -307,7 +302,6 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
             return res.status(400).json({ error: 'Mask is required - please draw the tattoo area' });
         }
 
-        // Check if Flux API key is configured
         if (!process.env.FLUX_API_KEY) {
             console.log('Flux API not configured, returning mock data');
             return res.json({
@@ -320,10 +314,10 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
             });
         }
 
-        // Convert image buffer to base64 (just the data, no prefix)
+        // Convert image buffer to base64
         const imageBase64 = image.buffer.toString('base64');
 
-        // Extract mask base64 (remove the data URL prefix if present)
+        // Extract mask base64 (remove data URL prefix if present)
         let maskBase64;
         if (mask.startsWith('data:')) {
             maskBase64 = mask.split(',')[1];
@@ -333,15 +327,46 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
 
         // Validate base64 data
         if (!imageBase64 || !isValidBase64(imageBase64)) {
+            console.error('Server: Invalid image base64 data detected');
             return res.status(400).json({ error: 'Invalid image data' });
         }
 
         if (!maskBase64 || !isValidBase64(maskBase64)) {
+            console.error('Server: Invalid mask base64 data detected');
             return res.status(400).json({ error: 'Invalid mask data' });
         }
 
         console.log('Image base64 length:', imageBase64.length);
         console.log('Mask base64 length:', maskBase64.length);
+
+        // *** DEEPER DEBUGGING: Check Image and Mask dimensions ***
+        try {
+            const imageDimensions = sizeOf(Buffer.from(imageBase64, 'base64'));
+            const maskDimensions = sizeOf(Buffer.from(maskBase64, 'base64'));
+
+            console.log(`Original Image Dimensions: ${imageDimensions.width}x${imageDimensions.height}`);
+            console.log(`Mask Dimensions: ${maskDimensions.width}x${maskDimensions.height}`);
+
+            if (imageDimensions.width !== maskDimensions.width || imageDimensions.height !== maskDimensions.height) {
+                console.error('Image and Mask dimensions do NOT match!');
+                return res.status(400).json({ error: 'Image and mask dimensions must be identical for inpainting.' });
+            }
+            // Log a snippet of base64 for manual inspection in browser
+            console.log('Image Base64 (first 100 chars):', imageBase64.substring(0, 100) + '...');
+            console.log('Mask Base64 (first 100 chars):', maskBase64.substring(0, 100) + '...');
+
+            // To manually inspect in browser:
+            // Open browser console, type:
+            // `data:image/jpeg;base64,` + 'PASTE_IMAGE_BASE64_HERE_FROM_LOGS'
+            // or `data:image/png;base64,` + 'PASTE_MASK_BASE64_HERE_FROM_LOGS'
+            // Then press Enter. This will show the image/mask.
+
+        } catch (dimError) {
+            console.error('Error getting image/mask dimensions:', dimError.message);
+            return res.status(500).json({ error: 'Failed to read image/mask dimensions.' });
+        }
+        // *** END DEEPER DEBUGGING ***
+
 
         // BUILD INPAINTING PROMPT FOR FLUX FILL
         let fullPrompt = "";
@@ -357,7 +382,6 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
 
         console.log('Inpainting prompt:', fullPrompt);
 
-        // Generate tattoo using inpainting
         try {
             const images = await generateMultipleVariations(
                 fullPrompt,
@@ -373,27 +397,28 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
             console.log(`Successfully generated ${images.length} inpainted images`);
             console.log('Note: Result should be original image with tattoo added in masked area');
 
-            // The returned images should be the original photo with tattoo inpainted
             res.json({ images });
 
         } catch (generationError) {
             console.error('Generation failed:', generationError.response?.data || generationError.message);
 
-            // More specific error messages
-            if (generationError.response?.data?.detail) {
+            if (generationError.response?.status === 400 && generationError.response?.data?.detail) {
                 const detail = generationError.response.data.detail;
                 if (typeof detail === 'string') {
-                    return res.status(500).json({ error: detail });
+                    return res.status(400).json({ error: `Flux API Bad Request: ${detail}` });
                 } else if (Array.isArray(detail) && detail[0]?.msg) {
-                    return res.status(500).json({ error: detail[0].msg });
+                    return res.status(400).json({ error: `Flux API Bad Request: ${detail[0].msg}` });
                 }
             }
-
             throw generationError;
         }
 
     } catch (error) {
         console.error('Endpoint error:', error);
+
+        if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({ error: 'Uploaded file is too large. Maximum size is 5MB.' });
+        }
 
         if (error.response?.status === 401) {
             return res.status(401).json({ error: 'Invalid Flux API key' });
@@ -440,7 +465,7 @@ app.use((error, req, res, next) => {
             return res.status(400).json({ error: 'File too large. Maximum size is 5MB.' });
         }
     }
-    console.error('Server error:', error);
+    console.error('Internal Server Error:', error);
     res.status(500).json({ error: 'Internal server error' });
 });
 

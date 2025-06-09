@@ -201,20 +201,6 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
-// Helper function to validate base64
-function isValidBase64(str) {
-    try {
-        return btoa(atob(str)) === str;
-    } catch (err) {
-        // For Node.js environment
-        try {
-            return Buffer.from(str, 'base64').toString('base64') === str;
-        } catch (e) {
-            return false;
-        }
-    }
-}
-
 // Correct Flux Fill function with proper BFL API parameters
 async function generateWithFluxFill(prompt, imageBase64, maskBase64, apiKey) {
     console.log('=== Starting Flux Fill Inpainting ===');

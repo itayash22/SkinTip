@@ -480,3 +480,197 @@ app.listen(PORT, () => {
     console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🔑 Flux API: ${process.env.FLUX_API_KEY ? 'Configured' : 'Not configured (using mock)'}`);
 });
+
+// Add this diagnostic endpoint to your server.js to test the API
+
+// Test endpoint to verify Flux Fill API behavior
+app.post('/api/test-flux-fill', async (req, res) => {
+    try {
+        console.log('=== Flux Fill API Test ===');
+        
+        if (!process.env.FLUX_API_KEY) {
+            return res.status(400).json({ error: 'Flux API key not configured' });
+        }
+        
+        // Create a simple test case
+        // You'll need to replace these with actual base64 strings from a test image/mask
+        const testImage = req.body.testImage || ""; // Base64 of a simple test image
+        const testMask = req.body.testMask || "";   // Base64 of a test mask
+        const testPrompt = req.body.testPrompt || "a simple red circle";
+        
+        if (!testImage || !testMask) {
+            return res.status(400).json({ 
+                error: 'Please provide testImage and testMask as base64 strings',
+                instructions: 'Use the browser console to get these from your drawing canvas'
+            });
+        }
+        
+        console.log('Test parameters:');
+        console.log('- Prompt:', testPrompt);
+        console.log('- Image length:', testImage.length);
+        console.log('- Mask length:', testMask.length);
+        
+        // Try different API parameter combinations
+        const tests = [
+            {
+                name: "Standard parameters",
+                params: {
+                    prompt: testPrompt,
+                    image: testImage,
+                    mask: testMask,
+                    guidance_scale: 30,
+                    num_inference_steps: 50,
+                    output_format: 'jpeg'
+                }
+            },
+            {
+                name: "Lower guidance",
+                params: {
+                    prompt: testPrompt,
+                    image: testImage,
+                    mask: testMask,
+                    guidance_scale: 7.5,
+                    num_inference_steps: 50,
+                    output_format: 'jpeg'
+                }
+            },
+            {
+                name: "With seed",
+                params: {
+                    prompt: testPrompt,
+                    image: testImage,
+                    mask: testMask,
+                    guidance_scale: 30,
+                    num_inference_steps: 50,
+                    seed: 42,
+                    output_format: 'jpeg'
+                }
+            }
+        ];
+        
+        const results = [];
+        
+        for (const test of tests) {
+            console.log(`\nTesting: ${test.name}`);
+            console.log('Parameters:', Object.keys(test.params));
+            
+            try {
+                const response = await axios.post(
+                    'https://api.bfl.ai/v1/flux-pro-1.0-fill',
+                    test.params,
+                    {
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'x-key': process.env.FLUX_API_KEY
+                        },
+                        timeout: 30000
+                    }
+                );
+                
+                console.log('Initial response:', response.data);
+                
+                // Poll for result
+                let result = null;
+                let attempts = 0;
+                const maxAttempts = 30;
+                
+                while (attempts < maxAttempts && !result) {
+                    attempts++;
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    
+                    const pollResponse = await axios.get(
+                        `https://api.bfl.ai/v1/get_result?id=${response.data.id}`,
+                        {
+                            headers: { 'x-key': process.env.FLUX_API_KEY }
+                        }
+                    );
+                    
+                    if (pollResponse.data.status === 'Ready') {
+                        result = pollResponse.data.result.sample;
+                        console.log(`✅ ${test.name} succeeded`);
+                    } else if (pollResponse.data.status === 'Error') {
+                        console.error(`❌ ${test.name} failed:`, pollResponse.data);
+                        break;
+                    }
+                }
+                
+                results.push({
+                    test: test.name,
+                    success: !!result,
+                    imageUrl: result,
+                    error: null
+                });
+                
+            } catch (error) {
+                console.error(`❌ ${test.name} error:`, error.response?.data || error.message);
+                results.push({
+                    test: test.name,
+                    success: false,
+                    imageUrl: null,
+                    error: error.response?.data || error.message
+                });
+            }
+        }
+        
+        res.json({
+            message: 'Flux Fill API tests completed',
+            results,
+            recommendations: [
+                'If all tests fail: Check your API key',
+                'If some succeed: Use the working parameter combination',
+                'If results show different person: Try inverting the mask',
+                'Check console logs for detailed error messages'
+            ]
+        });
+        
+    } catch (error) {
+        console.error('Test endpoint error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Also add this helper endpoint to verify mask format
+app.post('/api/verify-mask', upload.single('mask'), (req, res) => {
+    try {
+        const maskFile = req.file;
+        const maskBase64 = req.body.maskBase64;
+        
+        console.log('=== Mask Verification ===');
+        
+        if (maskFile) {
+            console.log('Mask from file upload:');
+            console.log('- Size:', maskFile.size);
+            console.log('- Type:', maskFile.mimetype);
+            console.log('- Buffer length:', maskFile.buffer.length);
+        }
+        
+        if (maskBase64) {
+            console.log('Mask from base64:');
+            console.log('- Length:', maskBase64.length);
+            console.log('- Starts with data URL:', maskBase64.startsWith('data:'));
+            
+            if (maskBase64.startsWith('data:')) {
+                const base64Part = maskBase64.split(',')[1];
+                console.log('- Pure base64 length:', base64Part.length);
+                
+                // Decode to check it's valid
+                try {
+                    const buffer = Buffer.from(base64Part, 'base64');
+                    console.log('- Decoded buffer size:', buffer.length);
+                    console.log('- Valid base64: ✅');
+                } catch (e) {
+                    console.log('- Valid base64: ❌', e.message);
+                }
+            }
+        }
+        
+        res.json({
+            message: 'Mask verification complete',
+            details: 'Check server console for details'
+        });
+        
+    } catch (error) {
+        console.error('Mask verification error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});

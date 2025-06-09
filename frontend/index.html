@@ -252,8 +252,36 @@
     <script src="js/drawing.js"></script>
     <script>
         // Make functions globally available for inline onclicks in HTML
-        window.contactArtist = contactArtist;
-        window.changePortfolioImage = changePortfolioImage;
+        // These MUST be outside the DOMContentLoaded listener to be globally accessible
+        function contactArtist(whatsapp, artistName) {
+            const promptText = document.getElementById('tattooPrompt')?.value || 'Custom tattoo design';
+            const message = encodeURIComponent(`Hi, I got this tattoo idea from SkinTip and would like to discuss a custom design based on it:\n\n${promptText}`);
+            const whatsappUrl = `https://wa.me/${whatsapp.replace(/\D/g, '')}?text=${message}`;
+            window.open(whatsappUrl, '_blank');
+        }
+
+        function changePortfolioImage(button, direction) {
+            const gallery = button.parentElement;
+            const images = gallery.querySelectorAll('.portfolio-image');
+            let currentIndex = 0;
+
+            images.forEach((img, index) => {
+                if (img.classList.contains('active')) {
+                    currentIndex = index;
+                }
+            });
+
+            images[currentIndex].classList.remove('active');
+            images[currentIndex].style.display = 'none';
+
+            let newIndex = currentIndex + direction;
+            if (newIndex < 0) newIndex = images.length - 1;
+            if (newIndex >= images.length) newIndex = 0;
+
+            images[newIndex].classList.add('active');
+            images[newIndex].style.display = 'block';
+        }
+
 
         document.addEventListener('DOMContentLoaded', () => {
             console.log('🎨 SkinTip initializing...');
@@ -600,36 +628,6 @@
             document.getElementById('locationFilter')?.addEventListener('input', filterArtists);
             document.getElementById('styleFilter')?.addEventListener('change', filterArtists);
 
-            // Contact artist function
-            function contactArtist(whatsapp, artistName) {
-                const promptText = document.getElementById('tattooPrompt')?.value || 'Custom tattoo design';
-                const message = encodeURIComponent(`Hi, I got this tattoo idea from SkinTip and would like to discuss a custom design based on it:\n\n${promptText}`);
-                const whatsappUrl = `https://wa.me/${whatsapp.replace(/\D/g, '')}?text=${message}`;
-                window.open(whatsappUrl, '_blank');
-            }
-
-            // Portfolio gallery navigation
-            function changePortfolioImage(button, direction) {
-                const gallery = button.parentElement;
-                const images = gallery.querySelectorAll('.portfolio-image');
-                let currentIndex = 0;
-
-                images.forEach((img, index) => {
-                    if (img.classList.contains('active')) {
-                        currentIndex = index;
-                    }
-                });
-
-                images[currentIndex].classList.remove('active');
-                images[currentIndex].style.display = 'none';
-
-                let newIndex = currentIndex + direction;
-                if (newIndex < 0) newIndex = images.length - 1;
-                if (newIndex >= images.length) newIndex = 0;
-
-                images[newIndex].classList.add('active');
-                images[newIndex].style.display = 'block';
-            }
 
             // Navigation buttons (New Design)
             document.getElementById('newDesignBtn')?.addEventListener('click', () => {

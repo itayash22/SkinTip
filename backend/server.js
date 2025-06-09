@@ -13,7 +13,7 @@ const jwt = require('jsonwebtoken');
 // Initialize Express
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.set('trust proxy', true);
+
 // Initialize Supabase
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://cimakagbgcbkwosavbyk.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpbWFrYWdiZ2Nia3dvc2F2YnlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg3Nzc5MDMsImV4cCI6MjA2NDM1MzkwM30.Qj3ZKq-sZZWVdCoFEus5ggEIXSncGFm_FQZ9pEoLcaA';
@@ -28,8 +28,6 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-// Remove the trust proxy setting
-app.set('trust proxy', false);  // or remove this line entirely
 
 // Update rate limiter
 const limiter = rateLimit({
@@ -278,6 +276,7 @@ function resizeBase64Image(base64String, maxWidth = 1024, maxHeight = 1024) {
     // This is just to show where you'd add image resizing
     return base64String;
 }
+
 // Generate tattoo endpoint
 app.post('/api/generate', upload.single('image'), async (req, res) => {
     try {
@@ -332,35 +331,27 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
         console.log('Image base64 length:', imageBase64.length);
         console.log('Mask base64 length:', maskBase64.length);
         
-        // BUILD BETTER INPAINTING PROMPT
-        // The key is to describe what should appear IN the masked area
+        // BUILD INPAINTING PROMPT FOR FLUX FILL
+        // For inpainting, we need to describe what appears IN THE MASKED AREA ONLY
         let fullPrompt = "";
         
-        // Start by describing it's skin with a tattoo
-        fullPrompt = "human skin with ";
-        
-        // Add style if specified
+        // Simple and direct - just describe the tattoo
         if (styles.length > 0) {
-            fullPrompt += `a ${styles.join(' and ')} style `;
-        } else {
-            fullPrompt += "a ";
+            fullPrompt = `${styles.join(' and ')} style `;
         }
         
-        // Add the tattoo description
-        fullPrompt += `tattoo`;
+        fullPrompt += `tattoo of ${prompt}`;
         
-        // Add the specific design
-        if (prompt && prompt.trim()) {
-            fullPrompt += ` of ${prompt}`;
-        }
+        // Add skin context for better blending
+        fullPrompt += ", on skin";
         
-        // Add realistic skin details
-        fullPrompt += " inked on the skin, realistic tattoo on human skin texture, professional tattoo with proper shading, natural skin tone around the tattoo";
+        console.log('Inpainting prompt:', fullPrompt);
         
-        console.log('Final prompt:', fullPrompt);
-
+        // Debug: Let's also try a very simple prompt to test
+        // Uncomment this line to test with a simple prompt:
+        // fullPrompt = "black star tattoo on skin";
         
-        // Generate variations
+        // Generate tattoo using inpainting
         try {
             const images = await generateMultipleVariations(
                 fullPrompt, 
@@ -373,7 +364,10 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
                 return res.status(500).json({ error: 'No images were generated' });
             }
             
-            console.log(`Successfully generated ${images.length} tattoo variations`);
+            console.log(`Successfully generated ${images.length} inpainted images`);
+            console.log('Note: Result should be original image with tattoo added in masked area');
+            
+            // The returned images should be the original photo with tattoo inpainted
             res.json({ images });
             
         } catch (generationError) {
@@ -409,6 +403,7 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
         });
     }
 });
+
 // Test function
 async function testBFLAPI(apiKey) {
     try {

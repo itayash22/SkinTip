@@ -300,3 +300,120 @@ drawing.createInvertedMask = () => {
     
     return tempCanvas.toDataURL('image/png');
 };
+
+// Add this to your drawing.js to debug mask issues
+
+// In the continue button event listener, add this debugging code:
+document.getElementById('continueBtn')?.addEventListener('click', () => {
+    if (!drawing.selectedArea) {
+        alert('Please draw an area for your tattoo first!');
+        return;
+    }
+    
+    // Save the mask
+    STATE.currentMask = drawing.maskCanvas.toDataURL('image/png');
+    drawing.selectedArea = STATE.currentMask;
+    
+    // === DEBUG: Visualize the mask ===
+    console.log('=== MASK DEBUG INFO ===');
+    
+    // 1. Check mask dimensions
+    console.log('Mask dimensions:', drawing.maskCanvas.width, 'x', drawing.maskCanvas.height);
+    console.log('Original image dimensions:', drawing.originalImage.width, 'x', drawing.originalImage.height);
+    
+    // 2. Analyze mask pixels
+    const maskData = drawing.maskCtx.getImageData(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
+    let blackPixels = 0;
+    let whitePixels = 0;
+    let otherPixels = 0;
+    
+    for(let i = 0; i < maskData.data.length; i += 4) {
+        const r = maskData.data[i];
+        const g = maskData.data[i+1];
+        const b = maskData.data[i+2];
+        const a = maskData.data[i+3];
+        
+        if (r === 0 && g === 0 && b === 0 && a === 255) {
+            blackPixels++;
+        } else if (r === 255 && g === 255 && b === 255 && a === 255) {
+            whitePixels++;
+        } else {
+            otherPixels++;
+        }
+    }
+    
+    const totalPixels = maskData.data.length / 4;
+    console.log('Black pixels (tattoo area):', blackPixels, `(${(blackPixels/totalPixels*100).toFixed(2)}%)`);
+    console.log('White pixels (preserve):', whitePixels, `(${(whitePixels/totalPixels*100).toFixed(2)}%)`);
+    console.log('Other pixels:', otherPixels, `(${(otherPixels/totalPixels*100).toFixed(2)}%)`);
+    
+    // 3. Create a preview of the mask
+    const debugCanvas = document.createElement('canvas');
+    debugCanvas.width = 200;
+    debugCanvas.height = 200 * (drawing.maskCanvas.height / drawing.maskCanvas.width);
+    const debugCtx = debugCanvas.getContext('2d');
+    debugCtx.drawImage(drawing.maskCanvas, 0, 0, debugCanvas.width, debugCanvas.height);
+    
+    // Create a popup to show the mask
+    const debugDiv = document.createElement('div');
+    debugDiv.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        padding: 20px;
+        border: 2px solid #333;
+        z-index: 10000;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    `;
+    debugDiv.innerHTML = `
+        <h3>Mask Debug Preview</h3>
+        <p>Black = Tattoo area | White = Preserve</p>
+        <div style="border: 1px solid #ccc; margin: 10px 0;">
+            ${debugCanvas.outerHTML}
+        </div>
+        <p>Black pixels: ${(blackPixels/totalPixels*100).toFixed(2)}%</p>
+        <p>White pixels: ${(whitePixels/totalPixels*100).toFixed(2)}%</p>
+        <button onclick="this.parentElement.remove()">Close</button>
+    `;
+    document.body.appendChild(debugDiv);
+    
+    // 4. Log first few bytes of base64 to verify format
+    console.log('Mask base64 preview:', STATE.currentMask.substring(0, 50) + '...');
+    console.log('Starts with data:image/png:', STATE.currentMask.startsWith('data:image/png'));
+    
+    // Continue with normal flow
+    document.getElementById('designSection').style.display = 'block';
+    document.getElementById('designSection').scrollIntoView({ behavior: 'smooth' });
+});
+
+// Also add this alternative mask generation to test if inversion helps:
+drawing.updateMaskInverted = () => {
+    // Create mask with BLACK background (preserve)
+    drawing.maskCtx.fillStyle = 'black';
+    drawing.maskCtx.fillRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
+    
+    // Draw WHITE area where tattoo should go (inpaint)
+    if (drawing.currentPathCoords && drawing.currentPathCoords.length > 0) {
+        drawing.maskCtx.fillStyle = 'white';
+        drawing.maskCtx.beginPath();
+        
+        // Scale coordinates from display to original size
+        const scaledCoords = drawing.currentPathCoords.map(coord => ({
+            x: coord.x / drawing.displayScale,
+            y: coord.y / drawing.displayScale
+        }));
+        
+        drawing.maskCtx.moveTo(scaledCoords[0].x, scaledCoords[0].y);
+        
+        for (let i = 1; i < scaledCoords.length; i++) {
+            drawing.maskCtx.lineTo(scaledCoords[i].x, scaledCoords[i].y);
+        }
+        
+        drawing.maskCtx.closePath();
+        drawing.maskCtx.fill();
+    }
+    
+    console.log('Created INVERTED mask - white area is where tattoo will be placed');
+};

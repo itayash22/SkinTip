@@ -9,7 +9,8 @@ const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const sizeOf = require('image-size'); // Import image-size
+const sizeOf = require('image-size');
+const sharp = require('sharp'); // Install this for image manipulation
 
 // Initialize Express
 const app = express();
@@ -37,7 +38,10 @@ const limiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     skipFailedRequests: false,
-    skipSuccessfulRequests: false
+    skipSuccessfulRequests: false,
+    // Add trust proxy for Render environment
+    // Render typically uses a proxy, so this helps express-rate-limit get the correct IP
+    trustProxy: 1 // or specify 'loopback,uniquelocal' or the number of proxies Render uses
 });
 app.use('/api/', limiter);
 
@@ -274,13 +278,33 @@ async function generateMultipleVariations(prompt, imageBase64, maskBase64, apiKe
 
 // Helper function to validate base64 for Node.js
 function isValidBase64(str) {
-    if (!str || str.length < 100) return false; // Basic length check to avoid processing tiny strings
+    if (!str || str.length < 100) return false;
     try {
-        // Attempt to decode and re-encode to check validity
         return Buffer.from(str, 'base64').toString('base64') === str;
     } catch (e) {
-        console.warn("isValidBase64 check failed for string:", str.substring(0, 50) + "...");
+        console.warn("isValidBase64 check failed for string (first 50 chars):", str.substring(0, 50) + "...");
         return false;
+    }
+}
+
+/**
+ * Inverts the colors of a Base64 encoded PNG mask image.
+ * Assumes a grayscale image (black/white). Black becomes white, white becomes black.
+ * Returns the inverted mask as a Base64 Data URL.
+ * @param {string} maskBase64 The base64 string of the mask (without data:image/png;base64, prefix)
+ * @returns {Promise<string>} A promise that resolves with the inverted base64 mask.
+ */
+async function invertMask(maskBase64) {
+    const buffer = Buffer.from(maskBase64, 'base64');
+    try {
+        const invertedBuffer = await sharp(buffer)
+            .negate({ alpha: false }) // Invert colors, but don't touch alpha channel
+            .png() // Ensure output is PNG
+            .toBuffer();
+        return invertedBuffer.toString('base64');
+    } catch (error) {
+        console.error('Error inverting mask:', error);
+        throw new Error('Failed to invert mask image.');
     }
 }
 
@@ -340,32 +364,39 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
         console.log('Mask base64 length:', maskBase64.length);
 
         // *** DEEPER DEBUGGING: Check Image and Mask dimensions ***
+        let imageDimensions, maskDimensions;
         try {
-            const imageDimensions = sizeOf(Buffer.from(imageBase64, 'base64'));
-            const maskDimensions = sizeOf(Buffer.from(maskBase64, 'base64'));
+            imageDimensions = sizeOf(Buffer.from(imageBase64, 'base64'));
+            maskDimensions = sizeOf(Buffer.from(maskBase64, 'base64'));
 
             console.log(`Original Image Dimensions: ${imageDimensions.width}x${imageDimensions.height}`);
-            console.log(`Mask Dimensions: ${maskDimensions.width}x${maskDimensions.height}`);
+            console.log(`Mask Dimensions (before inversion): ${maskDimensions.width}x${maskDimensions.height}`);
 
             if (imageDimensions.width !== maskDimensions.width || imageDimensions.height !== maskDimensions.height) {
                 console.error('Image and Mask dimensions do NOT match!');
                 return res.status(400).json({ error: 'Image and mask dimensions must be identical for inpainting.' });
             }
             // Log a snippet of base64 for manual inspection in browser
-            console.log('Image Base64 (first 100 chars):', imageBase64.substring(0, 100) + '...');
-            console.log('Mask Base64 (first 100 chars):', maskBase64.substring(0, 100) + '...');
-
-            // To manually inspect in browser:
-            // Open browser console, type:
-            // `data:image/jpeg;base64,` + 'PASTE_IMAGE_BASE64_HERE_FROM_LOGS'
-            // or `data:image/png;base64,` + 'PASTE_MASK_BASE64_HERE_FROM_LOGS'
-            // Then press Enter. This will show the image/mask.
+            console.log('Original Image Base64 (first 100 chars):', imageBase64.substring(0, 100) + '...');
+            console.log('Original Mask Base64 (first 100 chars):', maskBase64.substring(0, 100) + '...');
 
         } catch (dimError) {
             console.error('Error getting image/mask dimensions:', dimError.message);
             return res.status(500).json({ error: 'Failed to read image/mask dimensions.' });
         }
         // *** END DEEPER DEBUGGING ***
+
+        // --- MASK INVERSION ATTEMPT ---
+        let invertedMaskBase64;
+        try {
+            invertedMaskBase64 = await invertMask(maskBase64);
+            console.log('Mask successfully inverted.');
+            console.log('Inverted Mask Base64 (first 100 chars):', invertedMaskBase64.substring(0, 100) + '...');
+        } catch (invertError) {
+            console.error('Failed to invert mask:', invertError.message);
+            return res.status(500).json({ error: 'Failed to process mask for generation.' });
+        }
+        // --- END MASK INVERSION ---
 
 
         // BUILD INPAINTING PROMPT FOR FLUX FILL
@@ -386,7 +417,7 @@ app.post('/api/generate', upload.single('image'), async (req, res) => {
             const images = await generateMultipleVariations(
                 fullPrompt,
                 imageBase64,
-                maskBase64,
+                invertedMaskBase64, // Use the INVERTED mask here
                 process.env.FLUX_API_KEY
             );
 

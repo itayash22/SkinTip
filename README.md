@@ -54,10 +54,19 @@ SkinTip/
 ├── scripts/          # Database setup
 └── docs/            # Documentation
 
+---
+
+## 🌳 **Version History & Development Branches**
+
+* **`release-v1.0.0-stable` Branch**: This branch serves as a static snapshot of the first stable and fully functional version of the SkinTip platform. It was created from `main` on [Date of creation, e.g., June 10, 2025] and includes core features like user authentication, image upload, tattoo area selection, text-based AI tattoo generation, and artist Browse/contact. It should be treated as a read-only historical marker.
+
+* **`main` Branch**: This is the primary development branch. All active feature development and bug fixes for SkinTip are performed here. This branch may contain incomplete or experimental code during its development phase. The current work for the "two-image tattoo generation" feature is being developed here.
+
+---
+
 ## 🎯 Next Steps
 
-1. Deploy backend to Railway/Render
-2. Add Flux API key for real tattoo generation
+
 3. Enable Stripe payments
 4. Launch to production!
 

@@ -254,10 +254,13 @@
     <script>
         console.log('Main inline script starting...'); // ADDED FOR DEBUGGING
 
-        // Make functions globally available for inline onclicks in HTML
-        // These MUST be inside the DOMContentLoaded listener to be globally accessible
-        window.contactArtist = contactArtist;
-        window.changePortfolioImage = changePortfolioImage;
+        // === IMPORTANT FIX: MOVED THESE LINES INSIDE DOMContentLoaded ===
+        // They were causing a ReferenceError because contactArtist and changePortfolioImage
+        // were not yet defined when these lines executed at the top of the script.
+        // By moving them here, we ensure all functions are fully parsed and available.
+        // Original problematic lines were here:
+        // window.contactArtist = contactArtist;
+        // window.changePortfolioImage = changePortfolioImage;
 
         /**
          * Resizes an image Data URL to a maximum width/height while maintaining aspect ratio.
@@ -429,9 +432,12 @@
         document.addEventListener('DOMContentLoaded', () => {
             console.log('🎨 SkinTip initializing (DOMContentLoaded)!'); // CHANGED LOG HERE
 
-            // Move global function assignments here to ensure they are defined when assigned
-            window.contactArtist = contactArtist;
-            window.changePortfolioImage = changePortfolioImage;
+            // === IMPORTANT FIX: MOVED THESE LINES INSIDE DOMContentLoaded ===
+            // They were causing a ReferenceError because contactArtist and changePortfolioImage
+            // were not yet defined when these lines executed at the top of the script.
+            // By moving them here, we ensure all functions are fully parsed and available.
+            window.contactArtist = contactArtist; // MOVED HERE
+            window.changePortfolioImage = changePortfolioImage; // MOVED HERE
 
             // Initialize auth module
             if (typeof auth !== 'undefined' && auth.init) {

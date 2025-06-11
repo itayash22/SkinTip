@@ -43,15 +43,8 @@ const drawing = {
             drawing.redrawCanvas();
 
             // Initialize mask canvas with BLACK background (represents no tattoo area initially for Flux fill model)
-            // Flux expects BLACK for the fill area and WHITE for the surrounding context,
-            // but our backend inverts it, so we draw WHITE where we want the tattoo.
-            // Wait, previous logic was: Frontend draws BLACK, backend inverts. So Frontend draws BLACK.
-            // Let's re-align drawing.js mask creation:
-            // DRAWING.JS maskCtx fills BLACK. User draws a path on display. When path is closed,
-            // updateMask sets maskCtx fill to WHITE and fills the drawn path.
-            // Then backend inverts this mask (drawn WHITE -> BLACK). This is the correct logic for Flux.
             drawing.maskCtx.fillStyle = 'black'; // Initial state of the mask canvas is black (no tattoo area initially)
-            drawing.maskCtx.fillRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
+            drawing.maskCtx.fillRect(0, 0, drawing.maskCanvas.width, drawing.maskCtx.height);
 
             // Show drawing section and scroll to it
             document.getElementById('drawingSection').style.display = 'block';
@@ -199,6 +192,12 @@ const drawing = {
     },
 
     redrawCanvas: () => {
+        // Only attempt to draw if canvas and context are initialized
+        if (!drawing.canvas || !drawing.ctx || !drawing.originalImage) {
+            // console.warn("Canvas not initialized, skipping redraw."); // Optional debug
+            return;
+        }
+
         // Always clear and redraw the original image first
         drawing.ctx.clearRect(0, 0, drawing.canvas.width, drawing.canvas.height);
         drawing.ctx.drawImage(drawing.originalImage, 0, 0, drawing.canvas.width, drawing.canvas.height);
@@ -232,6 +231,12 @@ const drawing = {
     },
 
     updateMask: () => {
+        // Only attempt to update mask if maskCanvas and maskCtx are initialized
+        if (!drawing.maskCanvas || !drawing.maskCtx || !drawing.originalImage) {
+            // console.warn("Mask canvas not initialized, skipping updateMask."); // Optional debug
+            return;
+        }
+
         // Create the mask on the HIDDEN canvas.
         // Flux Kontext (and most inpainting models) expects:
         // - BLACK: Area to be generated/replaced (where the tattoo goes)
@@ -261,21 +266,32 @@ const drawing = {
     },
 
     clearCanvas: () => {
+        // Only attempt to clear if canvas and context are initialized
+        if (!drawing.canvas || !drawing.ctx) {
+            // console.warn("Canvas not initialized, skipping clearCanvas."); // Optional debug
+            return;
+        }
+
         // Clear both display and mask canvases
         drawing.ctx.clearRect(0, 0, drawing.canvas.width, drawing.canvas.height);
-        drawing.maskCtx.clearRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
+        // Only clear mask canvas if it exists
+        if (drawing.maskCtx && drawing.maskCanvas) {
+            drawing.maskCtx.clearRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
+        }
 
         // Reset all drawing state variables
         drawing.currentPath = [];
         drawing.selectedArea = null;
         drawing.currentPathCoords = null;
         
-        // Redraw the original image (which will clear the display canvas)
+        // Redraw the original image (which will clear the display canvas if no image)
         drawing.redrawCanvas();
 
         // Re-initialize mask canvas with black background after clearing for consistency
-        drawing.maskCtx.fillStyle = 'black';
-        drawing.maskCtx.fillRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
+        if (drawing.maskCtx && drawing.maskCanvas) {
+            drawing.maskCtx.fillStyle = 'black';
+            drawing.maskCtx.fillRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
+        }
 
         // Hide the continue button
         const continueBtn = document.getElementById('continueBtn');

@@ -6,14 +6,14 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const multer = require('multer');
 const { createClient } = require('@supabase/supabase-js');
-const axios = require('axios'); // Still needed for axios.get in tokenService if it uses it directly. Keep for now.
+const axios = require('axios'); // Still needed for axios.get in fluxKontextHandler (polling).
 const bcrypt = require('bcryptjs'); // Still needed for auth routes
 const jwt = require('jsonwebtoken'); // Still needed for auth routes
 const sizeOf = require('image-size'); // Still used for debugging input dimensions
 
-// Import our new modularized services
-const tokenService = require('./modules/tokenService');
-const fluxKontextHandler = require('./modules/fluxKontextHandler');
+// Import our new modularized services - CORRECTED CASING HERE
+const tokenService = require('./modules/tokenService'); // Matches 'tokenService.js'
+const fluxKontextHandler = require('./modules/fluxPlacementHandler'); // Matches 'fluxPlacementHandler.js'
 
 // Initialize Express
 const app = express();
@@ -261,7 +261,8 @@ app.post('/api/generate-final-tattoo',
                         'https://picsum.photos/512/512?random=1',
                         'https://picsum.photos/512/512?random=2',
                         'https://picsum.photos/512/512?random=3'
-                    ]
+                    ],
+                    tokens_remaining: req.user.tokens_remaining // Return current user tokens
                 });
             }
 
@@ -300,7 +301,7 @@ app.post('/api/generate-final-tattoo',
                 }
                 // Tattoo design image dimensions should be reasonably sized, not necessarily exact match to skin.
                 // Flux Kontext will handle scaling the reference_image within the mask.
-                console.log('Image Base64 (first 100 chars):', skinImageBuffer.toString('base64').substring(0, 100) + '...');
+                console.log('Skin Image Base64 (first 100 chars):', skinImageBuffer.toString('base64').substring(0, 100) + '...');
                 console.log('Tattoo Design Base64 (first 100 chars):', tattooDesignImageBase64.substring(0, 100) + '...');
                 console.log('Mask Base64 (first 100 chars):', mask.substring(0, 100) + '...');
 
@@ -314,7 +315,7 @@ app.post('/api/generate-final-tattoo',
                 skinImageBuffer,
                 tattooDesignImageBase64,
                 mask,
-                userPromptText, // Pass user's optional prompt text
+                userPromptText, // Pass user's optional prompt text (it's gone from UX, but keep param for now)
                 userId,
                 3, // numVariations: Request 3 images
                 process.env.FLUX_API_KEY
@@ -338,7 +339,7 @@ app.post('/api/generate-final-tattoo',
             if (error.message.includes('Invalid file type') || error instanceof multer.MulterError) {
                 let errorMessage = 'File upload error.';
                 if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
-                    errorMessage = 'Uploaded file is too large. Maximum size is 5MB.';
+                    errorMessage = 'One of the uploaded files is too large. Maximum size is 5MB per file.';
                 } else {
                     errorMessage = error.message; // Use specific error message if available
                 }

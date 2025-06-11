@@ -96,10 +96,8 @@ SkinTip operates on a token system to manage AI generation costs.
 * ✅ **Mobile Friendly:** Designed for a seamless experience on all mobile devices.
 
 ### Coming Soon / Next Steps
-* 🔄 Real user authentication with Supabase (backend ready).
 * 🔄 Payment integration with Stripe for token purchases.
 * 🔄 Artist portfolio management and real artist profiles.
-* 🔄 Integration with other AI models for specialized features (e.g., text-to-idea generation if quality improves).
 * 🔄 Social sharing enhancements (e.g., direct Instagram sharing after download).
 
 ## 🚀 How to Use (Current Workflow)

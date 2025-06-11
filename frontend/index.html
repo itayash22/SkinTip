@@ -697,7 +697,14 @@
                     Object.defineProperty(tattooDesignBlob, 'name', { value: 'tattoo_design.jpeg' }); // Give a default name
                     Object.defineProperty(tattooDesignBlob, 'type', { value: 'image/jpeg' }); // Force JPEG type for consistency
                     formData.append('tattooDesignImage', tattooDesignBlob);
-                    formData.append('mask', STATE.currentMask);
+                    
+                    // IMPORTANT FIX: Strip Data URL prefix from mask before sending
+                    let maskToSend = STATE.currentMask;
+                    if (maskToSend && maskToSend.startsWith('data:')) {
+                        maskToSend = maskToSend.split(',')[1];
+                    }
+                    formData.append('mask', maskToSend); // Send stripped mask
+
                     formData.append('prompt', ''); // Sending empty string for backend parameter, as per simplified UX
 
                     const response = await fetch(`${CONFIG.API_URL}/generate-final-tattoo`, {

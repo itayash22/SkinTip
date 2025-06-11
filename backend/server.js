@@ -6,21 +6,31 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const multer = require('multer');
 const { createClient } = require('@supabase/supabase-js');
-const axios = require('axios');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const sizeOf = require('image-size');
-const sharp = require('sharp'); // Install this for image manipulation
+const axios = require('axios'); // Still needed for axios.get in tokenService if it uses it directly. Keep for now.
+const bcrypt = require('bcryptjs'); // Still needed for auth routes
+const jwt = require('jsonwebtoken'); // Still needed for auth routes
+const sizeOf = require('image-size'); // Still used for debugging input dimensions
+
+// Import our new modularized services
+const tokenService = require('./modules/tokenService');
+const fluxKontextHandler = require('./modules/fluxKontextHandler');
 
 // Initialize Express
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Initialize Supabase
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://cimakagbgcbkwosavbyk.supabase.co';
-const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpbWFrYWdiZ2Nia3dvc2avbyfdfvbykIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg3Nzc5MDMsImV4cCI6MjA2NDM1MzkwM30.Qj3ZKq-sZZWVdCoFEus5ggEIXSncGFm_FQZ9pEoLcaA';
+// Initialize Supabase (for auth routes and token service init if needed)
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY; // For frontend auth (if backend uses it)
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY; // For backend operations (token service, storage)
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+// Ensure keys are present early
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_KEY || !process.env.JWT_SECRET || !process.env.FLUX_API_KEY) {
+    console.error('CRITICAL ERROR: One or more required environment variables are missing!');
+    process.exit(1); // Exit if critical env vars are not set
+}
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY); // Use anon key for general supabase client init
 
 // Middleware
 app.use(helmet());
@@ -31,7 +41,7 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Update rate limiter
+// Update rate limiter - Adjust trustProxy for Render (proxy environment)
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 100, // limit each IP to 100 requests per windowMs
@@ -39,13 +49,12 @@ const limiter = rateLimit({
     legacyHeaders: false,
     skipFailedRequests: false,
     skipSuccessfulRequests: false,
-    // Add trust proxy for Render environment
-    // Render typically uses a proxy, so this helps express-rate-limit get the correct IP
-    trustProxy: 1 // or specify 'loopback,uniquelocal' or the number of proxies Render uses
+    trustProxy: 1 // Crucial for Render: trusts the first proxy hop to get real IP
 });
 app.use('/api/', limiter);
 
-// Multer setup for file uploads (memory storage - no persistence)
+// Multer setup for file uploads (memory storage for efficiency)
+// This setup is for the /api/generate-final-tattoo endpoint, accepting two image files.
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
@@ -70,7 +79,7 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'OK', message: 'SkinTip API is running' });
 });
 
-// JWT Middleware
+// JWT Authentication Middleware
 const authenticateToken = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
@@ -80,7 +89,9 @@ const authenticateToken = async (req, res, next) => {
     }
 
     try {
+        // Verify the JWT token
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        // Fetch user from Supabase to ensure token corresponds to an active user
         const { data: user, error } = await supabase
             .from('users')
             .select('*')
@@ -91,14 +102,16 @@ const authenticateToken = async (req, res, next) => {
             return res.status(403).json({ error: 'Invalid token' });
         }
 
-        req.user = user;
+        req.user = user; // Attach user object to request
         next();
     } catch (error) {
-        return res.status(403).json({ error: 'Invalid token' });
+        // Handle token expiration or invalid token
+        console.error('Authentication error:', error.message);
+        return res.status(403).json({ error: 'Invalid or expired token' });
     }
 };
 
-// Auth Routes
+// --- Auth Routes ---
 app.post('/api/auth/register', async (req, res) => {
     try {
         const { email, password, username } = req.body;
@@ -107,7 +120,7 @@ app.post('/api/auth/register', async (req, res) => {
             return res.status(400).json({ error: 'All fields are required' });
         }
 
-        // Check if user exists
+        // Check if user exists (email or username)
         const { data: existingUser } = await supabase
             .from('users')
             .select('id')
@@ -121,13 +134,14 @@ app.post('/api/auth/register', async (req, res) => {
         // Hash password
         const passwordHash = await bcrypt.hash(password, 10);
 
-        // Create user
+        // Create user in Supabase (with initial tokens)
         const { data: newUser, error } = await supabase
             .from('users')
             .insert({
                 email,
                 password_hash: passwordHash,
-                username
+                username,
+                tokens_remaining: 20 // Grant initial free tokens
             })
             .select()
             .single();
@@ -150,7 +164,8 @@ app.post('/api/auth/register', async (req, res) => {
             user: {
                 id: newUser.id,
                 email: newUser.email,
-                username: newUser.username
+                username: newUser.username,
+                tokens_remaining: newUser.tokens_remaining
             }
         });
     } catch (error) {
@@ -167,7 +182,7 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(400).json({ error: 'Email and password required' });
         }
 
-        // Get user
+        // Get user from Supabase
         const { data: user, error } = await supabase
             .from('users')
             .select('*')
@@ -197,7 +212,8 @@ app.post('/api/auth/login', async (req, res) => {
             user: {
                 id: user.id,
                 email: user.email,
-                username: user.username
+                username: user.username,
+                tokens_remaining: user.tokens_remaining
             }
         });
     } catch (error) {
@@ -206,77 +222,7 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
-
-async function generateMultipleVariations(prompt, imageBase64, maskBase64, apiKey) {
-    console.log('Submitting to BFL API...');
-
-    if (!isValidBase64(imageBase64) || !isValidBase64(maskBase64)) {
-        throw new Error('Invalid base64 data');
-    }
-
-    try {
-        const response = await axios.post(
-            'https://api.bfl.ai/v1/flux-pro-1.0-fill',
-            {
-                prompt: prompt,
-                image: imageBase64,
-                mask: maskBase64,
-                seed: Math.floor(Math.random() * 1000000),
-                output_format: 'jpeg',
-                safety_tolerance: 2,
-                guidance_scale: 20,
-                num_inference_steps: 50
-            },
-            {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-key': apiKey
-                },
-                timeout: 60000,
-                maxContentLength: Infinity,
-                maxBodyLength: Infinity
-            }
-        );
-
-        console.log('BFL Response:', response.data);
-        const taskId = response.data.id;
-
-        let attempts = 0;
-        while (attempts < 60) { // Max 2 minutes polling
-            attempts++;
-            await new Promise(resolve => setTimeout(resolve, 2000));
-
-            const result = await axios.get(
-                `https://api.bfl.ai/v1/get_result?id=${taskId}`,
-                {
-                    headers: { 'x-key': apiKey },
-                    timeout: 10000
-                }
-            );
-
-            if (result.data.status === 'Ready') {
-                const imageUrl = result.data.result.sample;
-                console.log('Flux Fill returned:', imageUrl);
-                return [imageUrl];
-            }
-
-            if (result.data.status === 'Error') {
-                console.error('BFL Error:', result.data);
-                throw new Error('Image generation failed: ' + JSON.stringify(result.data));
-            }
-
-            console.log(`Polling attempt ${attempts}: ${result.data.status}`);
-        }
-
-        throw new Error('Generation timeout');
-
-    } catch (error) {
-        console.error('BFL API Error:', error.response?.data || error.message);
-        throw error;
-    }
-}
-
-// Helper function to validate base64 for Node.js
+// Helper function to validate base64 (already in fluxKontextHandler, but good to keep general util here)
 function isValidBase64(str) {
     if (!str || str.length < 100) return false;
     try {
@@ -287,216 +233,153 @@ function isValidBase64(str) {
     }
 }
 
-/**
- * Inverts the colors of a Base64 encoded PNG mask image.
- * Assumes a grayscale image (black/white). Black becomes white, white becomes black.
- * Returns the inverted mask as a Base64 Data URL.
- * @param {string} maskBase64 The base64 string of the mask (without data:image/png;base64, prefix)
- * @returns {Promise<string>} A promise that resolves with the inverted base64 mask.
- */
-async function invertMask(maskBase64) {
-    const buffer = Buffer.from(maskBase64, 'base64');
-    try {
-        const invertedBuffer = await sharp(buffer)
-            .negate({ alpha: false }) // Invert colors, but don't touch alpha channel
-            .png() // Ensure output is PNG
-            .toBuffer();
-        return invertedBuffer.toString('base64');
-    } catch (error) {
-        console.error('Error inverting mask:', error);
-        throw new Error('Failed to invert mask image.');
-    }
-}
-
-
-// Generate tattoo endpoint
-app.post('/api/generate', upload.single('image'), async (req, res) => {
-    try {
-        console.log('Generate endpoint called');
-
-        const { prompt, mask } = req.body;
-        const styles = req.body.styles ? JSON.parse(req.body.styles) : [];
-        const image = req.file;
-
-        if (!image || !prompt) {
-            return res.status(400).json({ error: 'Image and prompt are required' });
-        }
-
-        if (!mask) {
-            return res.status(400).json({ error: 'Mask is required - please draw the tattoo area' });
-        }
-
-        if (!process.env.FLUX_API_KEY) {
-            console.log('Flux API not configured, returning mock data');
-            return res.json({
-                images: [
-                    'https://picsum.photos/512/512?random=1',
-                    'https://picsum.photos/512/512?random=2',
-                    'https://picsum.photos/512/512?random=3',
-                    'https://picsum.photos/512/512?random=4'
-                ]
-            });
-        }
-
-        // Convert image buffer to base64
-        const imageBase64 = image.buffer.toString('base64');
-
-        // Extract mask base64 (remove data URL prefix if present)
-        let maskBase64;
-        if (mask.startsWith('data:')) {
-            maskBase64 = mask.split(',')[1];
-        } else {
-            maskBase64 = mask;
-        }
-
-        // Validate base64 data
-        if (!imageBase64 || !isValidBase64(imageBase64)) {
-            console.error('Server: Invalid image base64 data detected');
-            return res.status(400).json({ error: 'Invalid image data' });
-        }
-
-        if (!maskBase64 || !isValidBase64(maskBase64)) {
-            console.error('Server: Invalid mask base64 data detected');
-            return res.status(400).json({ error: 'Invalid mask data' });
-        }
-
-        console.log('Image base64 length:', imageBase64.length);
-        console.log('Mask base64 length:', maskBase64.length);
-
-        // *** DEEPER DEBUGGING: Check Image and Mask dimensions ***
-        let imageDimensions, maskDimensions;
+// --- NEW GENERATION ENDPOINT: /api/generate-final-tattoo ---
+app.post('/api/generate-final-tattoo',
+    authenticateToken, // Authenticate user
+    upload.fields([ // Expects two image files
+        { name: 'skinImage', maxCount: 1 },
+        { name: 'tattooDesignImage', maxCount: 1 }
+    ]),
+    async (req, res) => {
         try {
-            imageDimensions = sizeOf(Buffer.from(imageBase64, 'base64'));
-            maskDimensions = sizeOf(Buffer.from(maskBase64, 'base64'));
+            console.log('API: /api/generate-final-tattoo endpoint called.');
 
-            console.log(`Original Image Dimensions: ${imageDimensions.width}x${imageDimensions.height}`);
-            console.log(`Mask Dimensions (before inversion): ${maskDimensions.width}x${maskDimensions.height}`);
+            const userId = req.user.id; // User ID from authenticated token
+            const { mask, prompt: userPromptText } = req.body; // 'mask' is base64, 'prompt' is optional text
+            const skinImageFile = req.files.skinImage ? req.files.skinImage[0] : null;
+            const tattooDesignImageFile = req.files.tattooDesignImage ? req.files.tattooDesignImage[0] : null;
 
-            if (imageDimensions.width !== maskDimensions.width || imageDimensions.height !== maskDimensions.height) {
-                console.error('Image and Mask dimensions do NOT match!');
-                return res.status(400).json({ error: 'Image and mask dimensions must be identical for inpainting.' });
+            // --- Input Validation ---
+            if (!skinImageFile || !tattooDesignImageFile || !mask) {
+                return res.status(400).json({ error: 'Skin image, tattoo design, and mask are all required.' });
             }
-            // Log a snippet of base64 for manual inspection in browser
-            console.log('Original Image Base64 (first 100 chars):', imageBase64.substring(0, 100) + '...');
-            console.log('Original Mask Base64 (first 100 chars):', maskBase64.substring(0, 100) + '...');
 
-        } catch (dimError) {
-            console.error('Error getting image/mask dimensions:', dimError.message);
-            return res.status(500).json({ error: 'Failed to read image/mask dimensions.' });
-        }
-        // *** END DEEPER DEBUGGING ***
+            if (!process.env.FLUX_API_KEY) {
+                console.log('Flux API Key not configured. Returning mock data.');
+                return res.json({
+                    images: [
+                        'https://picsum.photos/512/512?random=1',
+                        'https://picsum.photos/512/512?random=2',
+                        'https://picsum.photos/512/512?random=3'
+                    ]
+                });
+            }
 
-        // --- MASK INVERSION ATTEMPT ---
-        let invertedMaskBase64;
-        try {
-            invertedMaskBase64 = await invertMask(maskBase64);
-            console.log('Mask successfully inverted.');
-            console.log('Inverted Mask Base64 (first 100 chars):', invertedMaskBase64.substring(0, 100) + '...');
-        } catch (invertError) {
-            console.error('Failed to invert mask:', invertError.message);
-            return res.status(500).json({ error: 'Failed to process mask for generation.' });
-        }
-        // --- END MASK INVERSION ---
+            // --- Token Check ---
+            const tokensRequired = process.env.NODE_ENV === 'development' ? 0 : 15; // Set to 0 in dev for free testing
+            const hasEnoughTokens = await tokenService.checkTokens(userId, 'FLUX_PLACEMENT', tokensRequired);
+            if (!hasEnoughTokens) {
+                return res.status(402).json({ error: `Insufficient tokens. This action costs ${tokensRequired} tokens.` });
+            }
 
+            // --- Prepare Image Data ---
+            const skinImageBuffer = skinImageFile.buffer;
+            const tattooDesignImageBase64 = tattooDesignImageFile.buffer.toString('base64');
 
-        // BUILD INPAINTING PROMPT FOR FLUX FILL
-        let fullPrompt = "";
+            // Basic validation for base64 strings after conversion from buffer for consistency
+            if (!isValidBase64(tattooDesignImageBase64) || !isValidBase64(mask)) {
+                console.error('Server: Invalid Base64 data detected for tattoo design or mask.');
+                return res.status(400).json({ error: 'Invalid image data detected during processing.' });
+            }
 
-        if (styles.length > 0) {
-            fullPrompt = `${styles.join(' and ')} style `;
-        }
+            // --- Dimension Check ---
+            let skinImageDimensions, tattooDesignDimensions, maskDimensions;
+            try {
+                skinImageDimensions = sizeOf(skinImageBuffer);
+                tattooDesignDimensions = sizeOf(Buffer.from(tattooDesignImageBase64, 'base64'));
+                maskDimensions = sizeOf(Buffer.from(mask, 'base64'));
 
-        fullPrompt += `tattoo of ${prompt}`;
+                console.log(`Skin Image Dims: ${skinImageDimensions.width}x${skinImageDimensions.height}`);
+                console.log(`Tattoo Design Dims: ${tattooDesignDimensions.width}x${tattooDesignDimensions.height}`);
+                console.log(`Mask Dims: ${maskDimensions.width}x${maskDimensions.height}`);
 
-        // Add skin context for better blending
-        fullPrompt += ", on human skin, professional tattoo photography, high detail";
+                // All three should match for optimal inpainting
+                if (skinImageDimensions.width !== maskDimensions.width || skinImageDimensions.height !== maskDimensions.height) {
+                    console.error('Skin image and Mask dimensions do NOT match!');
+                    return res.status(400).json({ error: 'Skin image and mask dimensions must be identical.' });
+                }
+                // Tattoo design image dimensions should be reasonably sized, not necessarily exact match to skin.
+                // Flux Kontext will handle scaling the reference_image within the mask.
+                console.log('Image Base64 (first 100 chars):', skinImageBuffer.toString('base64').substring(0, 100) + '...');
+                console.log('Tattoo Design Base64 (first 100 chars):', tattooDesignImageBase64.substring(0, 100) + '...');
+                console.log('Mask Base64 (first 100 chars):', mask.substring(0, 100) + '...');
 
-        console.log('Inpainting prompt:', fullPrompt);
+            } catch (dimError) {
+                console.error('Error getting image/mask dimensions:', dimError.message);
+                return res.status(500).json({ error: 'Failed to read image dimensions for validation.' });
+            }
 
-        try {
-            const images = await generateMultipleVariations(
-                fullPrompt,
-                imageBase64,
-                invertedMaskBase64, // Use the INVERTED mask here
+            // --- Call Flux Kontext Placement Handler ---
+            const generatedImageUrls = await fluxKontextHandler.placeTattooOnSkin(
+                skinImageBuffer,
+                tattooDesignImageBase64,
+                mask,
+                userPromptText, // Pass user's optional prompt text
+                userId,
+                3, // numVariations: Request 3 images
                 process.env.FLUX_API_KEY
             );
 
-            if (!images || images.length === 0) {
-                return res.status(500).json({ error: 'No images were generated' });
+            // --- Deduct Tokens on Success ---
+            const newTokens = await tokenService.deductTokens(userId, 'FLUX_PLACEMENT', tokensRequired, `Tattoo placement for user ${userId}`);
+            console.log('Tokens deducted successfully. New balance:', newTokens);
+
+            res.json({
+                images: generatedImageUrls,
+                tokens_remaining: newTokens // Send updated token balance to frontend
+            });
+
+        } catch (error) {
+            console.error('API Error in /api/generate-final-tattoo:', error);
+
+            if (error.message.includes('Insufficient tokens')) {
+                return res.status(402).json({ error: error.message });
             }
-
-            console.log(`Successfully generated ${images.length} inpainted images`);
-            console.log('Note: Result should be original image with tattoo added in masked area');
-
-            res.json({ images });
-
-        } catch (generationError) {
-            console.error('Generation failed:', generationError.response?.data || generationError.message);
-
-            if (generationError.response?.status === 400 && generationError.response?.data?.detail) {
-                const detail = generationError.response.data.detail;
-                if (typeof detail === 'string') {
-                    return res.status(400).json({ error: `Flux API Bad Request: ${detail}` });
-                } else if (Array.isArray(detail) && detail[0]?.msg) {
-                    return res.status(400).json({ error: `Flux API Bad Request: ${detail[0].msg}` });
+            if (error.message.includes('Invalid file type') || error instanceof multer.MulterError) {
+                let errorMessage = 'File upload error.';
+                if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+                    errorMessage = 'Uploaded file is too large. Maximum size is 5MB.';
+                } else {
+                    errorMessage = error.message; // Use specific error message if available
                 }
+                return res.status(400).json({ error: errorMessage });
             }
-            throw generationError;
-        }
-
-    } catch (error) {
-        console.error('Endpoint error:', error);
-
-        if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
-            return res.status(400).json({ error: 'Uploaded file is too large. Maximum size is 5MB.' });
-        }
-
-        if (error.response?.status === 401) {
-            return res.status(401).json({ error: 'Invalid Flux API key' });
-        }
-
-        if (error.response?.status === 429) {
-            return res.status(429).json({ error: 'Rate limit exceeded. Please try again later.' });
-        }
-
-        res.status(500).json({
-            error: 'Failed to generate tattoo',
-            details: error.message
-        });
-    }
-});
-
-// Test function (kept for reference, not used in main flow)
-async function testBFLAPI(apiKey) {
-    try {
-        const response = await axios.post(
-            'https://api.bfl.ai/v1/flux-pro-1.1',
-            {
-                prompt: "a simple test image",
-                width: 512,
-                height: 512
-            },
-            {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-key': apiKey
-                },
-                timeout: 30000
+            if (error.message.includes('Image and mask dimensions do NOT match') ||
+                error.message.includes('Invalid image data detected') ||
+                error.message.includes('Failed to read image dimensions') ||
+                error.message.includes('Invalid tattoo design image data')) {
+                return res.status(400).json({ error: `Image processing error: ${error.message}` });
             }
-        );
-        console.log('Test response:', response.data);
-    } catch (error) {
-        console.error('Test failed:', error.response?.data || error.message);
+            if (error.message.includes('Flux API generation error') ||
+                error.message.includes('Generation timeout') ||
+                error.message.includes('Mask inversion failed') ||
+                error.message.includes('Failed to upload image to storage')) {
+                return res.status(500).json({ error: `AI generation or storage failed: ${error.message}` });
+            }
+
+            res.status(500).json({
+                error: 'An internal server error occurred during tattoo generation.',
+                details: error.message
+            });
+        }
     }
-}
-// Error handling middleware
+);
+
+// --- OBSOLETE CODE REMOVED ---
+// The following functions/endpoints are removed as they are no longer used in the new workflow:
+// - generateMultipleVariations function (for flux-pro-1.0-fill)
+// - Old /api/generate endpoint (that used generateMultipleVariations)
+// - testBFLAPI function
+
+// Error handling middleware (catches errors from previous middleware/routes)
 app.use((error, req, res, next) => {
     if (error instanceof multer.MulterError) {
         if (error.code === 'LIMIT_FILE_SIZE') {
-            return res.status(400).json({ error: 'File too large. Maximum size is 5MB.' });
+            return res.status(400).json({ error: 'One of the uploaded files is too large. Maximum size is 5MB per file.' });
         }
+        return res.status(400).json({ error: `File upload error: ${error.message}` });
     }
-    console.error('Internal Server Error:', error);
+    console.error('Unhandled Server Error:', error);
     res.status(500).json({ error: 'Internal server error' });
 });
 
@@ -505,4 +388,7 @@ app.listen(PORT, () => {
     console.log(`🚀 SkinTip backend running on port ${PORT}`);
     console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🔑 Flux API: ${process.env.FLUX_API_KEY ? 'Configured' : 'Not configured (using mock)'}`);
+    console.log(`🔗 Supabase URL: ${SUPABASE_URL ? 'Configured' : 'Not configured'}`);
+    console.log(`🔐 Supabase Service Key: ${SUPABASE_SERVICE_KEY ? 'Configured' : 'Not configured'}`);
+    console.log(`📦 Supabase Storage Bucket: ${process.env.SUPABASE_STORAGE_BUCKET ? 'Configured' : 'Not configured'}`);
 });

@@ -3,13 +3,13 @@
 const drawing = {
     canvas: null,
     ctx: null,
-    maskCanvas: null,
+    maskCanvas: null, // Hidden canvas for creating the mask sent to AI
     maskCtx: null,
-    originalImage: null,
+    originalImage: null, // The skin image being drawn on
     isDrawing: false,
-    currentPath: [],
-    currentPathCoords: null, // Stores the coordinates of the *saved* path
-    selectedArea: null, // This will store the base64 data of the mask for the API
+    currentPath: [], // Stores coordinates of the path being drawn
+    currentPathCoords: null, // Stores the coordinates of the *saved* closed path
+    selectedArea: null, // Stores the Base64 Data URL of the final mask image for API
 
     init: (imageUrl) => {
         drawing.canvas = document.getElementById('drawingCanvas');
@@ -19,12 +19,12 @@ const drawing = {
         drawing.maskCanvas = document.createElement('canvas');
         drawing.maskCtx = drawing.maskCanvas.getContext('2d');
 
-        // Reset drawing state
+        // Reset drawing state for a new image
         drawing.currentPath = [];
         drawing.currentPathCoords = null;
         drawing.selectedArea = null;
 
-        // Load image
+        // Load the skin image
         const img = new Image();
         img.onload = () => {
             drawing.originalImage = img;
@@ -35,16 +35,22 @@ const drawing = {
             drawing.canvas.width = img.width * scale;
             drawing.canvas.height = img.height * scale;
 
-            // Set mask canvas to original image size (essential for AI API)
+            // Set mask canvas to original image size (essential for AI API input consistency)
             drawing.maskCanvas.width = img.width;
             drawing.maskCanvas.height = img.height;
 
             // Draw image on display canvas
             drawing.redrawCanvas();
 
-            // Initialize mask canvas with black background (represents no tattoo area initially)
-            // Flux API's fill model expects black for the fill area and white for the surrounding context.
-            drawing.maskCtx.fillStyle = 'black'; // Set initial mask to black
+            // Initialize mask canvas with BLACK background (represents no tattoo area initially for Flux fill model)
+            // Flux expects BLACK for the fill area and WHITE for the surrounding context,
+            // but our backend inverts it, so we draw WHITE where we want the tattoo.
+            // Wait, previous logic was: Frontend draws BLACK, backend inverts. So Frontend draws BLACK.
+            // Let's re-align drawing.js mask creation:
+            // DRAWING.JS maskCtx fills BLACK. User draws a path on display. When path is closed,
+            // updateMask sets maskCtx fill to WHITE and fills the drawn path.
+            // Then backend inverts this mask (drawn WHITE -> BLACK). This is the correct logic for Flux.
+            drawing.maskCtx.fillStyle = 'black'; // Initial state of the mask canvas is black (no tattoo area initially)
             drawing.maskCtx.fillRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
 
             // Show drawing section and scroll to it
@@ -61,24 +67,24 @@ const drawing = {
     },
 
     setupEventListeners: () => {
-        // Mouse events
+        // Mouse events for drawing
         drawing.canvas.addEventListener('mousedown', drawing.startDrawing);
         drawing.canvas.addEventListener('mousemove', drawing.draw);
         drawing.canvas.addEventListener('mouseup', drawing.stopDrawing);
-        drawing.canvas.addEventListener('mouseleave', drawing.stopDrawing);
+        drawing.canvas.addEventListener('mouseleave', drawing.stopDrawing); // End drawing if mouse leaves canvas
 
-        // Touch events
+        // Touch events for drawing (mobile support)
         drawing.canvas.addEventListener('touchstart', (e) => {
-            e.preventDefault();
+            e.preventDefault(); // Prevent scrolling/zooming
             const touch = e.touches[0];
             drawing.startDrawing({
                 clientX: touch.clientX,
                 clientY: touch.clientY
             });
-        }, { passive: false }); // Use passive: false to allow preventDefault
+        }, { passive: false });
 
         drawing.canvas.addEventListener('touchmove', (e) => {
-            e.preventDefault();
+            e.preventDefault(); // Prevent scrolling/zooming
             const touch = e.touches[0];
             drawing.draw({
                 clientX: touch.clientX,
@@ -87,7 +93,7 @@ const drawing = {
         }, { passive: false });
 
         drawing.canvas.addEventListener('touchend', (e) => {
-            e.preventDefault();
+            e.preventDefault(); // Prevent default touch behavior
             drawing.stopDrawing();
         }, { passive: false });
 
@@ -96,15 +102,15 @@ const drawing = {
             drawing.clearCanvas();
         });
 
-        // Continue button (event listener already handled in index.html, keeping for clarity)
-        // This logic will be triggered by the `continueBtn` in index.html after mask creation.
+        // The "Continue to Design" button listener is handled in index.html.
     },
 
     startDrawing: (e) => {
         drawing.isDrawing = true;
-        drawing.currentPath = []; // Start a new path
+        drawing.currentPath = []; // Start a new path for this drawing session
 
         const rect = drawing.canvas.getBoundingClientRect();
+        // Scale coordinates from display canvas to original image dimensions for mask accuracy
         const x = (e.clientX - rect.left) / drawing.canvas.clientWidth * drawing.originalImage.width;
         const y = (e.clientY - rect.top) / drawing.canvas.clientHeight * drawing.originalImage.height;
 
@@ -115,41 +121,47 @@ const drawing = {
         if (!drawing.isDrawing) return;
 
         const rect = drawing.canvas.getBoundingClientRect();
+        // Scale coordinates from display canvas to original image dimensions for mask accuracy
         const x = (e.clientX - rect.left) / drawing.canvas.clientWidth * drawing.originalImage.width;
         const y = (e.clientY - rect.top) / drawing.canvas.clientHeight * drawing.originalImage.height;
 
         drawing.currentPath.push({ x, y });
 
-        drawing.redrawCanvas(); // Redraw display canvas with current path
+        drawing.redrawCanvas(); // Redraw the display canvas with the original image and any saved path
 
-        // Draw current path (luminescent line on display canvas)
+        // Draw the current path (the line being drawn by the user) with luminescent effect
         if (drawing.currentPath.length > 1) {
             drawing.ctx.save();
-            // Scale the line drawing to the display canvas
+
+            // Scale drawing style to match display canvas
             const displayScaleX = drawing.canvas.width / drawing.originalImage.width;
             const displayScaleY = drawing.canvas.height / drawing.originalImage.height;
 
-            drawing.ctx.strokeStyle = 'rgba(99, 102, 241, 0.2)'; // Outer glow
+            // Outer glow
+            drawing.ctx.strokeStyle = 'rgba(99, 102, 241, 0.2)';
             drawing.ctx.lineWidth = 12 * displayScaleX;
-            drawing.ctx.setLineDash([]);
+            drawing.ctx.setLineDash([]); // Solid line for glow
             drawing.ctx.shadowColor = '#6366f1';
             drawing.ctx.shadowBlur = 20 * displayScaleX;
             drawing.ctx.beginPath();
+            // Draw path using scaled coordinates for display
             drawing.ctx.moveTo(drawing.currentPath[0].x * displayScaleX, drawing.currentPath[0].y * displayScaleY);
             for (let i = 1; i < drawing.currentPath.length; i++) {
                 drawing.ctx.lineTo(drawing.currentPath[i].x * displayScaleX, drawing.currentPath[i].y * displayScaleY);
             }
             drawing.ctx.stroke();
 
-            drawing.ctx.strokeStyle = 'rgba(129, 140, 248, 0.4)'; // Middle glow
+            // Middle glow
+            drawing.ctx.strokeStyle = 'rgba(129, 140, 248, 0.4)';
             drawing.ctx.lineWidth = 6 * displayScaleX;
             drawing.ctx.shadowBlur = 10 * displayScaleX;
             drawing.ctx.stroke();
 
-            drawing.ctx.strokeStyle = '#e0e7ff'; // Inner bright line
+            // Inner bright line (dotted)
+            drawing.ctx.strokeStyle = '#e0e7ff';
             drawing.ctx.lineWidth = 2 * displayScaleX;
             drawing.ctx.shadowBlur = 5 * displayScaleX;
-            drawing.ctx.setLineDash([5 * displayScaleX, 5 * displayScaleX]);
+            drawing.ctx.setLineDash([5 * displayScaleX, 5 * displayScaleX]); // Dotted line
             drawing.ctx.stroke();
 
             drawing.ctx.restore();
@@ -157,106 +169,122 @@ const drawing = {
     },
 
     stopDrawing: () => {
-        if (!drawing.isDrawing) return;
+        if (!drawing.isDrawing) return; // If drawing wasn't active, do nothing
         drawing.isDrawing = false;
 
-        // Check if path is closed (last point near first point) and has enough points
+        // Check if path is closed and has enough points (min 10 points to avoid tiny clicks)
         if (drawing.currentPath.length > 10) {
             const first = drawing.currentPath[0];
             const last = drawing.currentPath[drawing.currentPath.length - 1];
+            // Distance check in original image coordinates
             const distance = Math.sqrt(Math.pow(last.x - first.x, 2) + Math.pow(last.y - first.y, 2));
 
-            if (distance < 30) { // If closed (threshold in original image coordinates)
-                drawing.currentPathCoords = [...drawing.currentPath]; // Save for redraws on display canvas
-                drawing.updateMask(); // Update the hidden mask canvas
-                drawing.selectedArea = drawing.maskCanvas.toDataURL('image/png'); // Store for API call
+            if (distance < 30) { // If closed (threshold of 30 pixels in original image resolution)
+                drawing.currentPathCoords = [...drawing.currentPath]; // Save the coordinates of the closed path
+                drawing.updateMask(); // Generate the mask image on the hidden canvas
+                drawing.selectedArea = drawing.maskCanvas.toDataURL('image/png'); // Store the mask as Base64 for API
 
                 // Show continue button
                 const continueBtn = document.getElementById('continueBtn');
                 if (continueBtn) continueBtn.style.display = 'block';
             } else {
-                alert('Please close the shape by drawing near the starting point to define the tattoo area.');
+                alert('Please close the shape by drawing near your starting point to define the tattoo area.');
             }
         } else {
             alert('Please draw a larger and more defined area for your tattoo.');
         }
 
-        drawing.currentPath = []; // Clear current drawing path
-        drawing.redrawCanvas(); // Redraw to show the saved, filled area
+        drawing.currentPath = []; // Clear the temporary path being drawn
+        drawing.redrawCanvas(); // Redraw to show the filled selected area
     },
 
     redrawCanvas: () => {
-        // Always start fresh with the original image
+        // Always clear and redraw the original image first
         drawing.ctx.clearRect(0, 0, drawing.canvas.width, drawing.canvas.height);
         drawing.ctx.drawImage(drawing.originalImage, 0, 0, drawing.canvas.width, drawing.canvas.height);
 
-        // Draw selected area if exists (using scaled coordinates)
+        // Draw the previously selected (closed) area if it exists
         if (drawing.currentPathCoords && drawing.currentPathCoords.length > 0) {
             drawing.ctx.save();
 
-            // Scale the drawing to the display canvas
+            // Scale drawing to display canvas dimensions
             const displayScaleX = drawing.canvas.width / drawing.originalImage.width;
             const displayScaleY = drawing.canvas.height / drawing.originalImage.height;
 
+            // Luminescent fill style for the selected area
             drawing.ctx.fillStyle = 'rgba(99, 102, 241, 0.2)';
             drawing.ctx.strokeStyle = '#818cf8';
-            drawing.ctx.lineWidth = 3 * Math.min(displayScaleX, displayScaleY); // Scale line width too
+            drawing.ctx.lineWidth = 3 * Math.min(displayScaleX, displayScaleY); // Scale line width
             drawing.ctx.shadowColor = '#6366f1';
             drawing.ctx.shadowBlur = 15 * Math.min(displayScaleX, displayScaleY);
 
             drawing.ctx.beginPath();
+            // Draw the saved path coordinates, scaled for display
             drawing.ctx.moveTo(drawing.currentPathCoords[0].x * displayScaleX, drawing.currentPathCoords[0].y * displayScaleY);
             for (let i = 1; i < drawing.currentPathCoords.length; i++) {
                 drawing.ctx.lineTo(drawing.currentPathCoords[i].x * displayScaleX, drawing.currentPathCoords[i].y * displayScaleY);
             }
-            drawing.ctx.closePath();
-            drawing.ctx.fill();
-            drawing.ctx.stroke();
+            drawing.ctx.closePath(); // Close the shape
+            drawing.ctx.fill(); // Fill the shape
+            drawing.ctx.stroke(); // Draw the outline
             drawing.ctx.restore();
         }
     },
 
     updateMask: () => {
-        // Create mask: everything is WHITE (context) except the drawn area which is BLACK (tattoo area)
-        // This is the expected format for Flux API's inpainting (fill model).
-        drawing.maskCtx.fillStyle = 'white'; // Default to white
+        // Create the mask on the HIDDEN canvas.
+        // Flux Kontext (and most inpainting models) expects:
+        // - BLACK: Area to be generated/replaced (where the tattoo goes)
+        // - WHITE: Area to be preserved (the surrounding skin)
+        // Our backend INVERTS the mask, so frontend must draw WHITE where we want the tattoo, and BLACK elsewhere.
+        // This means the mask image in drawing.js will look like a white shape on a black background.
+
+        // Start with a BLACK background for the mask canvas
+        drawing.maskCtx.fillStyle = 'black';
         drawing.maskCtx.fillRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
 
-        // Draw BLACK area where tattoo should go (inpaint region)
+        // Draw the drawn area as WHITE on the mask canvas
         if (drawing.currentPathCoords && drawing.currentPathCoords.length > 0) {
-            drawing.maskCtx.fillStyle = 'black';
+            drawing.maskCtx.fillStyle = 'white'; // Use white for the area to be filled
             drawing.maskCtx.beginPath();
-            drawing.maskCtx.moveTo(drawing.currentPathCoords[0].x, drawing.currentPathCoords[0].y); // Use original image coordinates for mask
+            // Use original image coordinates for mask for pixel accuracy
+            drawing.maskCtx.moveTo(drawing.currentPathCoords[0].x, drawing.currentPathCoords[0].y);
 
             for (let i = 1; i < drawing.currentPathCoords.length; i++) {
                 drawing.maskCtx.lineTo(drawing.currentPathCoords[i].x, drawing.currentPathCoords[i].y);
             }
 
             drawing.maskCtx.closePath();
-            drawing.maskCtx.fill();
+            drawing.maskCtx.fill(); // Fill the shape with white
         }
-        console.log('Mask updated on hidden canvas: drawn area is black.');
+        console.log('Mask updated on hidden canvas: drawn area is white (will be inverted to black by backend).');
     },
 
     clearCanvas: () => {
+        // Clear both display and mask canvases
         drawing.ctx.clearRect(0, 0, drawing.canvas.width, drawing.canvas.height);
         drawing.maskCtx.clearRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
+
+        // Reset all drawing state variables
         drawing.currentPath = [];
         drawing.selectedArea = null;
-        drawing.currentPathCoords = null; // Clear saved path coordinates
-        drawing.redrawCanvas(); // Redraw the original image only
+        drawing.currentPathCoords = null;
+        
+        // Redraw the original image (which will clear the display canvas)
+        drawing.redrawCanvas();
 
-        // Re-initialize mask canvas with black background after clearing
+        // Re-initialize mask canvas with black background after clearing for consistency
         drawing.maskCtx.fillStyle = 'black';
         drawing.maskCtx.fillRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
 
+        // Hide the continue button
         const continueBtn = document.getElementById('continueBtn');
         if (continueBtn) continueBtn.style.display = 'none';
     },
 
-    // Public getter for mask data URL
+    // Public getter for mask data URL (used by index.html)
     getMaskDataURL: () => {
-        return drawing.selectedArea; // Return the saved base64 mask
+        return drawing.selectedArea;
     }
 };
 

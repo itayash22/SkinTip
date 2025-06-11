@@ -322,11 +322,135 @@
         }
 
 
+        // --- Artist Loading and Filtering Functions (Moved to global scope) ---
+        let allArtists = []; // Declare in a scope accessible by filterArtists and displayArtists
+
+        function loadDemoArtistsWithFilter() {
+            allArtists = [
+                {
+                    name: 'Sarah Martinez',
+                    location: 'Los Angeles, CA',
+                    styles: ['Fine Line', 'Minimalist', 'Geometric'],
+                    bio: 'Specializing in delicate designs with 10+ years experience',
+                    likes: 234,
+                    whatsapp: '+1234567890',
+                    portfolio: [
+                        'https://images.unsplash.com/photo-1611501275019-9b5cda994e8d',
+                        'https://images.unsplash.com/photo-1598371839696-5c5bb00bdc28',
+                        'https://images.unsplash.com/photo-1567406889330-43e4639e8d4f',
+                        'https://images.unsplash.com/photo-1475695752828-6d2b0a83cf8a'
+                    ]
+                },
+                {
+                    name: 'Mike Chen',
+                    location: 'New York, NY',
+                    styles: ['Japanese', 'Neo-Traditional'],
+                    bio: 'Award-winning traditional Japanese artist',
+                    likes: 189,
+                    whatsapp: '+0987654321',
+                    portfolio: [
+                        'https://images.unsplash.com/photo-1565058379802-bbe93b2f703a',
+                        'https://images.unsplash.com/photo-1540202403-b7abd6747a18',
+                        'https://images.unsplash.com/photo-1582736317441-e6937f84b6b3',
+                        'https://images.unsplash.com/photo-1552627019-947c3789ffb5'
+                    ]
+                },
+                {
+                    name: 'Emma Thompson',
+                    location: 'Austin, TX',
+                    styles: ['Watercolor', 'Abstract'],
+                    bio: 'Creating unique watercolor tattoos since 2015',
+                    likes: 156,
+                    whatsapp: '+1122334455',
+                    portfolio: [
+                        'https://images.unsplash.com/photo-1598371839696-5c5bb00bdc28',
+                        'https://images.unsplash.com/photo-1604881991720-f91add269bed',
+                        'https://images.unsplash.com/photo-1590736969955-71cc94901144',
+                        'https://images.unsplash.com/photo-1611501275019-9b5cda994e8d'
+                    ]
+                },
+                {
+                    name: 'Carlos Rodriguez',
+                    location: 'Miami, FL',
+                    styles: ['Blackwork', 'Geometric', 'Tribal'],
+                    bio: 'Bold designs with precision and passion',
+                    likes: 298,
+                    whatsapp: '+9988776655',
+                    portfolio: [
+                        'https://images.unsplash.com/photo-1590736969955-71cc94901144',
+                        'https://images.unsplash.com/photo-1568515045052-f9a854d70bfd',
+                        'https://images.unsplash.com/photo-1582731478949-884de7283343',
+                        'https://images.unsplash.com/photo-1604881991720-f91add269bed'
+                    ]
+                }
+            ];
+            displayArtists(allArtists);
+        }
+
+        function displayArtists(artists) {
+            const artistsGrid = document.getElementById('artistsGrid');
+            if (artists.length === 0) {
+                artistsGrid.innerHTML = '<div class="empty-state"><p>No artists found matching your criteria</p></div>';
+                return;
+            }
+            artistsGrid.innerHTML = artists.map(artist => {
+                let portfolioImages = '';
+                if (Array.isArray(artist.portfolio)) {
+                    portfolioImages = artist.portfolio.map((img, index) =>
+                        `<img src="${img}" alt="${artist.name} work ${index + 1}"
+                             class="portfolio-image ${index === 0 ? 'active' : ''}"
+                             style="display: ${index === 0 ? 'block' : 'none'}">`
+                    ).join('');
+                } else {
+                    portfolioImages = `<img src="${artist.portfolio}" alt="${artist.name}" class="portfolio-image active" style="display: block">`;
+                }
+                const stylesHTML = artist.styles.map(style =>
+                    `<span class="style-tag">${style}</span>`
+                ).join('');
+                return `
+                    <div class="artist-card">
+                        <div class="portfolio-gallery">
+                            ${portfolioImages}
+                            <button class="gallery-prev" onclick="changePortfolioImage(this, -1)">‹</button>
+                            <button class="gallery-next" onclick="changePortfolioImage(this, 1)">›</button>
+                        </div>
+                        <div class="artist-info">
+                            <h3>${artist.name}</h3>
+                            <p class="artist-location">📍 ${artist.location}</p>
+                            <p class="artist-bio">${artist.bio}</p>
+                            <div class="artist-styles">
+                                ${stylesHTML}
+                            </div>
+                            <div class="artist-footer">
+                                <span class="artist-likes">❤️ ${artist.likes}</span>
+                                <button class="btn btn-primary btn-sm" onclick="contactArtist('${artist.whatsapp}', '${artist.name}')">
+                                    Contact via WhatsApp
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function filterArtists() {
+            const locationFilter = document.getElementById('locationFilter');
+            const styleFilter = document.getElementById('styleFilter');
+            const selectedLocation = locationFilter ? locationFilter.value : '';
+            const selectedStyle = styleFilter ? styleFilter.value : '';
+
+            const filtered = allArtists.filter(artist => {
+                const matchesLocation = !selectedLocation || artist.location === selectedLocation;
+                const matchesStyle = !selectedStyle || artist.styles.includes(selectedStyle);
+                return matchesLocation && matchesStyle;
+            });
+            displayArtists(filtered);
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             console.log('🎨 SkinTip initializing...');
 
             // Initialize auth module
-            // Removed onLogin/onLogout calls, as auth.js now directly updates STATE and calls utils.updateTokenDisplay()
             if (typeof auth !== 'undefined' && auth.init) {
                 auth.init();
             } else {
@@ -343,14 +467,14 @@
             const continueToSkinPhotoBtn = document.getElementById('continueToSkinPhotoBtn');
 
             const skinPhotoUploadSection = document.getElementById('skinPhotoUploadSection');
-            const skinUploadArea = document.getElementById('skinUploadArea'); // The actual input area for skin
-            const fileInput = document.getElementById('fileInput'); // The hidden input for skin
-            const imagePreview = document.getElementById('imagePreview'); // Skin preview container
-            const previewImg = document.getElementById('previewImg'); // Skin preview img tag
-            const changeImageBtn = document.getElementById('changeImageBtn'); // Change skin button
+            const skinUploadArea = document.getElementById('skinUploadArea');
+            const fileInput = document.getElementById('fileInput');
+            const imagePreview = document.getElementById('imagePreview');
+            const previewImg = document.getElementById('previewImg');
+            const changeImageBtn = document.getElementById('changeImageBtn');
 
             const drawingSection = document.getElementById('drawingSection');
-            const continueBtn = document.getElementById('continueBtn'); // From drawing to design
+            const continueBtn = document.getElementById('continueBtn');
 
             const designSection = document.getElementById('designSection');
             const generateBtn = document.getElementById('generateBtn');
@@ -358,6 +482,8 @@
             const generateCostDisplay = document.getElementById('generateCostDisplay');
             const socialShareDiv = document.getElementById('socialShare');
             const shareToInstagramBtn = document.getElementById('shareToInstagramBtn');
+            const resultsSection = document.getElementById('resultsSection');
+            const artistsSection = document.getElementById('artistsSection');
 
 
             // --- Core Logic & State Management ---
@@ -377,12 +503,11 @@
                 designSection.style.display = 'none';
                 resultsSection.style.display = 'none';
                 artistsSection.style.display = 'none';
-                socialShareDiv.style.display = 'none'; // Hide share button on reset
+                socialShareDiv.style.display = 'none';
 
                 tattooDesignFileInput.value = '';
                 fileInput.value = '';
 
-                // Safely clear canvas only if drawing module is initialized
                 if (window.drawing && drawing.clearCanvas) {
                     drawing.clearCanvas();
                 }
@@ -392,13 +517,12 @@
                 STATE.generatedImages = [];
                 // STATE.userTokens will be updated by auth.js or on login/registration
 
-
-                utils.updateTokenDisplay(); // Update display for user's tokens
-                generateCostDisplay.textContent = CONFIG.TOKEN_COSTS.FLUX_PLACEMENT; // Update cost display
+                // Update token display and cost display
+                utils.updateTokenDisplay();
             }
 
             // Initial app state setup
-            resetUI(); // Call reset on DOMContentLoaded
+            resetUI();
 
 
             // --- Event Listeners ---
@@ -436,16 +560,14 @@
                 const reader = new FileReader();
                 reader.onload = async (e) => {
                     const originalDataURL = e.target.result;
-                    // Resize tattoo design to be compatible with Flux's expected input dimensions
-                    // E.g., 512x512 or 768x768. Keep consistent with skin image resize for best results.
-                    const resizedDataURL = await resizeImage(originalDataURL, 768, 768, 0.9); 
+                    const resizedDataURL = await resizeImage(originalDataURL, 768, 768, 0.9);
                     STATE.uploadedTattooDesignBase64 = resizedDataURL;
 
                     tattooDesignUploadArea.style.display = 'none';
                     tattooDesignPreview.style.display = 'block';
                     tattooDesignPreviewImg.src = resizedDataURL;
                     continueToSkinPhotoBtn.style.display = 'block';
-                    utils.hideLoading(); // Hide loading after processing
+                    utils.hideLoading();
                 };
                 reader.readAsDataURL(file);
             }
@@ -481,7 +603,6 @@
                 if (window.drawing && drawing.clearCanvas) {
                     drawing.clearCanvas();
                 }
-                // Option to go back to tattoo design upload
                 skinPhotoUploadSection.style.display = 'none';
                 tattooDesignUploadSection.style.display = 'block';
                 tattooDesignUploadSection.scrollIntoView({ behavior: 'smooth' });
@@ -501,10 +622,8 @@
                 const reader = new FileReader();
                 reader.onload = async (e) => {
                     const originalDataURL = e.target.result;
-                    // Resize skin image for Flux API. Keep consistent with tattoo design resize.
-                    const resizedDataURL = await resizeImage(originalDataURL, 768, 768, 0.8); 
+                    const resizedDataURL = await resizeImage(originalDataURL, 768, 768, 0.8);
                     
-                    // Convert resized Data URL back to a Blob/File for FormData
                     const resizedFile = await (await fetch(resizedDataURL)).blob();
                     Object.defineProperty(resizedFile, 'name', { value: file.name });
                     Object.defineProperty(resizedFile, 'type', { value: 'image/jpeg' });
@@ -520,7 +639,7 @@
                     } else {
                         console.error("drawing.js module not loaded correctly or 'drawing' object not exposed.");
                     }
-                    utils.hideLoading(); // Hide loading after processing
+                    utils.hideLoading();
                 };
                 reader.readAsDataURL(file);
             }
@@ -541,10 +660,9 @@
 
             // Generate Button Handler
             generateBtn?.addEventListener('click', async () => {
-                // Ensure user is logged in
                 if (!STATE.user || !STATE.token) {
                     utils.showError('You must be logged in to generate tattoos.');
-                    auth.showModal(); // Show login modal
+                    auth.showModal();
                     return;
                 }
 
@@ -570,10 +688,9 @@
                 try {
                     const formData = new FormData();
                     formData.append('skinImage', STATE.currentImage);
-                    // Convert Base64 DataURL back to a Blob/File for FormData
                     const tattooDesignBlob = await (await fetch(STATE.uploadedTattooDesignBase64)).blob();
-                    Object.defineProperty(tattooDesignBlob, 'name', { value: 'tattoo_design.jpeg' }); // Give a default name
-                    Object.defineProperty(tattooDesignBlob, 'type', { value: 'image/jpeg' }); // Force JPEG type for consistency
+                    Object.defineProperty(tattooDesignBlob, 'name', { value: 'tattoo_design.jpeg' });
+                    Object.defineProperty(tattooDesignBlob, 'type', { value: 'image/jpeg' });
                     formData.append('tattooDesignImage', tattooDesignBlob);
                     formData.append('mask', STATE.currentMask);
                     formData.append('prompt', ''); // Sending empty string for backend parameter, as per simplified UX
@@ -595,11 +712,10 @@
                     console.log('=== API RESPONSE ===');
                     console.log('Generated image URLs:', data.images);
 
-                    // Update token balance from backend response
                     if (typeof data.tokens_remaining === 'number') {
                         STATE.userTokens = data.tokens_remaining;
                     }
-                    utils.updateTokenDisplay(); // Refresh token display
+                    utils.updateTokenDisplay();
 
                     utils.hideLoading();
 
@@ -616,8 +732,8 @@
 
                     resultsSection.style.display = 'block';
                     artistsSection.style.display = 'block';
-                    designSection.scrollIntoView({behavior: 'smooth'}); // Scroll to design section where results are displayed
-                    socialShareDiv.style.display = 'block'; // Show share button
+                    designSection.scrollIntoView({behavior: 'smooth'});
+                    socialShareDiv.style.display = 'block';
                     loadDemoArtistsWithFilter();
 
                 } catch (error) {
@@ -656,7 +772,7 @@
                         document.body.appendChild(a);
                         a.click();
                         document.body.removeChild(a);
-                        URL.revokeObjectURL(url); // Clean up
+                        URL.revokeObjectURL(url);
                     } catch (error) {
                         console.error('Failed to download image:', imageUrl, error);
                         utils.showError('Failed to download one or more images.');
@@ -675,118 +791,7 @@
                 tattooDesignUploadSection.scrollIntoView({ behavior: 'smooth' });
             });
 
-            // Demo artists data and filtering
-            let allArtists = [];
-
-            function loadDemoArtistsWithFilter() {
-                allArtists = [
-                    {
-                        name: 'Sarah Martinez',
-                        location: 'Los Angeles, CA',
-                        styles: ['Fine Line', 'Minimalist', 'Geometric'],
-                        bio: 'Specializing in delicate designs with 10+ years experience',
-                        likes: 234,
-                        whatsapp: '+1234567890',
-                        portfolio: [
-                            'https://images.unsplash.com/photo-1611501275019-9b5cda994e8d',
-                            'https://images.unsplash.com/photo-1598371839696-5c5bb00bdc28',
-                            'https://images.unsplash.com/photo-1567406889330-43e4639e8d4f',
-                            'https://images.unsplash.com/photo-1475695752828-6d2b0a83cf8a'
-                        ]
-                    },
-                    {
-                        name: 'Mike Chen',
-                        location: 'New York, NY',
-                        styles: ['Japanese', 'Neo-Traditional'],
-                        bio: 'Award-winning traditional Japanese artist',
-                        likes: 189,
-                        whatsapp: '+0987654321',
-                        portfolio: [
-                            'https://images.unsplash.com/photo-1565058379802-bbe93b2f703a',
-                            'https://images.unsplash.com/photo-1540202403-b7abd6747a18',
-                            'https://images.unsplash.com/photo-1582736317441-e6937f84b6b3',
-                            'https://images.unsplash.com/photo-1552627019-947c3789ffb5'
-                        ]
-                    },
-                    {
-                        name: 'Emma Thompson',
-                        location: 'Austin, TX',
-                        styles: ['Watercolor', 'Abstract'],
-                        bio: 'Creating unique watercolor tattoos since 2015',
-                        likes: 156,
-                        whatsapp: '+1122334455',
-                        portfolio: [
-                            'https://images.unsplash.com/photo-1598371839696-5c5bb00bdc28',
-                            'https://images.unsplash.com/photo-1604881991720-f91add269bed',
-                            'https://images.unsplash.com/photo-1590736969955-71cc94901144',
-                            'https://images.unsplash.com/photo-1611501275019-9b5cda994e8d'
-                        ]
-                    },
-                    {
-                        name: 'Carlos Rodriguez',
-                        location: 'Miami, FL',
-                        styles: ['Blackwork', 'Geometric', 'Tribal'],
-                        bio: 'Bold designs with precision and passion',
-                        likes: 298,
-                        whatsapp: '+9988776655',
-                        portfolio: [
-                            'https://images.unsplash.com/photo-1590736969955-71cc94901144',
-                            'https://images.unsplash.com/photo-1568515045052-f9a854d70bfd',
-                            'https://images.unsplash.com/photo-1582731478949-884de7283343',
-                            'https://images.unsplash.com/photo-1604881991720-f91add269bed'
-                        ]
-                    }
-                ];
-
-                displayArtists(allArtists);
-            }
-
-            function displayArtists(artists) {
-                const artistsGrid = document.getElementById('artistsGrid');
-                if (artists.length === 0) {
-                    artistsGrid.innerHTML = '<div class="empty-state"><p>No artists found matching your criteria</p></div>';
-                    return;
-                }
-                artistsGrid.innerHTML = artists.map(artist => {
-                    let portfolioImages = '';
-                    if (Array.isArray(artist.portfolio)) {
-                        portfolioImages = artist.portfolio.map((img, index) =>
-                            `<img src="${img}" alt="${artist.name} work ${index + 1}"
-                                 class="portfolio-image ${index === 0 ? 'active' : ''}"
-                                 style="display: ${index === 0 ? 'block' : 'none'}">`
-                        ).join('');
-                    } else {
-                        portfolioImages = `<img src="${artist.portfolio}" alt="${artist.name}" class="portfolio-image active" style="display: block">`;
-                    }
-                    const stylesHTML = artist.styles.map(style =>
-                        `<span class="style-tag">${style}</span>`
-                    ).join('');
-                    return `
-                        <div class="artist-card">
-                            <div class="portfolio-gallery">
-                                ${portfolioImages}
-                                <button class="gallery-prev" onclick="changePortfolioImage(this, -1)">‹</button>
-                                <button class="gallery-next" onclick="changePortfolioImage(this, 1)">›</button>
-                            </div>
-                            <div class="artist-info">
-                                <h3>${artist.name}</h3>
-                                <p class="artist-location">📍 ${artist.location}</p>
-                                <p class="artist-bio">${artist.bio}</p>
-                                <div class="artist-styles">
-                                    ${stylesHTML}
-                                </div>
-                                <div class="artist-footer">
-                                    <span class="artist-likes">❤️ ${artist.likes}</span>
-                                    <button class="btn btn-primary btn-sm" onclick="contactArtist('${artist.whatsapp}', '${artist.name}')">
-                                        Contact via WhatsApp
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-            }
-
+            // The filter event listeners for artists:
             const locationFilter = document.getElementById('locationFilter');
             const styleFilter = document.getElementById('styleFilter');
             locationFilter?.addEventListener('input', filterArtists);

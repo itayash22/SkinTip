@@ -1,51 +1,44 @@
 // frontend/js/auth.js
 
+// Define updateUI and hideModal as standalone functions first.
+// This ensures they are fully parsed and available before being referenced as methods of 'auth'.
+function updateAuthUI() {
+    if (STATE.user) {
+        document.getElementById('userInfo').textContent = `Welcome, ${STATE.user.username}`;
+        document.getElementById('logoutBtn').style.display = 'inline-block';
+    } else {
+        document.getElementById('userInfo').textContent = '';
+        document.getElementById('logoutBtn').style.display = 'none';
+    }
+}
+
+function hideAuthModal() {
+    document.getElementById('authModal').style.display = 'none';
+}
+
 const auth = {
     isLogin: true,
     
     init: () => {
-        // frontend/js/auth.js
-const auth = {
-    isLogin: true,
-
-    init: () => {
-        console.log('Auth init function started.'); // ADD THIS LINE
-
+        console.log('Auth init function started.'); 
         // Check for saved token and user (demo mode - just check localStorage)
         const savedToken = localStorage.getItem('skintip_token');
-        const savedUser = localStorage.getItem('skintip_user');
-
-        console.log('Saved token:', savedToken); // ADD THIS LINE
-        console.log('Saved user:', savedUser);   // ADD THIS LINE
-
-        if (savedToken && savedUser) {
-            STATE.token = savedToken;
-            STATE.user = JSON.parse(savedUser);
-            utils.updateTokenDisplay();
-            auth.updateUI();
-            auth.hideModal();
-            console.log('User logged in from localStorage, UI updated.'); // ADD THIS LINE
-        } else {
-            auth.showModal();
-            console.log('No saved login, showing login modal.'); // ADD THIS LINE
-        }
-        // ... rest of auth.init() ...
-    },
-    // ... rest of auth module ...
-};
-        // Check for saved token and user (demo mode - just check localStorage)
-        const savedToken = localStorage.getItem('skintip_token');
-        const savedUser = localStorage.getItem('skintip_user');
+        const savedUser = localStorage.getItem('sk-intip_user'); // Corrected typo here from skintip_user
+        
+        console.log('Saved token:', savedToken);
+        console.log('Saved user:', savedUser);
         
         if (savedToken && savedUser) {
             STATE.token = savedToken;
             STATE.user = JSON.parse(savedUser);
             // Crucial: Update tokens display on login if user data loaded from localStorage
             utils.updateTokenDisplay(); 
-            auth.updateUI();
-            auth.hideModal();
+            updateAuthUI(); // Call the standalone function
+            hideAuthModal(); // Call the standalone function
+            console.log('User logged in from localStorage, UI updated.'); 
         } else {
-            auth.showModal();
+            auth.showModal(); // This method is simple enough to be part of the object literal.
+            console.log('No saved login, showing login modal.'); 
         }
         
         // Setup event listeners
@@ -58,9 +51,9 @@ const auth = {
         document.getElementById('authModal').style.display = 'block';
     },
     
-    hideModal: () => {
-        document.getElementById('authModal').style.display = 'none';
-    },
+    // Assign the standalone functions to the object properties
+    updateUI: updateAuthUI, 
+    hideModal: hideAuthModal,
     
     toggleMode: (e) => {
         e.preventDefault();
@@ -121,25 +114,15 @@ const auth = {
             STATE.user = data.user; // This now includes tokens_remaining from backend
             STATE.userTokens = data.user.tokens_remaining; // Update global state tokens
             localStorage.setItem('skintip_token', data.token);
-            localStorage.setItem('skintip_user', JSON.stringify(data.user)); // Store full user object
+            localStorage.setItem('sk-intip_user', JSON.stringify(data.user)); // Corrected typo here
             
             // Update UI (user info in navbar, tokens display)
-            auth.updateUI();
+            updateAuthUI(); // Call the standalone function
             utils.updateTokenDisplay(); // Call global utility to update token display
-            auth.hideModal();
+            hideAuthModal(); // Call the standalone function
             
         } catch (error) {
             document.getElementById('authError').textContent = error.message;
-        }
-    },
-    
-    updateUI: () => {
-        if (STATE.user) {
-            document.getElementById('userInfo').textContent = `Welcome, ${STATE.user.username}`;
-            document.getElementById('logoutBtn').style.display = 'inline-block';
-        } else {
-            document.getElementById('userInfo').textContent = '';
-            document.getElementById('logoutBtn').style.display = 'none';
         }
     },
     
@@ -148,8 +131,8 @@ const auth = {
         STATE.token = null;
         STATE.userTokens = 0; // Clear tokens on logout
         localStorage.removeItem('skintip_token'); // Remove token from localStorage
-        localStorage.removeItem('skintip_user');
-        auth.updateUI();
+        localStorage.removeItem('sk-intip_user'); // Corrected typo here
+        updateAuthUI(); // Call the standalone function
         utils.updateTokenDisplay(); // Refresh token display
         auth.showModal(); // Show login modal
         

@@ -23,7 +23,7 @@ const auth = {
         console.log('Auth init function started.'); 
         // Check for saved token and user (demo mode - just check localStorage)
         const savedToken = localStorage.getItem('skintip_token');
-        const savedUser = localStorage.getItem('sk-intip_user'); // Corrected typo here from skintip_user
+        const savedUser = localStorage.getItem('skintip_user'); // Corrected from sk-intip_user
         
         console.log('Saved token:', savedToken);
         console.log('Saved user:', savedUser);
@@ -114,7 +114,7 @@ const auth = {
             STATE.user = data.user; // This now includes tokens_remaining from backend
             STATE.userTokens = data.user.tokens_remaining; // Update global state tokens
             localStorage.setItem('skintip_token', data.token);
-            localStorage.setItem('sk-intip_user', JSON.stringify(data.user)); // Corrected typo here
+            localStorage.setItem('skintip_user', JSON.stringify(data.user)); // Corrected from sk-intip_user
             
             // Update UI (user info in navbar, tokens display)
             updateAuthUI(); // Call the standalone function
@@ -131,7 +131,7 @@ const auth = {
         STATE.token = null;
         STATE.userTokens = 0; // Clear tokens on logout
         localStorage.removeItem('skintip_token'); // Remove token from localStorage
-        localStorage.removeItem('sk-intip_user'); // Corrected typo here
+        localStorage.removeItem('skintip_user'); // Corrected from sk-intip_user
         updateAuthUI(); // Call the standalone function
         utils.updateTokenDisplay(); // Refresh token display
         auth.showModal(); // Show login modal

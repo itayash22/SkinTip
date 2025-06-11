@@ -46,9 +46,9 @@ const fluxPlacementHandler = {
     applyWatermark: async (imageBuffer) => {
         try {
             // DEBUGGING: Inspect the buffer right before sharp is called
-            console.log('Watermark DEBUG: imageBuffer length (bytes):', imageBuffer.length); // ADDED
-            console.log('Watermark DEBUG: imageBuffer first 20 bytes (hex):', imageBuffer.toString('hex', 0, 20)); // ADDED (Magic numbers for image types)
-            console.log('Watermark DEBUG: imageBuffer first 20 bytes (base64):', imageBuffer.toString('base64', 0, 20)); // ADDED
+            console.log('Watermark DEBUG: imageBuffer length (bytes):', imageBuffer.length);
+            console.log('Watermark DEBUG: imageBuffer first 20 bytes (hex):', imageBuffer.toString('hex', 0, 20));
+            console.log('Watermark DEBUG: imageBuffer first 20 bytes (base64):', imageBuffer.toString('base64', 0, 20));
 
             const watermarkText = 'SkinTip.AI';
             const watermarkSvg = `<svg width="200" height="30" viewBox="0 0 200 30" xmlns="http://www.w3.org/2000/svg">
@@ -57,7 +57,7 @@ const fluxPlacementHandler = {
             const svgBuffer = Buffer.from(watermarkSvg);
 
             // Get image metadata to determine position for watermark
-            const metadata = await sharp(imageBuffer).metadata(); // LINE 55 (or near it)
+            const metadata = await sharp(imageBuffer).metadata();
             const imageWidth = metadata.width;
             const imageHeight = metadata.height;
 
@@ -98,7 +98,7 @@ const fluxPlacementHandler = {
      * @throws {Error} If Supabase upload fails.
      */
     uploadToSupabaseStorage: async (imageBuffer, fileName, userId) => {
-        const filePath = `${userId}/${fileName}`; // Store in user-specific folder
+        const filePath = `<span class="math-inline">\{userId\}/</span>{fileName}`; // Store in user-specific folder
         const { data, error } = await supabase.storage
             .from(SUPABASE_STORAGE_BUCKET)
             .upload(filePath, imageBuffer, {
@@ -222,6 +222,9 @@ const fluxPlacementHandler = {
                     timeout: 10000
                 }
             );
+
+            // DEBUGGING: Log the entire result data from Flux API
+            console.log('Flux Polling Result Data (FULL RESPONSE):', JSON.stringify(result.data, null, 2)); // ADDED THIS LINE
 
             if (result.data.status === 'Ready') {
                 if (result.data.result && Array.isArray(result.data.result.samples)) {

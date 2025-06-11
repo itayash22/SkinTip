@@ -1,4 +1,3 @@
-
 // backend/server.js
 require('dotenv').config();
 const express = require('express');
@@ -19,6 +18,9 @@ const fluxKontextHandler = require( './modules/fluxPlacementHandler');
 // Initialize Express
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// IMPORTANT: For Render, trust the first proxy hop to get correct client IP for rate limiting
+app.set('trust proxy', 1); 
 
 // Initialize Supabase (for auth routes and token service init if needed)
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -301,9 +303,18 @@ app.post('/api/generate-final-tattoo',
             const skinImageBuffer = skinImageFile.buffer;
             const tattooDesignImageBase64 = tattooDesignImageFile.buffer.toString('base64');
 
+            // DEBUGGING: Log information about the received Base64 strings
+            console.log('Backend DEBUG: tattooDesignImageBase64 length:', tattooDesignImageBase64.length);
+            console.log('Backend DEBUG: tattooDesignImageBase64 starts with (first 50 chars):', tattooDesignImageBase64.substring(0, 50));
+            console.log('Backend DEBUG: mask length:', mask.length);
+            console.log('Backend DEBUG: mask starts with (first 50 chars):', mask.substring(0, 50));
+            
             // Basic validation for base64 strings after conversion from buffer for consistency
             if (!isValidBase64(tattooDesignImageBase64) || !isValidBase64(mask)) {
-                console.error('Server: Invalid Base64 data detected for tattoo design or mask.');
+                // More detailed error logging
+                console.error('Server DEBUG: isValidBase64 check FAILED for tattooDesignImageBase64:', !isValidBase64(tattooDesignImageBase64));
+                console.error('Server DEBUG: isValidBase64 check FAILED for mask:', !isValidBase64(mask));
+                console.error('Server: Invalid Base64 data detected for tattoo design or mask. Returning 400.');
                 return res.status(400).json({ error: 'Invalid image data detected during processing.' });
             }
 
@@ -325,9 +336,9 @@ app.post('/api/generate-final-tattoo',
                 }
                 // Tattoo design image dimensions should be reasonably sized, not necessarily exact match to skin.
                 // Flux Kontext will handle scaling the reference_image within the mask.
-                console.log('Skin Image Base64 (first 100 chars):', skinImageBuffer.toString('base64').substring(0, 100) + '...');
-                console.log('Tattoo Design Base64 (first 100 chars):', tattooDesignImageBase64.substring(0, 100) + '...');
-                console.log('Mask Base64 (first 100 chars):', mask.substring(0, 100) + '...');
+                // console.log('Skin Image Base64 (first 100 chars):', skinImageBuffer.toString('base64').substring(0, 100) + '...'); // Too verbose for regular logs
+                // console.log('Tattoo Design Base64 (first 100 chars):', tattooDesignImageBase64.substring(0, 100) + '...'); // Too verbose for regular logs
+                // console.log('Mask Base64 (first 100 chars):', mask.substring(0, 100) + '...'); // Too verbose for regular logs
 
             } catch (dimError) {
                 console.error('Error getting image/mask dimensions:', dimError.message);

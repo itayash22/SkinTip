@@ -1,5 +1,9 @@
 // backend/modules/fluxPlacementHandler.js
+console.log('FLUX_HANDLER_VERSION: 2025-06-11_V1.5_URL_DOWNLOAD_DEBUG'); // ADD THIS LINE AT THE VERY TOP
 
+const axios = require('axios');
+const sharp = require('sharp');
+// ... rest of the file ...
 const axios = require('axios');
 const sharp = require('sharp'); // For image manipulation and watermarking
 const { createClient } = require('@supabase/supabase-js');

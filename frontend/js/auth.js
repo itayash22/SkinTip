@@ -139,4 +139,88 @@ const auth = {
         // Reset form for next login/register
         document.getElementById('authForm').reset();
     }
+    // frontend/js/auth.js
+
+// ... (existing code up to init) ...
+
+const auth = {
+    isLogin: true,
+    
+    init: () => {
+        console.log('Auth init function started.'); 
+        const savedToken = localStorage.getItem('skintip_token');
+        const savedUser = localStorage.getItem('skintip_user'); 
+        
+        console.log('Auth init: Raw saved token:', savedToken); // ADD THIS
+        console.log('Auth init: Raw saved user:', savedUser);   // ADD THIS
+        
+        if (savedToken && savedUser) {
+            STATE.token = savedToken;
+            STATE.user = JSON.parse(savedUser);
+            // Before updating display, log what STATE.userTokens holds
+            console.log('Auth init: STATE.user.tokens_remaining from localStorage:', STATE.user.tokens_remaining); // ADD THIS
+            STATE.userTokens = STATE.user.tokens_remaining; // Ensure STATE.userTokens is set from parsed user
+            utils.updateTokenDisplay(); 
+            hideAuthModal(); 
+            console.log('Auth init: User logged in from localStorage. Current STATE.userTokens:', STATE.userTokens); // ADD THIS
+        } else {
+            auth.showModal(); 
+            console.log('Auth init: No saved login, showing login modal. Current STATE.userTokens:', STATE.userTokens); // ADD THIS
+        }
+        
+        // ... (rest of auth.init) ...
+    },
+    
+    // ... (rest of auth object) ...
+
+    handleSubmit: async (e) => {
+        e.preventDefault();
+        // ... (existing code for email, password, username, endpoint, body) ...
+        try {
+            const response = await fetch(`${CONFIG.API_URL}${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Authentication failed');
+            }
+            
+            // Save token and user data (including tokens_remaining)
+            STATE.token = data.token;
+            STATE.user = data.user; 
+            STATE.userTokens = data.user.tokens_remaining; // Update global state tokens
+
+            // LOGGING AFTER RECEIVING FROM BACKEND
+            console.log('Auth handleSubmit: Backend response user object:', data.user); // ADD THIS
+            console.log('Auth handleSubmit: Backend response tokens_remaining:', data.user.tokens_remaining); // ADD THIS
+            console.log('Auth handleSubmit: STATE.userTokens set to:', STATE.userTokens); // ADD THIS
+
+            localStorage.setItem('skintip_token', data.token);
+            localStorage.setItem('skintip_user', JSON.stringify(data.user)); // Should save full user object including tokens_remaining
+            
+            // Update UI (user info in navbar, tokens display)
+            updateAuthUI(); 
+            utils.updateTokenDisplay(); 
+            hideAuthModal(); 
+            
+        } catch (error) {
+            document.getElementById('authError').textContent = error.message;
+        }
+    },
+    
+    logout: () => {
+        STATE.user = null;
+        STATE.token = null;
+        STATE.userTokens = 0; // Clear tokens on logout
+        localStorage.removeItem('skintip_token'); 
+        localStorage.removeItem('skintip_user'); 
+        updateAuthUI(); 
+        utils.updateTokenDisplay(); 
+        auth.showModal(); 
+        document.getElementById('authForm').reset();
+        console.log('Auth logout: STATE.userTokens after logout:', STATE.userTokens); // ADD THIS
+    }
+};
 };

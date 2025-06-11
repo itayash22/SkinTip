@@ -6,6 +6,80 @@ Live Demo: https://itayash22.github.io/SkinTip/frontend/
 
 SkinTip is an innovative, mobile-first web application that empowers users to visualize tattoo designs directly on their own skin. Leveraging advanced AI, SkinTip provides a unique and realistic preview experience, helping users make informed decisions before getting inked. The platform operates on a token-based payment model, ensuring controlled API costs and a clear value exchange for users.
 
+Code tree:
+SkinTip/
+├── frontend/                 # Live on GitHub Pages (https://itayash22.github.io/SkinTip/frontend/)
+│   ├── index.html            # Main application UI
+│   ├── css/                  # Stylesheets
+│   │   └── styles.css
+│   └── js/                   # JavaScript modules and scripts
+│       ├── auth.js           # Handles user authentication flow
+│       ├── config.js         # Global config and state (tokens, API URLs)
+│       └── drawing.js        # Canvas drawing for tattoo area selection
+├── backend/                  # Node.js API server (deployed on Render)
+│   ├── server.js             # Main Express.js server, defines routes
+│   ├── package.json          # Node.js dependencies (includes sharp, image-size, uuid)
+│   ├── .env.example          # Example environment variables
+│   └── modules/              # Modularized backend logic
+│       ├── tokenService.js   # Manages user tokens via Supabase
+│       └── fluxKontextHandler.js # Handles Flux API calls, image processing, watermarking, Supabase Storage upload
+├── scripts/                  # Database setup scripts (e.g., SQL for Supabase)
+└── docs/                     # Project documentation
+
+
+## 🌳 **Development Branches & Tags**
+
+* **`v1.0.0` (Tagged Release)**: This tag points to the initial stable and fully functional version of the SkinTip platform. It includes user authentication, image upload, tattoo area selection, **text-based AI tattoo generation (using old Flux API)**, and artist Browse/contact. This served as a production-ready baseline.
+* **`main` Branch**: This is the primary development branch. It contains the **latest code with the updated workflow**, focusing on user-uploaded tattoo designs for placement with Flux Kontext. Active feature development and bug fixes are performed here. This branch is directly deployed to Render.
+* **`feature/your-new-feature-name` (Example)**: Future feature development will happen on dedicated branches branched off `main`.
+
+## ⚙️ Backend Environment Variables (Render Configuration)
+
+The `backend/server.js` and its modules rely on these environment variables, which **must be set on your Render backend service dashboard**:
+
+* `PORT`: (e.g., `10000` - Render's default).
+* `FRONTEND_URL`: (e.g., `https://itayash22.github.io/SkinTip/frontend/` or `*` for testing).
+* `JWT_SECRET`: A strong, random string for JWT signing.
+* `SUPABASE_URL`: Your Supabase Project URL (from Supabase Project Settings > API).
+* `SUPABASE_ANON_KEY`: Your Supabase `anon` (public) API key (from Supabase Project Settings > API).
+* `SUPABASE_SERVICE_KEY`: Your **Supabase `service_role` (secret) API key**. **Extremely sensitive - NEVER expose.** (from Supabase Project Settings > API). Used by `tokenService` and `fluxKontextHandler`.
+* `SUPABASE_STORAGE_BUCKET`: The name of your Supabase Storage bucket for generated images (e.g., `generated-tattoos`).
+* `FLUX_API_KEY`: Your API key for Flux.ai (Black Forest Labs).
+
+## 💰 Token-Based Business Model & Pricing
+
+SkinTip operates on a token system to manage AI generation costs.
+
+* **Token Value:** 1 Token = $0.01
+* **Action Cost:**
+    * **Flux Tattoo Placement (3 images, watermarked):** **15 Tokens ($0.15)**
+* **Token Packages (Examples for Sale):**
+    * **Free Trial:** 20 Tokens (given upon new user registration). Allows 1 Flux Placement, leaving 5 tokens change.
+    * **Small Pack:** 20 Tokens for $0.20 (Ensures change, e.g., buy this, make 1 placement, left with 5 tokens).
+    * **Medium Pack:** 50 Tokens for $0.45 (10% discount).
+    * **Large Pack:** 100 Tokens for $0.80 (20% discount).
+* **Cost Control:** Token deductions are handled server-side (`tokenService.js`). Users can only spend tokens they possess, providing a hard ceiling on API usage and preventing abuse.
+
+## 🎯 Current Development Status & Next Steps for Developer
+
+* **Frontend (`index.html`, `config.js`, `drawing.js`):** Updated with new UX flow for tattoo design upload, skin photo upload, drawing, and streamlined generation. Token display implemented.
+* **Backend (`tokenService.js`, `fluxKontextHandler.js`):** New modules created and integrated with Supabase for token management, Flux Kontext API calls, image watermarking, and Supabase Storage uploads.
+* **Backend (`server.js`):** Needs to be updated to integrate these new modules and set up the new dedicated `/api/generate-final-tattoo` endpoint, completely replacing the old Flux API call logic and removing the old `generateMultipleVariations` function.
+
+**Next Steps for the Developer (Your immediate task):**
+
+1.  **Update `backend/server.js`:**
+    * Import `tokenService` and `fluxKontextHandler`.
+    * **REMOVE** the `generateMultipleVariations` function entirely.
+    * **REMOVE** the old `/api/generate` endpoint.
+    * **Implement the new `/api/generate-final-tattoo` endpoint.** This endpoint will use `tokenService.checkTokens`, `multer.fields` for both `skinImage` and `tattooDesignImage`, call `fluxKontextHandler.placeTattooOnSkin`, `tokenService.deductTokens`, and return the watermarked image URLs.
+    * Add the `uuid` dependency to `backend/package.json` if not already there (it was part of the `fluxKontextHandler.js` code).
+2.  **Verify Render Environment Variables:** Confirm all necessary environment variables (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`, `SUPABASE_STORAGE_BUCKET`, `FLUX_API_KEY`, `JWT_SECRET`) are correctly set in Render.
+3.  **Test the Full Flow:** Upload a tattoo design, upload a skin photo, draw a mask, and click "Generate Tattoo on Skin." Verify that tokens are deducted, and watermarked images are returned/displayed.
+4.  **Consider adding basic CSS** for the new HTML elements in `styles.css`.
+
+
+
 ## ✨ Key Features & Functionality
 
 ### Current State (`main` branch)

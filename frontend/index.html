@@ -255,7 +255,7 @@
         console.log('Main inline script starting...'); // ADDED FOR DEBUGGING
 
         // Make functions globally available for inline onclicks in HTML
-        // These MUST be outside the DOMContentLoaded listener to be globally accessible
+        // These MUST be inside the DOMContentLoaded listener to be globally accessible
         window.contactArtist = contactArtist;
         window.changePortfolioImage = changePortfolioImage;
 
@@ -428,6 +428,10 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             console.log('🎨 SkinTip initializing (DOMContentLoaded)!'); // CHANGED LOG HERE
+
+            // Move global function assignments here to ensure they are defined when assigned
+            window.contactArtist = contactArtist;
+            window.changePortfolioImage = changePortfolioImage;
 
             // Initialize auth module
             if (typeof auth !== 'undefined' && auth.init) {

@@ -245,10 +245,15 @@
             </div>
         </div>
     </footer>
+    <script>console.log('Loading config.js...');</script>
     <script src="js/config.js"></script>
+    <script>console.log('Loading auth.js...');</script>
     <script src="js/auth.js"></script>
+    <script>console.log('Loading drawing.js...');</script>
     <script src="js/drawing.js"></script>
     <script>
+        console.log('Main inline script starting...'); // ADDED FOR DEBUGGING
+
         // Make functions globally available for inline onclicks in HTML
         // These MUST be outside the DOMContentLoaded listener to be globally accessible
         window.contactArtist = contactArtist;
@@ -371,12 +376,12 @@
                 let portfolioImages = '';
                 if (Array.isArray(artist.portfolio)) {
                     portfolioImages = artist.portfolio.map((img, index) =>
-                        `<img src="<span class="math-inline">\{img\}" alt\="</span>{artist.name} work ${index + 1}"
+                        `<img src="${img}" alt="${artist.name} work ${index + 1}"
                              class="portfolio-image ${index === 0 ? 'active' : ''}"
                              style="display: ${index === 0 ? 'block' : 'none'}">`
                     ).join('');
                 } else {
-                    portfolioImages = `<img src="<span class="math-inline">\{artist\.portfolio\}" alt\="</span>{artist.name}" class="portfolio-image active" style="display: block">`;
+                    portfolioImages = `<img src="${artist.portfolio}" alt="${artist.name}" class="portfolio-image active" style="display: block">`;
                 }
                 const stylesHTML = artist.styles.map(style =>
                     `<span class="style-tag">${style}</span>`
@@ -384,20 +389,20 @@
                 return `
                     <div class="artist-card">
                         <div class="portfolio-gallery">
-                            <span class="math-inline">\{portfolioImages\}
-<button class\="gallery\-prev" onclick\="changePortfolioImage\(this, \-1\)"\>‹</button\>
-<button class\="gallery\-next" onclick\="changePortfolioImage\(this, 1\)"\>›</button\>
-</div\>
-<div class\="artist\-info"\>
-<h3\></span>{artist.name}</h3>
-                            <p class="artist-location">📍 <span class="math-inline">\{artist\.location\}</p\>
-<p class\="artist\-bio"\></span>{artist.bio}</p>
+                            ${portfolioImages}
+                            <button class="gallery-prev" onclick="changePortfolioImage(this, -1)">‹</button>
+                            <button class="gallery-next" onclick="changePortfolioImage(this, 1)">›</button>
+                        </div>
+                        <div class="artist-info">
+                            <h3>${artist.name}</h3>
+                            <p class="artist-location">📍 ${artist.location}</p>
+                            <p class="artist-bio">${artist.bio}</p>
                             <div class="artist-styles">
                                 ${stylesHTML}
                             </div>
                             <div class="artist-footer">
-                                <span class="artist-likes">❤️ <span class="math-inline">\{artist\.likes\}</span\>
-<button class\="btn btn\-primary btn\-sm" onclick\="contactArtist\('</span>{artist.whatsapp}', '${artist.name}')">
+                                <span class="artist-likes">❤️ ${artist.likes}</span>
+                                <button class="btn btn-primary btn-sm" onclick="contactArtist('${artist.whatsapp}', '${artist.name}')">
                                     Contact via WhatsApp
                                 </button>
                             </div>
@@ -422,7 +427,7 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-            console.log('🎨 SkinTip initializing...');
+            console.log('🎨 SkinTip initializing (DOMContentLoaded)!'); // CHANGED LOG HERE
 
             // Initialize auth module
             if (typeof auth !== 'undefined' && auth.init) {
@@ -514,7 +519,7 @@
             });
 
             changeTattooDesignBtn?.addEventListener('click', () => {
-                tattooDesignUploadArea.style.display = 'flex';
+                tattooDesignUploadArea.style.display = 'flex'; // Changed to flex for consistency
                 tattooDesignPreview.style.display = 'none';
                 tattooDesignFileInput.value = '';
                 STATE.uploadedTattooDesignBase64 = null;
@@ -538,4 +543,248 @@
                     // Resize tattoo design to be compatible with Flux's expected input dimensions
                     // E.g., 512x512 or 768x768. Keep consistent with skin image resize for best results.
                     const resizedDataURL = await resizeImage(originalDataURL, 768, 768, 0.9); 
-                    STATE.uploadedTattooDesignBase64
+                    STATE.uploadedTattooDesignBase64 = resizedDataURL;
+
+                    tattooDesignUploadArea.style.display = 'none';
+                    tattooDesignPreview.style.display = 'block';
+                    tattooDesignPreviewImg.src = resizedDataURL;
+                    continueToSkinPhotoBtn.style.display = 'block';
+                    utils.hideLoading();
+                };
+                reader.readAsDataURL(file);
+            }
+
+            // Continue to Skin Photo
+            continueToSkinPhotoBtn?.addEventListener('click', () => {
+                if (!STATE.uploadedTattooDesignBase64) {
+                    utils.showError('Please upload a tattoo design first.');
+                    return;
+                }
+                tattooDesignUploadSection.style.display = 'none';
+                skinPhotoUploadSection.style.display = 'block';
+                skinPhotoUploadSection.scrollIntoView({ behavior: 'smooth' });
+            });
+
+
+            // Skin Photo Upload 
+            skinUploadArea?.addEventListener('click', () => {
+                fileInput.click();
+            });
+
+            fileInput?.addEventListener('change', async (e) => {
+                if (e.target.files.length > 0) {
+                    await handleSkinPhotoFile(e.target.files[0]);
+                }
+            });
+
+            changeImageBtn?.addEventListener('click', () => {
+                skinUploadArea.style.display = 'flex';
+                imagePreview.style.display = 'none';
+                fileInput.value = '';
+                STATE.currentImage = null;
+                if (window.drawing && drawing.clearCanvas) {
+                    drawing.clearCanvas();
+                }
+                skinPhotoUploadSection.style.display = 'none';
+                tattooDesignUploadSection.style.display = 'block';
+                tattooDesignUploadSection.scrollIntoView({ behavior: 'smooth' });
+            });
+
+            async function handleSkinPhotoFile(file) {
+                if (!CONFIG.ALLOWED_FILE_TYPES.includes(file.type)) {
+                    utils.showError('Please upload a JPEG, PNG, or WebP image for your skin photo.');
+                    return;
+                }
+                if (file.size > CONFIG.MAX_FILE_SIZE) {
+                    utils.showError('Skin photo file size must be less than 5MB.');
+                    return;
+                }
+
+                utils.showLoading('Processing skin photo...');
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const originalDataURL = e.target.result;
+                    const resizedDataURL = await resizeImage(originalDataURL, 768, 768, 0.8); 
+                    
+                    const resizedFile = await (await fetch(resizedDataURL)).blob();
+                    Object.defineProperty(resizedFile, 'name', { value: file.name });
+                    Object.defineProperty(resizedFile, 'type', { value: 'image/jpeg' });
+
+                    STATE.currentImage = resizedFile;
+
+                    skinUploadArea.style.display = 'none';
+                    imagePreview.style.display = 'block';
+                    previewImg.src = resizedDataURL;
+
+                    if (window.drawing && drawing.init) {
+                        drawing.init(resizedDataURL);
+                    } else {
+                        console.error("drawing.js module not loaded correctly or 'drawing' object not exposed.");
+                    }
+                    utils.hideLoading();
+                };
+                reader.readAsDataURL(file);
+            }
+
+            // Continue from Drawing to Design
+            continueBtn?.addEventListener('click', () => {
+                if (!window.drawing || !drawing.selectedArea) {
+                    utils.showError('Please draw around the area where you want your tattoo first!');
+                    return;
+                }
+                STATE.currentMask = drawing.selectedArea;
+
+                drawingSection.style.display = 'none';
+                designSection.style.display = 'block';
+                designSection.scrollIntoView({ behavior: 'smooth' });
+            });
+
+
+            // Generate Button Handler
+            generateBtn?.addEventListener('click', async () => {
+                // Ensure user is logged in
+                if (!STATE.user || !STATE.token) {
+                    utils.showError('You must be logged in to generate tattoos.');
+                    auth.showModal();
+                    return;
+                }
+
+                if (!STATE.userTokens || STATE.userTokens < CONFIG.TOKEN_COSTS.FLUX_PLACEMENT) {
+                    utils.showError(`Not enough tokens! This action costs ${CONFIG.TOKEN_COSTS.FLUX_PLACEMENT} tokens. You have ${STATE.userTokens || 0}.`);
+                    return;
+                }
+                if (!STATE.uploadedTattooDesignBase64) {
+                    utils.showError('Please upload a tattoo design first.');
+                    return;
+                }
+                if (!STATE.currentImage) {
+                    utils.showError('Please upload your skin photo first.');
+                    return;
+                }
+                if (!STATE.currentMask) {
+                    utils.showError('Please mark the tattoo area on your photo before generating.');
+                    return;
+                }
+
+                utils.showLoading('Generating your tattoo designs...');
+
+                try {
+                    const formData = new FormData();
+                    formData.append('skinImage', STATE.currentImage);
+                    // Convert Base64 DataURL back to a Blob/File for FormData
+                    const tattooDesignBlob = await (await fetch(STATE.uploadedTattooDesignBase64)).blob();
+                    Object.defineProperty(tattooDesignBlob, 'name', { value: 'tattoo_design.jpeg' }); // Give a default name
+                    Object.defineProperty(tattooDesignBlob, 'type', { value: 'image/jpeg' }); // Force JPEG type for consistency
+                    formData.append('tattooDesignImage', tattooDesignBlob);
+                    formData.append('mask', STATE.currentMask);
+                    formData.append('prompt', ''); // Sending empty string for backend parameter, as per simplified UX
+
+                    const response = await fetch(`${CONFIG.API_URL}/generate-final-tattoo`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${STATE.token}`
+                        },
+                        body: formData
+                    });
+
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.error || 'Failed to generate tattoo');
+                    }
+
+                    const data = await response.json();
+                    console.log('=== API RESPONSE ===');
+                    console.log('Generated image URLs:', data.images);
+
+                    // Update token balance from backend response
+                    if (typeof data.tokens_remaining === 'number') {
+                        STATE.userTokens = data.tokens_remaining;
+                    }
+                    utils.updateTokenDisplay(); // Refresh token display
+
+                    utils.hideLoading();
+
+                    STATE.generatedImages = data.images;
+                    const resultsGrid = document.querySelector('.results-grid');
+                    resultsGrid.innerHTML = STATE.generatedImages.map((imageUrl, index) => `
+                        <div class="result-item">
+                            <img src="${imageUrl}" alt="Generated tattoo ${index + 1}">
+                            <div class="result-actions">
+                                <button class="btn btn-sm btn-outline" onclick="window.open('${imageUrl}', '_blank')">View Full Size</button>
+                            </div>
+                        </div>
+                    `).join('');
+
+                    resultsSection.style.display = 'block';
+                    artistsSection.style.display = 'block';
+                    designSection.scrollIntoView({behavior: 'smooth'}); // Scroll to design section where results are displayed
+                    socialShareDiv.style.display = 'block'; // Show share button
+                    loadDemoArtistsWithFilter();
+
+                } catch (error) {
+                    console.error('Generation error:', error);
+                    utils.hideLoading();
+                    utils.showError(`Tattoo generation failed: ${error.message}`);
+                }
+            });
+
+
+            // Social Share to Instagram
+            shareToInstagramBtn?.addEventListener('click', () => {
+                if (!STATE.generatedImages || STATE.generatedImages.length === 0) {
+                    utils.showError('No images generated yet to share.');
+                    return;
+                }
+                alert('To share to Instagram:\n1. Right-click (or long-press on mobile) on the image(s) below to save them to your device.\n2. Open the Instagram app and upload the saved image(s) as a new post.');
+            });
+
+
+            // Download All button
+            document.getElementById('downloadAllBtn')?.addEventListener('click', async () => {
+                if (!STATE.generatedImages || STATE.generatedImages.length === 0) {
+                    utils.showError('No images generated to download.');
+                    return;
+                }
+                utils.showLoading('Preparing images for download...');
+                for (const imageUrl of STATE.generatedImages) {
+                    try {
+                        const response = await fetch(imageUrl);
+                        const blob = await response.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `skintip_tattoo_${Date.now()}.jpeg`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    } catch (error) {
+                        console.error('Failed to download image:', imageUrl, error);
+                        utils.showError('Failed to download one or more images.');
+                        break;
+                    }
+                }
+                utils.hideLoading();
+            });
+
+
+            // --- General Navigation & Artist Loading ---
+
+            // New Design button
+            document.getElementById('newDesignBtn')?.addEventListener('click', () => {
+                resetUI();
+                tattooDesignUploadSection.scrollIntoView({ behavior: 'smooth' });
+            });
+
+            // The filter event listeners for artists:
+            const locationFilter = document.getElementById('locationFilter');
+            const styleFilter = document.getElementById('styleFilter');
+            locationFilter?.addEventListener('input', filterArtists);
+            styleFilter?.addEventListener('change', filterArtists);
+
+            console.log('✅ SkinTip ready!');
+        });
+        console.log('Main inline script finished.'); // ADDED FOR DEBUGGING
+    </script>
+</body>
+</html>

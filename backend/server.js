@@ -6,14 +6,14 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const multer = require('multer');
 const { createClient } = require('@supabase/supabase-js');
-const axios = require('axios'); // Still needed for axios.get in fluxKontextHandler (polling).
-const bcrypt = require('bcryptjs'); // Still needed for auth routes
-const jwt = require('jsonwebtoken'); // Still needed for auth routes
-const sizeOf = require('image-size'); // Still used for debugging input dimensions
+const axios = require('axios');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const sizeOf = require('image-size');
 
-// Import our new modularized services - CORRECTED CASING HERE
-const tokenService = require('./modules/tokenService'); // Matches 'tokenService.js'
-const fluxKontextHandler = require('./modules/fluxPlacementHandler'); // Matches 'fluxPlacementHandler.js'
+// Import our new modularized services
+const tokenService = require('./modules/tokenService');
+const fluxKontextHandler = require( './modules/fluxPlacementHandler');
 
 // Initialize Express
 const app = express();
@@ -233,6 +233,29 @@ function isValidBase64(str) {
     }
 }
 
+// --- NEW TEMPORARY ENDPOINT TO ADD TOKENS FOR TESTING ---
+// !!! WARNING: This endpoint should be removed or heavily secured (e.g., admin-only) in production. !!!
+app.post('/api/add-test-tokens', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const amount = req.body.amount || 200; // Default to 200 tokens if not specified
+
+        console.log(`Attempting to add ${amount} test tokens for user ${userId}.`);
+
+        const newBalance = await tokenService.addTokens(userId, amount, `Manual test token addition by user ${userId}`);
+        
+        res.json({
+            message: `Successfully added ${amount} tokens. New balance: ${newBalance}.`,
+            tokens_remaining: newBalance
+        });
+    } catch (error) {
+        console.error('Error adding test tokens:', error);
+        res.status(500).json({ error: `Failed to add test tokens: ${error.message}` });
+    }
+});
+// --- END TEMPORARY ENDPOINT ---
+
+
 // --- NEW GENERATION ENDPOINT: /api/generate-final-tattoo ---
 app.post('/api/generate-final-tattoo',
     authenticateToken, // Authenticate user
@@ -365,12 +388,6 @@ app.post('/api/generate-final-tattoo',
         }
     }
 );
-
-// --- OBSOLETE CODE REMOVED ---
-// The following functions/endpoints are removed as they are no longer used in the new workflow:
-// - generateMultipleVariations function (for flux-pro-1.0-fill)
-// - Old /api/generate endpoint (that used generateMultipleVariations)
-// - testBFLAPI function
 
 // Error handling middleware (catches errors from previous middleware/routes)
 app.use((error, req, res, next) => {

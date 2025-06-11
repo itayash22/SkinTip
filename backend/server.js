@@ -13,7 +13,7 @@ const sizeOf = require('image-size');
 
 // Import our new modularized services
 const tokenService = require('./modules/tokenService');
-const fluxKontextHandler = require( './modules/fluxPlacementHandler');
+const fluxKontextHandler = require('./modules/fluxPlacementHandler');
 
 // Initialize Express
 const app = express();
@@ -21,16 +21,16 @@ const PORT = process.env.PORT || 3000;
 
 // Initialize Supabase (for auth routes and token service init if needed)
 const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY; // For frontend auth (if backend uses it)
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY; // For backend operations (token service, storage)
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
 // Ensure keys are present early
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_KEY || !process.env.JWT_SECRET || !process.env.FLUX_API_KEY) {
     console.error('CRITICAL ERROR: One or more required environment variables are missing!');
-    process.exit(1); // Exit if critical env vars are not set
+    process.exit(1);
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY); // Use anon key for general supabase client init
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Middleware
 app.use(helmet());
@@ -49,12 +49,11 @@ const limiter = rateLimit({
     legacyHeaders: false,
     skipFailedRequests: false,
     skipSuccessfulRequests: false,
-    trustProxy: 1 // Crucial for Render: trusts the first proxy hop to get real IP
+    trustProxy: 1
 });
 app.use('/api/', limiter);
 
 // Multer setup for file uploads (memory storage for efficiency)
-// This setup is for the /api/generate-final-tattoo endpoint, accepting two image files.
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
@@ -89,9 +88,7 @@ const authenticateToken = async (req, res, next) => {
     }
 
     try {
-        // Verify the JWT token
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        // Fetch user from Supabase to ensure token corresponds to an active user
         const { data: user, error } = await supabase
             .from('users')
             .select('*')
@@ -102,10 +99,9 @@ const authenticateToken = async (req, res, next) => {
             return res.status(403).json({ error: 'Invalid token' });
         }
 
-        req.user = user; // Attach user object to request
+        req.user = user;
         next();
     } catch (error) {
-        // Handle token expiration or invalid token
         console.error('Authentication error:', error.message);
         return res.status(403).json({ error: 'Invalid or expired token' });
     }
@@ -120,7 +116,6 @@ app.post('/api/auth/register', async (req, res) => {
             return res.status(400).json({ error: 'All fields are required' });
         }
 
-        // Check if user exists (email or username)
         const { data: existingUser } = await supabase
             .from('users')
             .select('id')
@@ -131,17 +126,15 @@ app.post('/api/auth/register', async (req, res) => {
             return res.status(409).json({ error: 'User with this email or username already exists' });
         }
 
-        // Hash password
         const passwordHash = await bcrypt.hash(password, 10);
 
-        // Create user in Supabase (with initial tokens)
         const { data: newUser, error } = await supabase
             .from('users')
             .insert({
                 email,
                 password_hash: passwordHash,
                 username,
-                tokens_remaining: 20 // Grant initial free tokens
+                tokens_remaining: 20
             })
             .select()
             .single();
@@ -151,7 +144,6 @@ app.post('/api/auth/register', async (req, res) => {
             return res.status(500).json({ error: 'Failed to create user' });
         }
 
-        // Generate JWT
         const token = jwt.sign(
             { userId: newUser.id, email: newUser.email },
             process.env.JWT_SECRET,
@@ -182,7 +174,6 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(400).json({ error: 'Email and password required' });
         }
 
-        // Get user from Supabase
         const { data: user, error } = await supabase
             .from('users')
             .select('*')
@@ -193,13 +184,11 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        // Verify password
         const validPassword = await bcrypt.compare(password, user.password_hash);
         if (!validPassword) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        // Generate JWT
         const token = jwt.sign(
             { userId: user.id, email: user.email },
             process.env.JWT_SECRET,
@@ -222,44 +211,43 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
-// Helper function to validate base64 (already in fluxKontextHandler, but good to keep general util here)
-function isValidBase64(str) {
-    if (!str || str.length < 100) return false;
+// NEW ENDPOINT: Get authenticated user's details (for frontend refresh)
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
     try {
-        return Buffer.from(str, 'base64').toString('base64') === str;
+        res.json({
+            user: {
+                id: req.user.id,
+                email: req.user.email,
+                username: req.user.username,
+                tokens_remaining: req.user.tokens_remaining
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching user details:', error);
+        res.status(500).json({ error: 'Failed to fetch user details.' });
+    }
+});
+
+
+// Helper function to validate base64 (used by backend)
+function isValidBase64(str) {
+    // A more robust check might involve regex for base64 characters
+    // For now, this checks if it can be successfully decoded and re-encoded
+    if (!str || typeof str !== 'string' || str.length < 100) return false;
+    try {
+        const decoded = Buffer.from(str, 'base64').toString('base64');
+        return decoded === str;
     } catch (e) {
-        console.warn("isValidBase64 check failed for string (first 50 chars):", str.substring(0, 50) + "...");
+        console.warn("isValidBase64 check failed (decoding error) for string:", str.substring(0, 50) + "...");
         return false;
     }
 }
 
-// --- NEW TEMPORARY ENDPOINT TO ADD TOKENS FOR TESTING ---
-// !!! WARNING: This endpoint should be removed or heavily secured (e.g., admin-only) in production. !!!
-app.post('/api/add-test-tokens', authenticateToken, async (req, res) => {
-    try {
-        const userId = req.user.id;
-        const amount = req.body.amount || 200; // Default to 200 tokens if not specified
 
-        console.log(`Attempting to add ${amount} test tokens for user ${userId}.`);
-
-        const newBalance = await tokenService.addTokens(userId, amount, `Manual test token addition by user ${userId}`);
-        
-        res.json({
-            message: `Successfully added ${amount} tokens. New balance: ${newBalance}.`,
-            tokens_remaining: newBalance
-        });
-    } catch (error) {
-        console.error('Error adding test tokens:', error);
-        res.status(500).json({ error: `Failed to add test tokens: ${error.message}` });
-    }
-});
-// --- END TEMPORARY ENDPOINT ---
-
-
-// --- NEW GENERATION ENDPOINT: /api/generate-final-tattoo ---
+// --- GENERATION ENDPOINT: /api/generate-final-tattoo ---
 app.post('/api/generate-final-tattoo',
-    authenticateToken, // Authenticate user
-    upload.fields([ // Expects two image files
+    authenticateToken,
+    upload.fields([
         { name: 'skinImage', maxCount: 1 },
         { name: 'tattooDesignImage', maxCount: 1 }
     ]),
@@ -267,12 +255,11 @@ app.post('/api/generate-final-tattoo',
         try {
             console.log('API: /api/generate-final-tattoo endpoint called.');
 
-            const userId = req.user.id; // User ID from authenticated token
-            const { mask, prompt: userPromptText } = req.body; // 'mask' is base64, 'prompt' is optional text
+            const userId = req.user.id;
+            const { mask, prompt: userPromptText } = req.body;
             const skinImageFile = req.files.skinImage ? req.files.skinImage[0] : null;
             const tattooDesignImageFile = req.files.tattooDesignImage ? req.files.tattooDesignImage[0] : null;
 
-            // --- Input Validation ---
             if (!skinImageFile || !tattooDesignImageFile || !mask) {
                 return res.status(400).json({ error: 'Skin image, tattoo design, and mask are all required.' });
             }
@@ -285,72 +272,73 @@ app.post('/api/generate-final-tattoo',
                         'https://picsum.photos/512/512?random=2',
                         'https://picsum.photos/512/512?random=3'
                     ],
-                    tokens_remaining: req.user.tokens_remaining // Return current user tokens
+                    tokens_remaining: req.user.tokens_remaining
                 });
             }
 
-            // --- Token Check ---
-            const tokensRequired = process.env.NODE_ENV === 'development' ? 0 : 15; // Set to 0 in dev for free testing
+            const tokensRequired = process.env.NODE_ENV === 'development' ? 0 : 15;
             const hasEnoughTokens = await tokenService.checkTokens(userId, 'FLUX_PLACEMENT', tokensRequired);
             if (!hasEnoughTokens) {
                 return res.status(402).json({ error: `Insufficient tokens. This action costs ${tokensRequired} tokens.` });
             }
 
-            // --- Prepare Image Data ---
             const skinImageBuffer = skinImageFile.buffer;
-            const tattooDesignImageBase64 = tattooDesignImageFile.buffer.toString('base64');
+            let tattooDesignImageBase64 = tattooDesignImageFile.buffer.toString('base64'); // Get Base64 from buffer
+            let maskBase64 = mask; // Mask is already Base64 from frontend
 
-            // Basic validation for base64 strings after conversion from buffer for consistency
-            if (!isValidBase64(tattooDesignImageBase64) || !isValidBase64(mask)) {
-                console.error('Server: Invalid Base64 data detected for tattoo design or mask.');
-                return res.status(400).json({ error: 'Invalid image data detected during processing.' });
+            // --- DEBUGGING: Log received Base64 lengths and snippets ---
+            console.log('Backend Debug: Received tattooDesignImageBase64 length:', tattooDesignImageBase64.length);
+            console.log('Backend Debug: Received tattooDesignImageBase64 snippet (first 100):', tattooDesignImageBase64.substring(0, 100) + '...');
+            console.log('Backend Debug: Received maskBase64 length:', maskBase64.length);
+            console.log('Backend Debug: Received maskBase64 snippet (first 100):', maskBase64.substring(0, 100) + '...');
+            // --- END DEBUGGING ---
+
+            // Validate base64 data received by backend
+            if (!isValidBase64(tattooDesignImageBase64)) {
+                console.error('Server: Invalid Base64 data detected for tattoo design image.');
+                return res.status(400).json({ error: 'Invalid tattoo design image data provided.' });
+            }
+            if (!isValidBase64(maskBase64)) {
+                console.error('Server: Invalid Base64 data detected for mask.');
+                return res.status(400).json({ error: 'Invalid mask data provided.' });
             }
 
-            // --- Dimension Check ---
             let skinImageDimensions, tattooDesignDimensions, maskDimensions;
             try {
                 skinImageDimensions = sizeOf(skinImageBuffer);
                 tattooDesignDimensions = sizeOf(Buffer.from(tattooDesignImageBase64, 'base64'));
-                maskDimensions = sizeOf(Buffer.from(mask, 'base64'));
+                maskDimensions = sizeOf(Buffer.from(maskBase64, 'base64'));
 
                 console.log(`Skin Image Dims: ${skinImageDimensions.width}x${skinImageDimensions.height}`);
                 console.log(`Tattoo Design Dims: ${tattooDesignDimensions.width}x${tattooDesignDimensions.height}`);
                 console.log(`Mask Dims: ${maskDimensions.width}x${maskDimensions.height}`);
 
-                // All three should match for optimal inpainting
                 if (skinImageDimensions.width !== maskDimensions.width || skinImageDimensions.height !== maskDimensions.height) {
                     console.error('Skin image and Mask dimensions do NOT match!');
                     return res.status(400).json({ error: 'Skin image and mask dimensions must be identical.' });
                 }
-                // Tattoo design image dimensions should be reasonably sized, not necessarily exact match to skin.
-                // Flux Kontext will handle scaling the reference_image within the mask.
-                console.log('Skin Image Base64 (first 100 chars):', skinImageBuffer.toString('base64').substring(0, 100) + '...');
-                console.log('Tattoo Design Base64 (first 100 chars):', tattooDesignImageBase64.substring(0, 100) + '...');
-                console.log('Mask Base64 (first 100 chars):', mask.substring(0, 100) + '...');
 
             } catch (dimError) {
                 console.error('Error getting image/mask dimensions:', dimError.message);
                 return res.status(500).json({ error: 'Failed to read image dimensions for validation.' });
             }
 
-            // --- Call Flux Kontext Placement Handler ---
             const generatedImageUrls = await fluxKontextHandler.placeTattooOnSkin(
                 skinImageBuffer,
                 tattooDesignImageBase64,
-                mask,
-                userPromptText, // Pass user's optional prompt text (it's gone from UX, but keep param for now)
+                maskBase64, // Pass the validated mask base64
+                userPromptText,
                 userId,
-                3, // numVariations: Request 3 images
+                3,
                 process.env.FLUX_API_KEY
             );
 
-            // --- Deduct Tokens on Success ---
             const newTokens = await tokenService.deductTokens(userId, 'FLUX_PLACEMENT', tokensRequired, `Tattoo placement for user ${userId}`);
             console.log('Tokens deducted successfully. New balance:', newTokens);
 
             res.json({
                 images: generatedImageUrls,
-                tokens_remaining: newTokens // Send updated token balance to frontend
+                tokens_remaining: newTokens
             });
 
         } catch (error) {
@@ -364,7 +352,7 @@ app.post('/api/generate-final-tattoo',
                 if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
                     errorMessage = 'One of the uploaded files is too large. Maximum size is 5MB per file.';
                 } else {
-                    errorMessage = error.message; // Use specific error message if available
+                    errorMessage = error.message;
                 }
                 return res.status(400).json({ error: errorMessage });
             }
@@ -388,6 +376,33 @@ app.post('/api/generate-final-tattoo',
         }
     }
 );
+
+// --- TEMPORARY ENDPOINT FOR TESTING TOKENS ---
+// THIS ENDPOINT SHOULD BE REMOVED OR SECURED WITH ADMIN-ONLY ACCESS IN PRODUCTION!
+app.post('/api/add-test-tokens', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const amountToAdd = req.body.amount || 200;
+
+        if (typeof amountToAdd !== 'number' || amountToAdd <= 0) {
+            return res.status(400).json({ error: 'Invalid amount specified.' });
+        }
+
+        console.log(`Attempting to add ${amountToAdd} test tokens for user ${userId}`);
+        const newBalance = await tokenService.addTokens(userId, amountToAdd, `Test tokens added by user ${userId}`);
+
+        res.json({
+            message: `Successfully added ${amountToAdd} tokens.`,
+            tokens_remaining: newBalance
+        });
+
+    } catch (error) {
+        console.error('Error adding test tokens:', error);
+        res.status(500).json({ error: error.message || 'Failed to add test tokens.' });
+    }
+});
+// --- END TEMPORARY ENDPOINT ---
+
 
 // Error handling middleware (catches errors from previous middleware/routes)
 app.use((error, req, res, next) => {

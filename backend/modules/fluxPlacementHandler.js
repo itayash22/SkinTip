@@ -1,9 +1,9 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-11_V1.6_FIXED_DUPLICATE_REQUIRES_AND_URL_DOWNLOAD'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-11_V1.8_FINAL_FIX'); // UPDATED VERSION LOG
 
-const axios = require('axios'); // ONLY ONE DECLARATION FOR EACH MODULE
+const axios = require('axios');
 const sharp = require('sharp');
-const { createClient } = require('@supabase/supabase-js');
+const { createClient } = require('@supabase/supabase-js'); // Correct import for Supabase
 const { v4: uuidv4 } = require('uuid');
 
 // Initialize Supabase Storage client
@@ -83,7 +83,7 @@ const fluxPlacementHandler = {
 
             return watermarkedBuffer;
         } catch (error) {
-            console.error('Error applying watermark (caught):', error); // Changed log message for clarity
+            console.error('Error applying watermark (caught):', error);
             // Don't throw a critical error here, as the image might still be usable without watermark.
             // In production, you might want to log this extensively or notify.
             return imageBuffer; // Return original buffer if watermarking fails
@@ -99,7 +99,7 @@ const fluxPlacementHandler = {
      * @throws {Error} If Supabase upload fails.
      */
     uploadToSupabaseStorage: async (imageBuffer, fileName, userId) => {
-        const filePath = `<span class="math-inline">\{userId\}/</span>{fileName}`; // Store in user-specific folder
+        const filePath = `${userId}/${fileName}`; // Store in user-specific folder
         const { data, error } = await supabase.storage
             .from(SUPABASE_STORAGE_BUCKET)
             .upload(filePath, imageBuffer, {
@@ -228,27 +228,31 @@ const fluxPlacementHandler = {
             console.log('Flux Polling Result Data (FULL RESPONSE):', JSON.stringify(result.data, null, 2)); // ADDED THIS LINE
 
             if (result.data.status === 'Ready') {
-                if (result.data.result && Array.isArray(result.data.result.samples)) {
-                    for (const sampleBase64 of result.data.result.samples) { // Kontext can return multiple samples as base64
-                        const imageBuffer = Buffer.from(sampleBase64, 'base64');
-                        const watermarkedBuffer = await fluxPlacementHandler.applyWatermark(imageBuffer);
-                        const fileName = `tattoo-${uuidv4()}.jpeg`;
-                        const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarkedBuffer, fileName, userId);
-                        generatedImageUrls.push(publicUrl);
+                // FIX: Flux Kontext Pro returns a 'sample' URL, not 'samples' array of Base64.
+                const imageUrlFromFlux = result.data.result && result.data.result.sample; // Get the URL from 'sample' field
+
+                if (imageUrlFromFlux) {
+                    let imageBuffer;
+                    try {
+                        // Download the image from the URL
+                        const imageResponse = await axios.get(imageUrlFromFlux, { responseType: 'arraybuffer' });
+                        imageBuffer = Buffer.from(imageResponse.data); // Convert ArrayBuffer to Node.js Buffer
+                        console.log(`Successfully downloaded image from Flux URL: ${imageUrlFromFlux.substring(0, 50)}...`);
+                    } catch (downloadError) {
+                        console.error('Error downloading image from Flux URL:', imageUrlFromFlux, downloadError.message);
+                        throw new Error(`Failed to download image from Flux URL: ${downloadError.message}`); // Re-throw to indicate failure
                     }
-                    console.log(`Successfully generated and watermarked ${generatedImageUrls.length} images.`);
-                    break; // Exit loop if all expected variations are ready
-                } else if (result.data.result && result.data.result.sample) { // Fallback for single 'sample' field
-                    const imageBuffer = Buffer.from(result.data.result.sample, 'base64');
+
+                    // Apply watermark
                     const watermarkedBuffer = await fluxPlacementHandler.applyWatermark(imageBuffer);
-                    const fileName = `tattoo-${uuidv4()}.jpeg`;
+                    const fileName = `tattoo-${uuidv4()}.jpeg`; // Always save as JPEG
                     const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarkedBuffer, fileName, userId);
                     generatedImageUrls.push(publicUrl);
                     console.log(`Successfully generated and watermarked 1 image.`);
-                    break;
+                    break; // Exit loop after processing this sample
                 } else {
-                    console.warn('Flux API returned Ready status but no samples found.', result.data);
-                    throw new Error('Flux API returned no images.');
+                    console.warn('Flux API returned Ready status but no valid image URL found in "sample".', result.data);
+                    throw new Error('Flux API returned no images or malformed output.');
                 }
             }
 

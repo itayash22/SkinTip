@@ -252,8 +252,8 @@
         // Make functions globally available for inline onclicks in HTML
         // These MUST be outside the DOMContentLoaded listener to be globally accessible
         function contactArtist(whatsapp, artistName) {
-            const promptText = document.getElementById('tattooPrompt')?.value || 'Custom tattoo design'; // Still using this for WhatsApp link
-            const message = encodeURIComponent(`Hi, I got this tattoo idea from SkinTip and would like to discuss a custom design based on it:\n\n${promptText}`);
+            const promptText = ''; // Removed from UX, but keep for WhatsApp link clarity
+            const message = encodeURIComponent(`Hi, I got this tattoo idea from SkinTip and would like to discuss a custom design based on it.`);
             const whatsappUrl = `https://wa.me/${whatsapp.replace(/\D/g, '')}?text=${message}`;
             window.open(whatsappUrl, '_blank');
         }
@@ -325,7 +325,8 @@
         document.addEventListener('DOMContentLoaded', () => {
             console.log('🎨 SkinTip initializing...');
 
-            // Initialize auth module (assuming auth.js exposes an auth object)
+            // Initialize auth module
+            // Removed onLogin/onLogout calls, as auth.js now directly updates STATE and calls utils.updateTokenDisplay()
             if (typeof auth !== 'undefined' && auth.init) {
                 auth.init();
             } else {
@@ -361,7 +362,7 @@
 
             // --- Core Logic & State Management ---
 
-            // Initial UI setup
+            // Initial UI setup and reset function
             function resetUI() {
                 tattooDesignUploadSection.style.display = 'block';
                 tattooDesignPreview.style.display = 'none';
@@ -370,49 +371,34 @@
 
                 skinPhotoUploadSection.style.display = 'none';
                 imagePreview.style.display = 'none';
-                skinUploadArea.style.display = 'flex'; // Ensure it's ready for next step
+                skinUploadArea.style.display = 'flex';
 
                 drawingSection.style.display = 'none';
                 designSection.style.display = 'none';
                 resultsSection.style.display = 'none';
                 artistsSection.style.display = 'none';
+                socialShareDiv.style.display = 'none'; // Hide share button on reset
 
                 tattooDesignFileInput.value = '';
-                fileInput.value = ''; // Clear skin input
+                fileInput.value = '';
 
-                if (window.drawing) {
+                // Safely clear canvas only if drawing module is initialized
+                if (window.drawing && drawing.clearCanvas) {
                     drawing.clearCanvas();
                 }
                 STATE.uploadedTattooDesignBase64 = null;
-                STATE.currentImage = null; // Skin image
+                STATE.currentImage = null;
                 STATE.currentMask = null;
                 STATE.generatedImages = [];
-                STATE.userTokens = 0; // Will be loaded from auth or default
+                // STATE.userTokens will be updated by auth.js or on login/registration
 
-                updateTokenDisplay(); // Update display for user's tokens
+
+                utils.updateTokenDisplay(); // Update display for user's tokens
                 generateCostDisplay.textContent = CONFIG.TOKEN_COSTS.FLUX_PLACEMENT; // Update cost display
             }
 
-            // Update user tokens display
-            function updateTokenDisplay() {
-                creditsRemainingDisplay.textContent = `${STATE.userTokens} tokens remaining`;
-            }
-
             // Initial app state setup
-            resetUI();
-            // Auth init will eventually update user tokens
-            auth.onLogin(() => {
-                // In a real app, fetch tokens from backend
-                STATE.userTokens = 20; // Mock initial tokens for demo
-                updateTokenDisplay();
-            });
-            auth.onLogout(() => {
-                STATE.userTokens = 0;
-                updateTokenDisplay();
-                resetUI(); // Clear app state on logout
-            });
-            // Also call update on initial load for guest users or if tokens are local storage
-            updateTokenDisplay();
+            resetUI(); // Call reset on DOMContentLoaded
 
 
             // --- Event Listeners ---
@@ -438,26 +424,28 @@
 
             async function handleTattooDesignFile(file) {
                 if (!CONFIG.ALLOWED_FILE_TYPES.includes(file.type)) {
-                    alert('Please upload a JPEG, PNG, or WebP image for your tattoo design.');
+                    utils.showError('Please upload a JPEG, PNG, or WebP image for your tattoo design.');
                     return;
                 }
                 if (file.size > CONFIG.MAX_FILE_SIZE) {
-                    alert('Tattoo design file size must be less than 5MB.');
+                    utils.showError('Tattoo design file size must be less than 5MB.');
                     return;
                 }
 
+                utils.showLoading('Processing tattoo design...');
                 const reader = new FileReader();
                 reader.onload = async (e) => {
                     const originalDataURL = e.target.result;
                     // Resize tattoo design to be compatible with Flux's expected input dimensions
-                    // E.g., 512x512 or 768x768
+                    // E.g., 512x512 or 768x768. Keep consistent with skin image resize for best results.
                     const resizedDataURL = await resizeImage(originalDataURL, 768, 768, 0.9); 
-                    STATE.uploadedTattooDesignBase64 = resizedDataURL; // Store as Base64 for simplicity to send to backend
+                    STATE.uploadedTattooDesignBase64 = resizedDataURL;
 
                     tattooDesignUploadArea.style.display = 'none';
                     tattooDesignPreview.style.display = 'block';
                     tattooDesignPreviewImg.src = resizedDataURL;
                     continueToSkinPhotoBtn.style.display = 'block';
+                    utils.hideLoading(); // Hide loading after processing
                 };
                 reader.readAsDataURL(file);
             }
@@ -465,7 +453,7 @@
             // Continue to Skin Photo
             continueToSkinPhotoBtn?.addEventListener('click', () => {
                 if (!STATE.uploadedTattooDesignBase64) {
-                    alert('Please upload a tattoo design first.');
+                    utils.showError('Please upload a tattoo design first.');
                     return;
                 }
                 tattooDesignUploadSection.style.display = 'none';
@@ -474,7 +462,7 @@
             });
 
 
-            // Skin Photo Upload (Existing logic, now in a new section)
+            // Skin Photo Upload 
             skinUploadArea?.addEventListener('click', () => {
                 fileInput.click();
             });
@@ -490,7 +478,7 @@
                 imagePreview.style.display = 'none';
                 fileInput.value = '';
                 STATE.currentImage = null;
-                if (window.drawing) {
+                if (window.drawing && drawing.clearCanvas) {
                     drawing.clearCanvas();
                 }
                 // Option to go back to tattoo design upload
@@ -499,23 +487,24 @@
                 tattooDesignUploadSection.scrollIntoView({ behavior: 'smooth' });
             });
 
-            async function handleSkinPhotoFile(file) { // Renamed from handleFile for clarity
+            async function handleSkinPhotoFile(file) {
                 if (!CONFIG.ALLOWED_FILE_TYPES.includes(file.type)) {
-                    alert('Please upload a JPEG, PNG, or WebP image for your skin photo.');
+                    utils.showError('Please upload a JPEG, PNG, or WebP image for your skin photo.');
                     return;
                 }
                 if (file.size > CONFIG.MAX_FILE_SIZE) {
-                    alert('Skin photo file size must be less than 5MB.');
+                    utils.showError('Skin photo file size must be less than 5MB.');
                     return;
                 }
 
+                utils.showLoading('Processing skin photo...');
                 const reader = new FileReader();
                 reader.onload = async (e) => {
                     const originalDataURL = e.target.result;
-                    // Resize skin image for Flux API
+                    // Resize skin image for Flux API. Keep consistent with tattoo design resize.
                     const resizedDataURL = await resizeImage(originalDataURL, 768, 768, 0.8); 
                     
-                    // Convert resized Data URL back to a File object for FormData
+                    // Convert resized Data URL back to a Blob/File for FormData
                     const resizedFile = await (await fetch(resizedDataURL)).blob();
                     Object.defineProperty(resizedFile, 'name', { value: file.name });
                     Object.defineProperty(resizedFile, 'type', { value: 'image/jpeg' });
@@ -526,11 +515,12 @@
                     imagePreview.style.display = 'block';
                     previewImg.src = resizedDataURL;
 
-                    if (window.drawing) {
+                    if (window.drawing && drawing.init) {
                         drawing.init(resizedDataURL);
                     } else {
                         console.error("drawing.js module not loaded correctly or 'drawing' object not exposed.");
                     }
+                    utils.hideLoading(); // Hide loading after processing
                 };
                 reader.readAsDataURL(file);
             }
@@ -538,7 +528,7 @@
             // Continue from Drawing to Design
             continueBtn?.addEventListener('click', () => {
                 if (!window.drawing || !drawing.selectedArea) {
-                    alert('Please draw around the area where you want your tattoo first!');
+                    utils.showError('Please draw around the area where you want your tattoo first!');
                     return;
                 }
                 STATE.currentMask = drawing.selectedArea;
@@ -551,20 +541,27 @@
 
             // Generate Button Handler
             generateBtn?.addEventListener('click', async () => {
-                if (STATE.userTokens < CONFIG.TOKEN_COSTS.FLUX_PLACEMENT) {
-                    alert(`Not enough tokens! This action costs ${CONFIG.TOKEN_COSTS.FLUX_PLACEMENT} tokens. You have ${STATE.userTokens}.`);
+                // Ensure user is logged in
+                if (!STATE.user || !STATE.token) {
+                    utils.showError('You must be logged in to generate tattoos.');
+                    auth.showModal(); // Show login modal
+                    return;
+                }
+
+                if (!STATE.userTokens || STATE.userTokens < CONFIG.TOKEN_COSTS.FLUX_PLACEMENT) {
+                    utils.showError(`Not enough tokens! This action costs ${CONFIG.TOKEN_COSTS.FLUX_PLACEMENT} tokens. You have ${STATE.userTokens || 0}.`);
                     return;
                 }
                 if (!STATE.uploadedTattooDesignBase64) {
-                    alert('Please upload a tattoo design first.');
+                    utils.showError('Please upload a tattoo design first.');
                     return;
                 }
                 if (!STATE.currentImage) {
-                    alert('Please upload your skin photo first.');
+                    utils.showError('Please upload your skin photo first.');
                     return;
                 }
                 if (!STATE.currentMask) {
-                    alert('Please mark the tattoo area on your photo before generating.');
+                    utils.showError('Please mark the tattoo area on your photo before generating.');
                     return;
                 }
 
@@ -572,13 +569,20 @@
 
                 try {
                     const formData = new FormData();
-                    formData.append('skinImage', STATE.currentImage); // Name changed to skinImage
-                    formData.append('tattooDesignImage', await (await fetch(STATE.uploadedTattooDesignBase64)).blob(), 'tattoo_design.jpeg'); // Convert Base64 to Blob/File
-                    formData.append('mask', STATE.currentMask); // Already base64 from drawing.js
-                    // No user-provided prompt text or styles from removed inputs
+                    formData.append('skinImage', STATE.currentImage);
+                    // Convert Base64 DataURL back to a Blob/File for FormData
+                    const tattooDesignBlob = await (await fetch(STATE.uploadedTattooDesignBase64)).blob();
+                    Object.defineProperty(tattooDesignBlob, 'name', { value: 'tattoo_design.jpeg' }); // Give a default name
+                    Object.defineProperty(tattooDesignBlob, 'type', { value: 'image/jpeg' }); // Force JPEG type for consistency
+                    formData.append('tattooDesignImage', tattooDesignBlob);
+                    formData.append('mask', STATE.currentMask);
+                    formData.append('prompt', ''); // Sending empty string for backend parameter, as per simplified UX
 
                     const response = await fetch(`${CONFIG.API_URL}/generate-final-tattoo`, {
                         method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${STATE.token}`
+                        },
                         body: formData
                     });
 
@@ -591,9 +595,11 @@
                     console.log('=== API RESPONSE ===');
                     console.log('Generated image URLs:', data.images);
 
-                    // Deduct tokens on frontend AFTER successful API call (backend will confirm)
-                    STATE.userTokens -= CONFIG.TOKEN_COSTS.FLUX_PLACEMENT;
-                    updateTokenDisplay(); // Refresh token display
+                    // Update token balance from backend response
+                    if (typeof data.tokens_remaining === 'number') {
+                        STATE.userTokens = data.tokens_remaining;
+                    }
+                    utils.updateTokenDisplay(); // Refresh token display
 
                     utils.hideLoading();
 
@@ -610,7 +616,7 @@
 
                     resultsSection.style.display = 'block';
                     artistsSection.style.display = 'block';
-                    resultsSection.scrollIntoView({ behavior: 'smooth' });
+                    designSection.scrollIntoView({behavior: 'smooth'}); // Scroll to design section where results are displayed
                     socialShareDiv.style.display = 'block'; // Show share button
                     loadDemoArtistsWithFilter();
 
@@ -625,24 +631,51 @@
             // Social Share to Instagram
             shareToInstagramBtn?.addEventListener('click', () => {
                 if (!STATE.generatedImages || STATE.generatedImages.length === 0) {
-                    alert('No images generated yet to share.');
+                    utils.showError('No images generated yet to share.');
                     return;
                 }
                 alert('To share to Instagram:\n1. Right-click (or long-press on mobile) on the image(s) below to save them to your device.\n2. Open the Instagram app and upload the saved image(s) as a new post.');
-                // Optionally, could try opening Instagram web/app directly after 2-3 sec delay
-                // window.open('https://www.instagram.com/create/post/', '_blank'); // Opens Instagram web uploader
+            });
+
+
+            // Download All button
+            document.getElementById('downloadAllBtn')?.addEventListener('click', async () => {
+                if (!STATE.generatedImages || STATE.generatedImages.length === 0) {
+                    utils.showError('No images generated to download.');
+                    return;
+                }
+                utils.showLoading('Preparing images for download...');
+                for (const imageUrl of STATE.generatedImages) {
+                    try {
+                        const response = await fetch(imageUrl);
+                        const blob = await response.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `skintip_tattoo_${Date.now()}.jpeg`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url); // Clean up
+                    } catch (error) {
+                        console.error('Failed to download image:', imageUrl, error);
+                        utils.showError('Failed to download one or more images.');
+                        break;
+                    }
+                }
+                utils.hideLoading();
             });
 
 
             // --- General Navigation & Artist Loading ---
 
-            // New Design button (renamed from Try New Design)
+            // New Design button
             document.getElementById('newDesignBtn')?.addEventListener('click', () => {
                 resetUI();
                 tattooDesignUploadSection.scrollIntoView({ behavior: 'smooth' });
             });
 
-            // Demo artists data and filtering (no changes to logic, just location in file)
+            // Demo artists data and filtering
             let allArtists = [];
 
             function loadDemoArtistsWithFilter() {

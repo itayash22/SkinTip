@@ -1,13 +1,10 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-11_V1.5_URL_DOWNLOAD_DEBUG'); // ADD THIS LINE AT THE VERY TOP
+console.log('FLUX_HANDLER_VERSION: 2025-06-11_V1.6_FIXED_DUPLICATE_REQUIRES_AND_URL_DOWNLOAD'); // UPDATED VERSION LOG
 
-const axios = require('axios');
+const axios = require('axios'); // ONLY ONE DECLARATION FOR EACH MODULE
 const sharp = require('sharp');
-// ... rest of the file ...
-const axios = require('axios');
-const sharp = require('sharp'); // For image manipulation and watermarking
 const { createClient } = require('@supabase/supabase-js');
-const { v4: uuidv4 } = require('uuid'); // For unique filenames in Supabase Storage
+const { v4: uuidv4 } = require('uuid');
 
 // Initialize Supabase Storage client
 const SUPABASE_URL = process.env.SUPABASE_URL;

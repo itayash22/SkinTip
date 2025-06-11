@@ -23,7 +23,7 @@
     "@supabase/supabase-js": "^2.43.4",
     "image-size": "^1.1.1",
     "sharp": "^0.33.4",
-    "uuid": "^9.0.1"  <-- ENSURE THIS LINE IS PRESENT, AND THERE'S NO COMMA AFTER IT IF IT'S THE LAST ENTRY BEFORE THE }
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"

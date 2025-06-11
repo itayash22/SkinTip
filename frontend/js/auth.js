@@ -4,6 +4,35 @@ const auth = {
     isLogin: true,
     
     init: () => {
+        // frontend/js/auth.js
+const auth = {
+    isLogin: true,
+
+    init: () => {
+        console.log('Auth init function started.'); // ADD THIS LINE
+
+        // Check for saved token and user (demo mode - just check localStorage)
+        const savedToken = localStorage.getItem('skintip_token');
+        const savedUser = localStorage.getItem('skintip_user');
+
+        console.log('Saved token:', savedToken); // ADD THIS LINE
+        console.log('Saved user:', savedUser);   // ADD THIS LINE
+
+        if (savedToken && savedUser) {
+            STATE.token = savedToken;
+            STATE.user = JSON.parse(savedUser);
+            utils.updateTokenDisplay();
+            auth.updateUI();
+            auth.hideModal();
+            console.log('User logged in from localStorage, UI updated.'); // ADD THIS LINE
+        } else {
+            auth.showModal();
+            console.log('No saved login, showing login modal.'); // ADD THIS LINE
+        }
+        // ... rest of auth.init() ...
+    },
+    // ... rest of auth module ...
+};
         // Check for saved token and user (demo mode - just check localStorage)
         const savedToken = localStorage.getItem('skintip_token');
         const savedUser = localStorage.getItem('skintip_user');

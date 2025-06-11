@@ -65,6 +65,7 @@ const utils = {
 
     // Utility to update the token display on the UI
     updateTokenDisplay: () => {
+        console.log('utils.updateTokenDisplay: Attempting to update UI with STATE.userTokens:', STATE.userTokens);
         const creditsRemainingDisplay = document.getElementById('creditsRemaining');
         if (creditsRemainingDisplay) {
             creditsRemainingDisplay.textContent = `${STATE.userTokens} tokens remaining`;
@@ -74,24 +75,4 @@ const utils = {
             generateCostDisplay.textContent = CONFIG.TOKEN_COSTS.FLUX_PLACEMENT;
         }
     }
-    // frontend/js/config.js
-
-// ... (existing code up to utils) ...
-
-const utils = {
-    // ... (existing showLoading, hideLoading, showError, getAuthHeaders) ...
-
-    // Utility to update the token display on the UI
-    updateTokenDisplay: () => {
-        console.log('utils.updateTokenDisplay: Attempting to update UI with STATE.userTokens:', STATE.userTokens); // ADD THIS
-        const creditsRemainingDisplay = document.getElementById('creditsRemaining');
-        if (creditsRemainingDisplay) {
-            creditsRemainingDisplay.textContent = `${STATE.userTokens} tokens remaining`;
-        }
-        const generateCostDisplay = document.getElementById('generateCostDisplay');
-        if (generateCostDisplay) {
-            generateCostDisplay.textContent = CONFIG.TOKEN_COSTS.FLUX_PLACEMENT;
-        }
-    }
-};
 };

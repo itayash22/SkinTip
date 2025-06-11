@@ -307,6 +307,27 @@
         // --- Artist Loading and Filtering Functions (Moved to global scope) ---
         let allArtists = []; // Declare in a scope accessible by filterArtists and displayArtists
 
+        // Moved contactArtist and changePortfolioImage outside of displayArtists
+        // so they are accessible globally for onclick attributes.
+        function contactArtist(whatsapp, name) {
+            const message = `Hi ${name}, I'm interested in getting a tattoo! Can you help me visualize this? (from SkinTip.AI)`;
+            window.open(`https://wa.me/${whatsapp}?text=${encodeURIComponent(message)}`, '_blank');
+        }
+
+        function changePortfolioImage(button, direction) {
+            const gallery = button.closest('.portfolio-gallery');
+            const images = Array.from(gallery.querySelectorAll('.portfolio-image'));
+            let currentIndex = images.findIndex(img => img.classList.contains('active'));
+
+            images[currentIndex].style.display = 'none';
+            images[currentIndex].classList.remove('active');
+
+            currentIndex = (currentIndex + direction + images.length) % images.length;
+
+            images[currentIndex].style.display = 'block';
+            images[currentIndex].classList.add('active');
+        }
+
         function loadDemoArtistsWithFilter() {
             allArtists = [
                 {
@@ -432,12 +453,9 @@
         document.addEventListener('DOMContentLoaded', () => {
             console.log('🎨 SkinTip initializing (DOMContentLoaded)!'); // CHANGED LOG HERE
 
-            // === IMPORTANT FIX: MOVED THESE LINES INSIDE DOMContentLoaded ===
-            // They were causing a ReferenceError because contactArtist and changePortfolioImage
-            // were not yet defined when these lines executed at the top of the script.
-            // By moving them here, we ensure all functions are fully parsed and available.
-            window.contactArtist = contactArtist; // MOVED HERE
-            window.changePortfolioImage = changePortfolioImage; // MOVED HERE
+            // Assign global functions here. These were moved outside their previous nested scope.
+            window.contactArtist = contactArtist;
+            window.changePortfolioImage = changePortfolioImage;
 
             // Initialize auth module
             if (typeof auth !== 'undefined' && auth.init) {

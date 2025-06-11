@@ -4,11 +4,15 @@ const auth = {
     isLogin: true,
     
     init: () => {
-        // Check for saved token (demo mode - just check localStorage)
+        // Check for saved token and user (demo mode - just check localStorage)
+        const savedToken = localStorage.getItem('skintip_token');
         const savedUser = localStorage.getItem('skintip_user');
         
-        if (savedUser) {
+        if (savedToken && savedUser) {
+            STATE.token = savedToken;
             STATE.user = JSON.parse(savedUser);
+            // Crucial: Update tokens display on login if user data loaded from localStorage
+            utils.updateTokenDisplay(); 
             auth.updateUI();
             auth.hideModal();
         } else {
@@ -49,10 +53,10 @@ const auth = {
         } else {
             title.textContent = 'Create Your Account';
             submitBtn.textContent = 'Register';
+            document.getElementById('username').setAttribute('required', 'required'); // Ensure required when registering
             switchText.textContent = 'Already have an account?';
             switchLink.textContent = 'Login';
             usernameGroup.style.display = 'block';
-            document.getElementById('username').setAttribute('required', 'required');
         }
         
         document.getElementById('authError').textContent = '';
@@ -63,7 +67,7 @@ const auth = {
         
         const email = document.getElementById('email').value;
         const password = document.getElementById('password').value;
-        const username = document.getElementById('username').value || email.split('@')[0];
+        const username = document.getElementById('username').value || email.split('@')[0]; // Default username if not provided
         
         const endpoint = auth.isLogin ? '/auth/login' : '/auth/register';
         const body = auth.isLogin ? 
@@ -83,14 +87,16 @@ const auth = {
                 throw new Error(data.error || 'Authentication failed');
             }
             
-            // Save token and user data
+            // Save token and user data (including tokens_remaining)
             STATE.token = data.token;
-            STATE.user = data.user;
+            STATE.user = data.user; // This now includes tokens_remaining from backend
+            STATE.userTokens = data.user.tokens_remaining; // Update global state tokens
             localStorage.setItem('skintip_token', data.token);
-            localStorage.setItem('skintip_user', JSON.stringify(data.user));
+            localStorage.setItem('skintip_user', JSON.stringify(data.user)); // Store full user object
             
-            // Update UI
+            // Update UI (user info in navbar, tokens display)
             auth.updateUI();
+            utils.updateTokenDisplay(); // Call global utility to update token display
             auth.hideModal();
             
         } catch (error) {
@@ -110,11 +116,15 @@ const auth = {
     
     logout: () => {
         STATE.user = null;
+        STATE.token = null;
+        STATE.userTokens = 0; // Clear tokens on logout
+        localStorage.removeItem('skintip_token'); // Remove token from localStorage
         localStorage.removeItem('skintip_user');
         auth.updateUI();
-        auth.showModal();
+        utils.updateTokenDisplay(); // Refresh token display
+        auth.showModal(); // Show login modal
         
-        // Reset form
+        // Reset form for next login/register
         document.getElementById('authForm').reset();
     }
 };

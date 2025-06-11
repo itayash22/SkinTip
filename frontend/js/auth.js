@@ -3,23 +3,42 @@
 const auth = {
     isLogin: true,
     
-    init: () => {
-        // Check for saved token and user (demo mode - just check localStorage)
+    init: async () => { // Made init async to allow for API call
         const savedToken = localStorage.getItem('skintip_token');
-        const savedUser = localStorage.getItem('skintip_user');
         
-        if (savedToken && savedUser) {
+        if (savedToken) {
             STATE.token = savedToken;
-            STATE.user = JSON.parse(savedUser);
-            // Crucial: Update tokens display on login if user data loaded from localStorage
-            utils.updateTokenDisplay(); 
-            auth.updateUI();
-            auth.hideModal();
+            try {
+                // Fetch fresh user data from backend using the saved token
+                const response = await fetch(`${CONFIG.API_URL}/auth/me`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${savedToken}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    STATE.user = data.user; // Get fresh user object
+                    STATE.userTokens = data.user.tokens_remaining; // Crucial: Update global state tokens from fresh data
+                    auth.updateUI(); // Update UI with fresh user info
+                    utils.updateTokenDisplay(); // Call global utility to update token display
+                    auth.hideModal(); // Hide modal if successfully logged in
+                } else {
+                    // Token might be invalid or expired, clear session and show login
+                    console.error('Failed to fetch fresh user data:', response.status);
+                    auth.logout(); // Force logout
+                }
+            } catch (error) {
+                console.error('Network error during user data refresh:', error);
+                auth.logout(); // Force logout on network error
+            }
         } else {
+            // No token, show login modal
             auth.showModal();
         }
         
-        // Setup event listeners
+        // Setup event listeners (remain the same)
         document.getElementById('authForm').addEventListener('submit', auth.handleSubmit);
         document.getElementById('authSwitchLink').addEventListener('click', auth.toggleMode);
         document.getElementById('logoutBtn').addEventListener('click', auth.logout);
@@ -67,7 +86,7 @@ const auth = {
         
         const email = document.getElementById('email').value;
         const password = document.getElementById('password').value;
-        const username = document.getElementById('username').value || email.split('@')[0]; // Default username if not provided
+        const username = document.getElementById('username').value || email.split('@')[0];
         
         const endpoint = auth.isLogin ? '/auth/login' : '/auth/register';
         const body = auth.isLogin ? 
@@ -90,7 +109,7 @@ const auth = {
             // Save token and user data (including tokens_remaining)
             STATE.token = data.token;
             STATE.user = data.user; // This now includes tokens_remaining from backend
-            STATE.userTokens = data.user.tokens_remaining; // Update global state tokens
+            STATE.userTokens = data.user.tokens_remaining; // Update global state tokens from fresh login/register
             localStorage.setItem('skintip_token', data.token);
             localStorage.setItem('skintip_user', JSON.stringify(data.user)); // Store full user object
             

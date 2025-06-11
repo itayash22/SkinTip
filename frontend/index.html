@@ -254,14 +254,6 @@
     <script>
         console.log('Main inline script starting...'); // ADDED FOR DEBUGGING
 
-        // === IMPORTANT FIX: MOVED THESE LINES INSIDE DOMContentLoaded ===
-        // They were causing a ReferenceError because contactArtist and changePortfolioImage
-        // were not yet defined when these lines executed at the top of the script.
-        // By moving them here, we ensure all functions are fully parsed and available.
-        // Original problematic lines were here:
-        // window.contactArtist = contactArtist;
-        // window.changePortfolioImage = changePortfolioImage;
-
         /**
          * Resizes an image Data URL to a maximum width/height while maintaining aspect ratio.
          * Returns a Promise that resolves with the new Data URL (JPEG).
@@ -304,7 +296,7 @@
         }
 
 
-        // --- Artist Loading and Filtering Functions (Moved to global scope) ---
+        // --- Artist Loading and Filtering Functions ---
         let allArtists = []; // Declare in a scope accessible by filterArtists and displayArtists
 
         // Moved contactArtist and changePortfolioImage outside of displayArtists
@@ -454,6 +446,7 @@
             console.log('🎨 SkinTip initializing (DOMContentLoaded)!'); // CHANGED LOG HERE
 
             // Assign global functions here. These were moved outside their previous nested scope.
+            // This ensures they are fully defined when assigned to window.
             window.contactArtist = contactArtist;
             window.changePortfolioImage = changePortfolioImage;
 

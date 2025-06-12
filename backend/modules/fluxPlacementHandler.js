@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-11_V1.8_FINAL_FIX'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-11_V1.9_MASK_NO_INVERT_PROMPT_GUIDANCE_TUNE'); // UPDATED VERSION LOG
 
 const axios = require('axios');
 const sharp = require('sharp');
@@ -16,22 +16,26 @@ const fluxPlacementHandler = {
 
     /**
      * Inverts the colors of a Base64 encoded PNG mask image.
-     * Assumes a grayscale image (black/white). Black becomes white, white becomes black.
-     * Returns the inverted mask as a Base64 string (no data URL prefix).
-     * @param {string} maskBase64 The base64 string of the mask (without data:image/png;base64, prefix)
-     * @returns {Promise<string>} A promise that resolves with the inverted base64 mask.
-     * @throws {Error} If sharp fails to process the mask.
+     * NOTE: This function will no longer be called directly for the mask_image sent to Flux
+     * in the placeTattooOnSkin function, but it's kept here if other parts of the app use it.
      */
     invertMask: async (maskBase64) => {
         const buffer = Buffer.from(maskBase64, 'base64');
         try {
-            // Ensure mask is PNG and then negate
+            // DEBUG: Log input mask properties
+            const inputMaskMetadata = await sharp(buffer).metadata();
+            console.log('Mask Invert DEBUG: Input mask format:', inputMaskMetadata.format, 'channels:', inputMaskMetadata.channels);
+            
             const invertedBuffer = await sharp(buffer)
                 .ensureAlpha() // Ensure it has an alpha channel for consistent negation
                 .negate({ alpha: false }) // Invert colors, but don't touch alpha channel
                 .png() // Convert to PNG
                 .toBuffer();
             console.log('Mask successfully inverted.');
+            // DEBUG: Log output mask properties
+            const outputMaskMetadata = await sharp(invertedBuffer).metadata();
+            console.log('Mask Invert DEBUG: Output inverted mask format:', outputMaskMetadata.format, 'channels:', outputMaskMetadata.channels);
+            console.log('Mask Invert DEBUG: Output inverted mask first 20 bytes (hex):', invertedBuffer.toString('hex', 0, 20));
             return invertedBuffer.toString('base64');
         } catch (error) {
             console.error('Error inverting mask:', error);
@@ -83,9 +87,7 @@ const fluxPlacementHandler = {
 
             return watermarkedBuffer;
         } catch (error) {
-            console.error('Error applying watermark (caught):', error);
-            // Don't throw a critical error here, as the image might still be usable without watermark.
-            // In production, you might want to log this extensively or notify.
+            console.error('Error applying watermark (caught):', error); 
             return imageBuffer; // Return original buffer if watermarking fails
         }
     },
@@ -154,32 +156,29 @@ const fluxPlacementHandler = {
         }
         
         // 2. Invert the mask for Flux (frontend draws white for tattoo, backend inverts to black)
-        let invertedMaskBase64;
-        try {
-            invertedMaskBase64 = await fluxPlacementHandler.invertMask(maskBase64);
-        } catch (error) {
-            throw new Error(`Mask inversion failed: ${error.message}`);
-        }
+        // IMPORTANT: For this attempt, we are NOT inverting the mask for Flux.
+        // The frontend mask (white for tattoo area, black background) will be sent directly.
+        let maskToSendToFlux = maskBase64; // Use the original maskBase64 from frontend
+        console.log('Mask Inversion skipped. Sending frontend mask directly to Flux.');
+
 
         // 3. Construct the prompt for Flux Kontext
-        // Kontext uses text instructions and reference_images for guidance.
-        // The prompt will guide the integration.
-        const effectivePrompt = `Place this tattoo design onto the human skin realistically, considering lighting and body contours. Realistic photo, professional tattoo photography, high detail. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
+        const effectivePrompt = `Integrate this uploaded tattoo design (from reference image) onto the human skin realistically within the masked area, considering lighting and body contours. The tattoo should look like a real, applied tattoo. Realistic photo, professional tattoo photography, high detail. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`; // REFINED PROMPT
         console.log('Effective Flux Kontext Prompt:', effectivePrompt);
 
         // 4. Make the Flux Kontext API call
         const fluxPayload = {
             prompt: effectivePrompt,
             input_image: skinImageBuffer.toString('base64'), // Original skin image
-            mask_image: invertedMaskBase64, // Inverted mask (black for tattoo area)
+            mask_image: maskToSendToFlux, // Send mask directly (no inversion)
             // Using reference_images for the tattoo design itself
             reference_images: [tattooDesignBuffer.toString('base64')], // Pass the tattoo design here
             n: numVariations, // Request 3 variations
             output_format: 'jpeg',
-            // Additional Kontext parameters for quality/control if needed:
-            // fidelity: 0.8, // Adjust as per Kontext docs, might control adherence to reference image
-            // guidance_scale: 7.0, // Standard SD parameter, adjust for creativity vs prompt adherence
-            // num_inference_steps: 50
+            // IMPORTANT: Tuned parameters for better adherence to reference and prompt
+            fidelity: 0.95, // High fidelity to ensure tattoo design is present (0.7-1.0)
+            guidance_scale: 12.0, // Stronger adherence to the prompt (7.0-15.0)
+            // num_inference_steps: 50 // Keep default or experiment with higher for quality
         };
 
         const fluxHeaders = {
@@ -187,7 +186,13 @@ const fluxPlacementHandler = {
             'x-key': fluxApiKey // Your Flux API key
         };
 
-        console.log('Calling Flux Kontext API...');
+        console.log('Calling Flux Kontext API with payload (truncated images for log):'); // MODIFIED LOG
+        const debugPayload = { ...fluxPayload };
+        debugPayload.input_image = debugPayload.input_image ? debugPayload.input_image.substring(0, 50) + '...' : 'N/A';
+        debugPayload.mask_image = debugPayload.mask_image ? debugPayload.mask_image.substring(0, 50) + '...' : 'N/A';
+        debugPayload.reference_images = debugPayload.reference_images ? debugPayload.reference_images[0].substring(0, 50) + '...' : 'N/A';
+        console.log(JSON.stringify(debugPayload, null, 2)); // LOG TRUNCATED PAYLOAD
+        
         let fluxResponse;
         try {
             fluxResponse = await axios.post(
@@ -209,7 +214,7 @@ const fluxPlacementHandler = {
             throw new Error('Flux API did not start generation task.');
         }
 
-        // 5. Poll for results (similar to previous implementation)
+        // 5. Poll for results
         let attempts = 0;
         const generatedImageUrls = [];
         while (attempts < 60 && generatedImageUrls.length < numVariations) { // Poll until all variations are ready or timeout
@@ -225,7 +230,7 @@ const fluxPlacementHandler = {
             );
 
             // DEBUGGING: Log the entire result data from Flux API
-            console.log('Flux Polling Result Data (FULL RESPONSE):', JSON.stringify(result.data, null, 2)); // ADDED THIS LINE
+            console.log('Flux Polling Result Data (FULL RESPONSE):', JSON.stringify(result.data, null, 2));
 
             if (result.data.status === 'Ready') {
                 // FIX: Flux Kontext Pro returns a 'sample' URL, not 'samples' array of Base64.

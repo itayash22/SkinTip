@@ -182,7 +182,7 @@ app.post('/api/auth/register', async (req, res) => {
         const { data: existingUser } = await supabase
             .from('users')
             .select('id')
-            .or(`email.eq.${email},username.eq.${username}`)
+            .or(`email.eq.<span class="math-inline">\{email\},username\.eq\.</span>{username}`)
             .single();
 
         if (existingUser) {
@@ -380,9 +380,9 @@ app.post('/api/generate-final-tattoo',
                 tattooDesignDimensions = sizeOf(Buffer.from(tattooDesignImageBase64, 'base64'));
                 maskDimensions = sizeOf(Buffer.from(mask, 'base64'));
 
-                console.log(`Skin Image Dims: ${skinImageDimensions.width}x${skinImageDimensions.height}`);
-                console.log(`Tattoo Design Dims: ${tattooDesignDimensions.width}x${tattooDesignDimensions.height}`);
-                console.log(`Mask Dims: ${maskDimensions.width}x${maskDimensions.height}`);
+                console.log(`Skin Image Dims: <span class="math-inline">\{skinImageDimensions\.width\}x</span>{skinImageDimensions.height}`);
+                console.log(`Tattoo Design Dims: <span class="math-inline">\{tattooDesignDimensions\.width\}x</span>{tattooDesignDimensions.height}`);
+                console.log(`Mask Dims: <span class="math-inline">\{maskDimensions\.width\}x</span>{maskDimensions.height}`);
 
                 // All three should match for optimal inpainting
                 if (skinImageDimensions.width !== maskDimensions.width || skinImageDimensions.height !== maskDimensions.height) {

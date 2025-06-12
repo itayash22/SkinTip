@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-12_V1.15_FIX_SHARP_RAW_COMPOSITE_ERROR'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-12_V1.16_MASK_RAW_GRAYSCALE_FOR_SHARP_COMPOSITE'); // UPDATED VERSION LOG
 
 const axios = require('axios');
 const sharp = require('sharp');
@@ -149,32 +149,44 @@ const fluxPlacementHandler = {
         }
         
         // 2. Prepare Mask Buffer. Frontend mask is white for tattoo area, black elsewhere.
-        // This will be used as the alpha channel for the tattoo design.
-        const maskBuffer = Buffer.from(maskBase64, 'base64');
-        console.log('Mask buffer prepared for composition.');
+        // This will be used as the alpha channel for the tattoo design.
+        const originalMaskBuffer = Buffer.from(maskBase64, 'base64');
+        let maskBuffer;
+        try {
+            const maskMetadata = await sharp(originalMaskBuffer).metadata();
+            // Convert to grayscale and then to raw, single-channel buffer for explicit mask use in sharp.composite
+            maskBuffer = await sharp(originalMaskBuffer)
+                .grayscale() // Ensure it's grayscale (1 channel)
+                .raw()       // Get raw pixel data
+                .toBuffer();
+            console.log(`Mask buffer converted to raw grayscale for composition. Dims: ${maskMetadata.width}x${maskMetadata.height}, channels: 1.`);
+        } catch (error) {
+            console.error('Error processing mask for Sharp composition:', error);
+            throw new Error(`Failed to prepare mask for composition: ${error.message}`);
+        }
 
-        // Get dimensions of the base skin image to correctly size the mask for composition
-        const skinMetadata = await sharp(skinImageBuffer).metadata();
-        const skinWidth = skinMetadata.width;
-        const skinHeight = skinMetadata.height;
+        // Get dimensions of the base skin image to correctly size the mask for composition
+        const skinMetadata = await sharp(skinImageBuffer).metadata();
+        const skinWidth = skinMetadata.width;
+        const skinHeight = skinMetadata.height;
 
-        // Ensure tattoo design is sized to match skin image dimensions for direct composition
-        // AND match the mask dimensions. The mask comes from the frontend drawing on the skin image.
-        // So, tattooDesignBuffer should be resized to the *skin image dimensions*.
-        let resizedTattooDesignBuffer;
-        try {
-            resizedTattooDesignBuffer = await sharp(tattooDesignBuffer)
-                .resize(skinWidth, skinHeight, {
-                    fit: 'contain', // maintain aspect ratio, fit within bounds
-                    background: { r: 0, g: 0, b: 0, alpha: 0 } // Transparent background if tattoo smaller
-                })
-                .png() // Keep as PNG after resize
-                .toBuffer();
-            console.log(`Tattoo design resized to ${skinWidth}x${skinHeight} for composition.`);
-        } catch (error) {
-            console.error('Error resizing tattoo design for composition:', error);
-            throw new Error('Failed to resize tattoo design for composition.');
-        }
+        // Ensure tattoo design is sized to match skin image dimensions for direct composition
+        // AND match the mask dimensions. The mask comes from the frontend drawing on the skin image.
+        // So, tattooDesignBuffer should be resized to the *skin image dimensions*.
+        let resizedTattooDesignBuffer;
+        try {
+            resizedTattooDesignBuffer = await sharp(tattooDesignBuffer)
+                .resize(skinWidth, skinHeight, {
+                    fit: 'contain', // maintain aspect ratio, fit within bounds
+                    background: { r: 0, g: 0, b: 0, alpha: 0 } // Transparent background if tattoo smaller
+                })
+                .png() // Keep as PNG after resize
+                .toBuffer();
+            console.log(`Tattoo design resized to ${skinWidth}x${skinHeight} for composition.`);
+        } catch (error) {
+            console.error('Error resizing tattoo design for composition:', error);
+            throw new Error('Failed to resize tattoo design for composition.');
+        }
 
         // 3. **Manual Composition with Sharp (Hybrid Approach Step 1)**
         let compositedImageBuffer;
@@ -183,19 +195,17 @@ const fluxPlacementHandler = {
                 .composite([
                     {
                         input: resizedTattooDesignBuffer,
-                        // The maskBuffer should act as the alpha channel for the tattooDesignBuffer
-                        // where white means opaque (tattoo visible) and black means transparent.
-                        // Frontend mask is already white for tattoo, black for background.
                         blend: 'over', // Standard blend mode for overlaying
-                        tile: false, // Ensure it's not tiling
-                        left: 0, // Assume full image overlay for now
-                        top: 0,  // Assume full image overlay for now
-                        raw: {width: skinWidth, height: skinHeight, channels: 4}, // Assume RGBA for tattoo (PNG)
-                        mask: maskBuffer // Apply the mask as an alpha mask to the tattoo
+                        tile: false, // Ensure it's not tiling
+                        left: 0, // Assume full image overlay for now
+                        top: 0,  // Assume full image overlay for now
+                        // The 'raw' parameter for input is NOT needed here if resizedTattooDesignBuffer is PNG
+                        // The mask should also be converted to raw if it's explicitly used as a mask
+                        mask: maskBuffer // Apply the (now raw grayscale) mask as an alpha mask to the tattoo
                     }
                 ])
                 .jpeg({ quality: 90 }) // Output as JPEG
-                .toBuffer();
+                .toBuffer(); // Line 198 (where the error points)
             console.log('Tattoo manually composited onto skin image.');
         } catch (error) {
             console.error('Error during manual image composition (Phase 1):', error);
@@ -228,12 +238,12 @@ const fluxPlacementHandler = {
         };
 
         console.log('Calling Flux Kontext API for blending with payload (truncated images):');
-        const debugPayload = { ...fluxPayload };
-        debugPayload.input_image = debugPayload.input_image ? debugPayload.input_image.substring(0, 50) + '...' : 'N/A';
-        if (debugPayload.mask_image === '') debugPayload.mask_image = 'Empty String'; // For log clarity
-        if (debugPayload.reference_images) delete debugPayload.reference_images;
-        console.log(JSON.stringify(debugPayload, null, 2));
-        
+        const debugPayload = { ...fluxPayload };
+        debugPayload.input_image = debugPayload.input_image ? debugPayload.input_image.substring(0, 50) + '...' : 'N/A';
+        if (debugPayload.mask_image === '') debugPayload.mask_image = 'Empty String'; // For log clarity
+        if (debugPayload.reference_images) delete debugPayload.reference_images;
+        console.log(JSON.stringify(debugPayload, null, 2));
+        
         let fluxResponse;
         try {
             fluxResponse = await axios.post(

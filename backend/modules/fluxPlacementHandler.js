@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-12_V1.14_HYBRID_SHARP_THEN_FLUX_REFINEMENT'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-12_V1.15_FIX_SHARP_RAW_COMPOSITE_ERROR'); // UPDATED VERSION LOG
 
 const axios = require('axios');
 const sharp = require('sharp');
@@ -300,14 +300,14 @@ const fluxPlacementHandler = {
 
             if (result.data.status === 'Error') {
                 console.error('Flux API Polling Error:', result.data);
-                throw new Error('Image generation failed during polling: ' + JSON.stringify(result.data));
+                throw new Error('Image refinement failed during polling: ' + JSON.stringify(result.data));
             }
 
-            console.log(`Polling attempt ${attempts}: ${result.data.status}`);
+            console.log(`Polling attempt ${attempts}: ${result.data.status} for refinement.`);
         }
 
         if (generatedImageUrls.length === 0) {
-            throw new Error('Generation timeout: No images were generated within the time limit.');
+            throw new Error('Refinement timeout: No images were generated within the time limit.');
         }
         
         return generatedImageUrls;

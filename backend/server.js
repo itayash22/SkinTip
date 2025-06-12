@@ -1,4 +1,7 @@
 // backend/server.js
+// This file was last updated on 2025-06-12 (EOD) to fix a persistent SyntaxError.
+// Please ensure you replace the ENTIRE content of your backend/server.js file with this code.
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -14,6 +17,10 @@ const sizeOf = require('image-size');
 // Import our new modularized services
 const tokenService = require('./modules/tokenService');
 const fluxKontextHandler = require( './modules/fluxPlacementHandler');
+
+// Function to generate a dynamic timestamp for deployment tracking
+const getDeploymentTimestamp = () => new Date().toISOString();
+console.log(`SERVER_DEPLOY_TIMESTAMP: ${getDeploymentTimestamp()}`); // Added timestamp at very start of server.js
 
 // Initialize Express
 const app = express();
@@ -36,7 +43,7 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_KEY || !process.env
     process.exit(1); // Exit if critical env vars are not set
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY); // Use anon key for general supabase client init
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY); // Use SERVICE_KEY for backend operations
 
 // Middleware
 app.use(helmet());
@@ -182,7 +189,7 @@ app.post('/api/auth/register', async (req, res) => {
         const { data: existingUser } = await supabase
             .from('users')
             .select('id')
-            .or(`email.eq.<span class="math-inline">\{email\},username\.eq\.</span>{username}`)
+            .or(`email.eq.${email},username.eq.${username}`)
             .single();
 
         if (existingUser) {
@@ -207,29 +214,29 @@ app.post('/api/auth/register', async (req, res) => {
         if (error) {
             console.error('Registration error:', error);
             return res.status(500).json({ error: 'Failed to create user' });
-        }
-
-        // Generate JWT
-        const token = jwt.sign(
-            { userId: newUser.id, email: newUser.email },
-            process.env.JWT_SECRET,
-            { expiresIn: '7d' }
-        );
-
-        res.json({
-            message: 'Registration successful',
-            token,
-            user: {
-                id: newUser.id,
-                email: newUser.email,
-                username: newUser.username,
-                tokens_remaining: newUser.tokens_remaining
-            }
-        });
-    } catch (error) {
-        console.error('Registration error:', error);
-        res.status(500).json({ error: 'Registration failed' });
     }
+
+    // Generate JWT
+    const token = jwt.sign(
+        { userId: newUser.id, email: newUser.email },
+        process.env.JWT_SECRET,
+        { expiresIn: '7d' }
+    );
+
+    res.json({
+        message: 'Registration successful',
+        token,
+        user: {
+            id: newUser.id,
+            email: newUser.email,
+            username: newUser.username,
+            tokens_remaining: newUser.tokens_remaining
+        }
+    });
+} catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({ error: 'Registration failed' });
+}
 });
 
 app.post('/api/auth/login', async (req, res) => {
@@ -380,9 +387,9 @@ app.post('/api/generate-final-tattoo',
                 tattooDesignDimensions = sizeOf(Buffer.from(tattooDesignImageBase64, 'base64'));
                 maskDimensions = sizeOf(Buffer.from(mask, 'base64'));
 
-                console.log(`Skin Image Dims: <span class="math-inline">\{skinImageDimensions\.width\}x</span>{skinImageDimensions.height}`);
-                console.log(`Tattoo Design Dims: <span class="math-inline">\{tattooDesignDimensions\.width\}x</span>{tattooDesignDimensions.height}`);
-                console.log(`Mask Dims: <span class="math-inline">\{maskDimensions\.width\}x</span>{maskDimensions.height}`);
+                console.log(`Skin Image Dims: ${skinImageDimensions.width}x${skinImageDimensions.height}`);
+                console.log(`Tattoo Design Dims: ${tattooDesignDimensions.width}x${tattooDesignDimensions.height}`);
+                console.log(`Mask Dims: ${maskDimensions.width}x${maskDimensions.height}`);
 
                 // All three should match for optimal inpainting
                 if (skinImageDimensions.width !== maskDimensions.width || skinImageDimensions.height !== maskDimensions.height) {

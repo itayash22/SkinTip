@@ -22,7 +22,7 @@ SkinTip/
 │   ├── .env.example          # Example environment variables
 │   └── modules/              # Modularized backend logic
 │       ├── tokenService.js   # Manages user tokens via Supabase
-│       └── fluxKontextHandler.js # Handles Flux API calls, image processing, watermarking, Supabase Storage upload
+│       └── fluxPlacementHandler.js. # Handles Flux API calls, image processing, watermarking, Supabase Storage upload
 ├── scripts/                  # Database setup scripts (e.g., SQL for Supabase)
 └── docs/                     # Project documentation
 

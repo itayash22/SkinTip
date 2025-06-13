@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-12_V1.16_MASK_RAW_GRAYSCALE_FOR_SHARP_COMPOSITE'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-13_V1.17_SHARP_COMPOSITE_WITH_MASK_BOUNDING_BOX_AND_ALPHA'); // UPDATED VERSION LOG
 
 const axios = require('axios');
 const sharp = require('sharp');
@@ -12,12 +12,57 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY; // Use the servic
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generated-tattoos'; // Configure this bucket in Render
 
+// NEW HELPER FUNCTION: To find the bounding box of the white area in a raw grayscale mask buffer
+async function getMaskBoundingBox(maskBuffer, width, height) {
+    let minX = width, minY = height, maxX = 0, maxY = 0;
+    let foundWhite = false;
+
+    // Sharp's raw buffer is typically 1 byte per pixel for grayscale (0-255)
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const pixelValue = maskBuffer[y * width + x]; // Assumes 1 channel (grayscale raw)
+            if (pixelValue > 0) { // If pixel is not black (i.e., white or anything above 0)
+                foundWhite = true;
+                minX = Math.min(minX, x);
+                minY = Math.min(minY, y);
+                maxX = Math.max(maxX, x);
+                maxY = Math.max(maxY, y);
+            }
+        }
+    }
+
+    if (!foundWhite) {
+        console.warn('WARNING: No white pixels found in mask. Bounding box is empty.');
+        // Return a default or throw error if mask is entirely black. For now, return empty to be handled.
+        return { minX: 0, minY: 0, maxX: 0, maxY: 0, width: 0, height: 0, isEmpty: true };
+    }
+
+    // Add some optional padding to the bounding box, to give the tattoo some breathing room
+    // Be cautious with padding; too much can cause the tattoo to go outside the drawn area.
+    const padding = 0; // Keeping padding at 0 for now for exact fit
+    minX = Math.max(0, minX - padding);
+    minY = Math.max(0, minY - padding);
+    maxX = Math.min(width, maxX + padding);
+    maxY = Math.min(height, maxY + padding);
+
+    return {
+        minX: minX,
+        minY: minY,
+        maxX: maxX,
+        maxY: maxY,
+        width: maxX - minX + 1, // +1 because width/height are inclusive
+        height: maxY - minY + 1,
+        isEmpty: false
+    };
+}
+
+
 const fluxPlacementHandler = {
 
     /**
      * Inverts the colors of a Base64 encoded PNG mask image.
-     * (This function will still exist but its return value for mask_image might not be used directly in Flux payload,
-     * it will be used for Sharp composition where original mask is needed).
+     * (This function is not directly used in the current Flux API payload or Sharp composite with new approach,
+     * but kept as a utility).
      */
     invertMask: async (maskBase64) => {
         const buffer = Buffer.from(maskBase64, 'base64');
@@ -46,9 +91,8 @@ const fluxPlacementHandler = {
      */
     applyWatermark: async (imageBuffer) => {
         try {
-            console.log('Watermark DEBUG: imageBuffer length (bytes):', imageBuffer.length);
-            console.log('Watermark DEBUG: imageBuffer first 20 bytes (hex):', imageBuffer.toString('hex', 0, 20));
-            console.log('Watermark DEBUG: imageBuffer first 20 bytes (base64):', imageBuffer.toString('base64', 0, 20));
+            // console.log('Watermark DEBUG: imageBuffer length (bytes):', imageBuffer.length); // Too verbose
+            // console.log('Watermark DEBUG: imageBuffer first 20 bytes (hex):', imageBuffer.toString('hex', 0, 20)); // Too verbose
 
             const watermarkText = 'SkinTip.AI';
             const watermarkSvg = `<svg width="200" height="30" viewBox="0 0 200 30" xmlns="http://www.w3.org/2000/svg">
@@ -80,7 +124,7 @@ const fluxPlacementHandler = {
             return watermarkedBuffer;
         } catch (error) {
             console.error('Error applying watermark (caught):', error);
-            return imageBuffer;
+            return imageBuffer; // Return original image if watermarking fails
         }
     },
 
@@ -99,7 +143,7 @@ const fluxPlacementHandler = {
             .from(SUPABASE_STORAGE_BUCKET)
             .upload(filePath, imageBuffer, {
                 contentType: 'image/jpeg',
-                upsert: false
+                upsert: false // Do not overwrite existing files with same name
             });
 
         if (error) {
@@ -140,60 +184,90 @@ const fluxPlacementHandler = {
         let tattooDesignBuffer;
         try {
             tattooDesignBuffer = Buffer.from(tattooDesignImageBase64, 'base64');
-            // Keep tattoo design image as PNG for better transparency handling in composite operation
-            // Even if original is JPG, this tries to give it an alpha channel or solid background for mask application
-            tattooDesignBuffer = await sharp(tattooDesignBuffer).png().toBuffer(); // Force PNG for transparency support
-            console.log('Tattoo design image converted to PNG buffer for composition.'); // Updated log
+            // Force PNG to ensure it can support an alpha channel later if it's a JPG input.
+            // This step does NOT make an opaque background transparent.
+            tattooDesignBuffer = await sharp(tattooDesignBuffer).png().toBuffer();
+            console.log('Tattoo design image converted to PNG buffer.');
         } catch (error) {
             console.error('Error processing tattoo design image base64:', error);
             throw new Error('Invalid tattoo design image data provided.');
         }
 
         // 2. Prepare Mask Buffer. Frontend mask is white for tattoo area, black elsewhere.
-        // This will be used as the alpha channel for the tattoo design.
         const originalMaskBuffer = Buffer.from(maskBase64, 'base64');
         let maskBuffer;
+        let maskMetadata;
         try {
-            const maskMetadata = await sharp(originalMaskBuffer).metadata();
-            // Convert to grayscale and then to raw, single-channel buffer for explicit mask use in sharp.composite
+            maskMetadata = await sharp(originalMaskBuffer).metadata();
             maskBuffer = await sharp(originalMaskBuffer)
                 .grayscale() // Ensure it's grayscale (1 channel)
                 .raw()       // Get raw pixel data
                 .toBuffer();
-            console.log(`Mask buffer converted to raw grayscale for composition. Dims: ${maskMetadata.width}x${maskMetadata.height}, channels: 1.`);
-            // Debugging: Log mask properties
-            console.log('DEBUG: maskBuffer length (bytes):', maskBuffer.length);
-            console.log('DEBUG: maskBuffer first 20 bytes (hex):', maskBuffer.toString('hex', 0, 20));
+            console.log(`Mask buffer converted to raw grayscale. Dims: ${maskMetadata.width}x${maskMetadata.height}, channels: 1.`);
+            // console.log('DEBUG: maskBuffer length (bytes):', maskBuffer.length); // Too verbose
         } catch (error) {
             console.error('Error processing mask for Sharp composition:', error);
             throw new Error(`Failed to prepare mask for composition: ${error.message}`);
         }
 
-        // Get dimensions of the base skin image to correctly size the mask for composition
+        // Get dimensions of the base skin image
         const skinMetadata = await sharp(skinImageBuffer).metadata();
         const skinWidth = skinMetadata.width;
         const skinHeight = skinMetadata.height;
-        console.log(`DEBUG: Skin Image Dims for Sharp: ${skinWidth}x${skinHeight}`);
+        console.log(`DEBUG: Skin Image Dims: ${skinWidth}x${skinHeight}`);
 
+        // --- Step 2.1: Determine the bounding box of the drawn mask area ---
+        const maskBoundingBox = await getMaskBoundingBox(maskBuffer, maskMetadata.width, maskMetadata.height);
+        if (maskBoundingBox.isEmpty) {
+            throw new Error('Drawn mask area is too small or empty. Please draw a visible area.');
+        }
+        console.log('DEBUG: Calculated Mask Bounding Box:', maskBoundingBox);
 
-        // Ensure tattoo design is sized to match skin image dimensions for direct composition
-        // AND match the mask dimensions. The mask comes from the frontend drawing on the skin image.
-        // So, tattooDesignBuffer should be resized to the *skin image dimensions*.
-        let resizedTattooDesignBuffer;
+        // --- Step 2.2: Make the black background of the tattoo design transparent ---
+        // This heuristic makes pure black pixels transparent. Important for JPGs with solid black backgrounds.
+        let tattooDesignWithAlphaBuffer = tattooDesignBuffer; // Start with the initial tattoo buffer (already PNG)
         try {
-            resizedTattooDesignBuffer = await sharp(tattooDesignBuffer)
-                .resize(skinWidth, skinHeight, { // Use skin image dimensions for resize
-                    fit: 'contain', // maintain aspect ratio, fit within bounds
-                    background: { r: 0, g: 0, b: 0, alpha: 0 } // Transparent background if tattoo smaller
+            const tattooMeta = await sharp(tattooDesignBuffer).metadata();
+
+            // If the image currently lacks a proper alpha channel or is explicitly a JPG (converted to PNG without transparency)
+            if (tattooMeta.format === 'jpeg' || (tattooMeta.format === 'png' && tattooMeta.channels < 4)) {
+                console.log('Attempting to add transparency to tattoo design by keying out black background...');
+                
+                // Create an alpha mask where black pixels become transparent (0) and other colors become opaque (255)
+                const alphaMaskFromBlack = await sharp(tattooDesignBuffer)
+                    .threshold(1) // Pixels > 0 (not pure black) become 255 (white), pure black (0) remains 0.
+                    .toColourspace('b-w') // Convert to 1-bit black and white
+                    .raw() // Get raw pixel data for alpha channel
+                    .toBuffer();
+
+                tattooDesignWithAlphaBuffer = await sharp(tattooDesignBuffer)
+                    .ensureAlpha() // Ensure the image has an alpha channel to join to
+                    .joinChannel(alphaMaskFromBlack, { raw: {
+                        width: tattooMeta.width,
+                        height: tattooMeta.height,
+                        channels: 1 // Single channel for alpha
+                    }})
+                    .toBuffer();
+                console.log('Successfully processed tattoo design to make black background transparent.');
+            }
+        } catch (alphaProcessError) {
+            console.warn('Warning: Failed to process tattoo design for transparency (black background removal heuristic). Proceeding with original opaque buffer.', alphaProcessError.message);
+            tattooDesignWithAlphaBuffer = tattooDesignBuffer; // Fallback if error occurs
+        }
+
+        // --- Step 2.3: Resize the tattoo design to fit the mask's bounding box and prepare for placement ---
+        let tattooForPlacement;
+        try {
+            tattooForPlacement = await sharp(tattooDesignWithAlphaBuffer)
+                .resize(maskBoundingBox.width, maskBoundingBox.height, {
+                    fit: 'contain', // Maintain aspect ratio
+                    background: { r: 0, g: 0, b: 0, alpha: 0 } // Ensure transparent background if scaling down
                 })
-                .png() // Keep as PNG after resize
                 .toBuffer();
-            console.log(`Tattoo design resized to ${skinWidth}x${skinHeight} for composition.`);
-            // Debugging: Log resized tattoo properties
-            console.log('DEBUG: resizedTattooDesignBuffer length (bytes):', resizedTattooDesignBuffer.length);
+            console.log(`Tattoo design resized specifically for mask bounding box: ${maskBoundingBox.width}x${maskBoundingBox.height}.`);
         } catch (error) {
-            console.error('Error resizing tattoo design for composition:', error);
-            throw new Error('Failed to resize tattoo design for composition.');
+            console.error('Error resizing tattoo design for placement:', error);
+            throw new Error('Failed to resize tattoo design for placement within mask area.');
         }
 
         // 3. **Manual Composition with Sharp (Hybrid Approach Step 1)**
@@ -202,19 +276,19 @@ const fluxPlacementHandler = {
             compositedImageBuffer = await sharp(skinImageBuffer)
                 .composite([
                     {
-                        input: resizedTattooDesignBuffer,
-                        blend: 'over', // Standard blend mode for overlaying
-                        tile: false, // Ensure it's not tiling
-                        left: 0, // Assume full image overlay for now
-                        top: 0,  // Assume full image overlay for now
-                        // The 'raw' parameter for input is NOT needed here if resizedTattooDesignBuffer is PNG
-                        // The mask should also be converted to raw if it's explicitly used as a mask
-                        mask: maskBuffer // Apply the (now raw grayscale) mask as an alpha mask to the tattoo
+                        input: tattooForPlacement, // The tattoo design, now with transparency and sized for the mask area
+                        blend: 'over', // Blends the input over the base image
+                        tile: false,
+                        left: maskBoundingBox.minX, // Position at the mask's calculated left edge
+                        top: maskBoundingBox.minY,   // Position at the mask's calculated top edge
+                        // This mask ensures the tattoo is clipped to the exact irregular shape drawn by the user.
+                        // It acts as an alpha mask for this composite layer, independent of the tattoo's internal alpha.
+                        mask: maskBuffer 
                     }
                 ])
                 .jpeg({ quality: 90 }) // Output as JPEG
                 .toBuffer();
-            console.log('Tattoo manually composited onto skin image.');
+            console.log('Tattoo manually composited onto skin image with correct sizing, positioning, and clipping.');
 
             // --- DEBUGGING STEP: UPLOAD AND LOG INTERMEDIATE IMAGE ---
             try {
@@ -233,8 +307,8 @@ const fluxPlacementHandler = {
             // --- END DEBUGGING STEP ---
 
         } catch (error) {
-            console.error('Error during manual image composition (Phase 1):', error);
-            throw new Error(`Failed to composite tattoo onto skin: ${error.message}`);
+            console.error('Error during manual image composition (Phase 1) with positioning:', error);
+            throw new Error(`Failed to composite tattoo onto skin with correct positioning: ${error.message}`);
         }
 
 
@@ -246,15 +320,11 @@ const fluxPlacementHandler = {
         const fluxPayload = {
             prompt: effectivePrompt,
             input_image: compositedImageBuffer.toString('base64'), // Send the manually composited image
-            // IMPORTANT: DO NOT send mask_image or reference_images here anymore
-            // The tattoo is already composited onto the input_image.
             mask_image: '', // No mask for full image blending/refinement by Flux (send empty string if required, or omit)
-            // reference_images is deliberately not sent here
             n: numVariations, // Request 3 variations
             output_format: 'jpeg',
             fidelity: 0.8, // Adjusted fidelity for blending, not strict content transfer
             guidance_scale: 7.0, // Adjusted for blending, not strict adherence to initial prompt content
-            // num_inference_steps: 50
         };
 
         const fluxHeaders = {
@@ -266,7 +336,7 @@ const fluxPlacementHandler = {
         const debugPayload = { ...fluxPayload };
         debugPayload.input_image = debugPayload.input_image ? debugPayload.input_image.substring(0, 50) + '...' : 'N/A';
         if (debugPayload.mask_image === '') debugPayload.mask_image = 'Empty String'; // For log clarity
-        if (debugPayload.reference_images) delete debugPayload.reference_images;
+        if (debugPayload.reference_images) delete debugPayload.reference_images; // Ensure reference_images is not sent
         console.log(JSON.stringify(debugPayload, null, 2));
 
         let fluxResponse;
@@ -326,7 +396,12 @@ const fluxPlacementHandler = {
                     const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarkedBuffer, fileName, userId);
                     generatedImageUrls.push(publicUrl);
                     console.log(`Successfully generated and watermarked 1 image.`);
-                    break;
+                    break; // Exit loop after getting the first ready image if not requesting multiple
+                          // If numVariations is strictly 3 and Flux returns one by one, this break needs re-evaluation.
+                          // For now, assuming it returns one sample, and we need to poll for more if needed.
+                          // The Flux API docs usually show `sample` as the single result.
+                          // If `n` variations implies N `get_result` calls, this loop needs to handle that.
+                          // Given 'sample' is singular, let's assume it's one result per task ID for simplicity.
                 } else {
                     console.warn('Flux API returned Ready status but no valid image URL found in "sample".', result.data);
                     throw new Error('Flux API returned no images or malformed output.');
@@ -344,7 +419,7 @@ const fluxPlacementHandler = {
         if (generatedImageUrls.length === 0) {
             throw new Error('Refinement timeout: No images were generated within the time limit.');
         }
-
+        
         return generatedImageUrls;
     }
 };

@@ -66,20 +66,6 @@ SkinTip operates on a token system to manage AI generation costs.
 * **Backend (`tokenService.js`, `fluxKontextHandler.js`):** New modules created and integrated with Supabase for token management, Flux Kontext API calls, image watermarking, and Supabase Storage uploads.
 * **Backend (`server.js`):** Needs to be updated to integrate these new modules and set up the new dedicated `/api/generate-final-tattoo` endpoint, completely replacing the old Flux API call logic and removing the old `generateMultipleVariations` function.
 
-**Next Steps for the Developer (Your immediate task):**
-
-1.  **Update `backend/server.js`:**
-    * Import `tokenService` and `fluxKontextHandler`.
-    * **REMOVE** the `generateMultipleVariations` function entirely.
-    * **REMOVE** the old `/api/generate` endpoint.
-    * **Implement the new `/api/generate-final-tattoo` endpoint.** This endpoint will use `tokenService.checkTokens`, `multer.fields` for both `skinImage` and `tattooDesignImage`, call `fluxKontextHandler.placeTattooOnSkin`, `tokenService.deductTokens`, and return the watermarked image URLs.
-    * Add the `uuid` dependency to `backend/package.json` if not already there (it was part of the `fluxKontextHandler.js` code).
-2.  **Verify Render Environment Variables:** Confirm all necessary environment variables (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`, `SUPABASE_STORAGE_BUCKET`, `FLUX_API_KEY`, `JWT_SECRET`) are correctly set in Render.
-3.  **Test the Full Flow:** Upload a tattoo design, upload a skin photo, draw a mask, and click "Generate Tattoo on Skin." Verify that tokens are deducted, and watermarked images are returned/displayed.
-4.  **Consider adding basic CSS** for the new HTML elements in `styles.css`.
-
-
-
 ## ✨ Key Features & Functionality
 
 ### Current State (`main` branch)

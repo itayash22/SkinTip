@@ -1,6 +1,5 @@
 // backend/server.js
-// This file was last updated on 2025-06-12 (EOD) to fix a persistent SyntaxError.
-// Please ensure you replace the ENTIRE content of your backend/server.js file with this code.
+// This file was last updated on 2025-06-13 (EOD) to fix Content Moderated errors and improve Sharp composition.
 
 require('dotenv').config();
 const express = require('express');
@@ -16,7 +15,7 @@ const sizeOf = require('image-size');
 
 // Import our new modularized services
 const tokenService = require('./modules/tokenService');
-const fluxKontextHandler = require( './modules/fluxPlacementHandler');
+const fluxKontextHandler = require('./modules/fluxPlacementHandler');
 
 // Function to generate a dynamic timestamp for deployment tracking
 const getDeploymentTimestamp = () => new Date().toISOString();
@@ -27,7 +26,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // IMPORTANT: For Render, trust the first proxy hop to get correct client IP for rate limiting
-app.set('trust proxy', 1); 
+app.set('trust proxy', 1);
 
 // DEBUGGING: Log FRONTEND_URL from environment (at server startup)
 console.log('SERVER STARTUP DEBUG: process.env.FRONTEND_URL =', process.env.FRONTEND_URL);
@@ -50,9 +49,9 @@ app.use(helmet());
 
 // Custom CORS Debugging Middleware - Add before cors() to inspect origin
 app.use((req, res, next) => {
-    console.log('CORS DEBUG: Incoming Request - Method:', req.method);
-    console.log('CORS DEBUG: Incoming Request - Origin Header:', req.headers.origin);
-    console.log('CORS DEBUG: Incoming Request - Access-Control-Request-Headers:', req.headers['access-control-request-headers']);
+    // console.log('CORS DEBUG: Incoming Request - Method:', req.method); // Too verbose for general logs
+    // console.log('CORS DEBUG: Incoming Request - Origin Header:', req.headers.origin); // Too verbose for general logs
+    // console.log('CORS DEBUG: Incoming Request - Access-Control-Request-Headers:', req.headers['access-control-request-headers']); // Too verbose for general logs
     next();
 });
 
@@ -60,20 +59,20 @@ app.use(cors({
     origin: function (origin, callback) {
         // Explicitly list all allowed origins. If process.env.FRONTEND_URL is not set, allow localhost for development.
         const allowedOrigins = [
-            process.env.FRONTEND_URL, 
+            process.env.FRONTEND_URL,
             'https://itayash22.github.io', // Your specific GitHub Pages URL
             'http://localhost:8080',      // Common local development port
-            'http://127.0.0.1:8080'       // Another common local development IP
+            'http://127.0.0.1:8080'        // Another common local development IP
         ].filter(Boolean); // Filter out any undefined or null values
 
-        console.log('CORS DEBUG: Configured Allowed Origins:', allowedOrigins);
-        console.log('CORS DEBUG: Current Request Origin:', origin);
+        // console.log('CORS DEBUG: Configured Allowed Origins:', allowedOrigins); // Too verbose
+        // console.log('CORS DEBUG: Current Request Origin:', origin); // Too verbose
 
         // Allow requests with no origin (like mobile apps, curl requests, or same-origin on some setups)
         if (!origin) return callback(null, true);
 
         if (allowedOrigins.includes(origin)) {
-            console.log('CORS DEBUG: Origin Allowed:', origin);
+            // console.log('CORS DEBUG: Origin Allowed:', origin); // Too verbose
             return callback(null, true);
         } else {
             const msg = `The CORS policy for this site does not allow access from Origin ${origin}. You should ensure your FRONTEND_URL environment variable is set correctly on Render or add ${origin} to allowed list.`;
@@ -89,14 +88,10 @@ app.use(cors({
 }));
 
 // Custom Middleware AFTER cors() to log response headers for preflight
-// This is important to ensure cors() actually added the headers
 app.use((req, res, next) => {
     if (req.method === 'OPTIONS') {
-        console.log('CORS DEBUG: OPTIONS Request - Headers SENT:');
-        console.log('  Access-Control-Allow-Origin:', res.get('Access-Control-Allow-Origin') || 'Not Set');
-        console.log('  Access-Control-Allow-Methods:', res.get('Access-Control-Allow-Methods') || 'Not Set');
-        console.log('  Access-Control-Allow-Headers:', res.get('Access-Control-Allow-Headers') || 'Not Set');
-        console.log('  Access-Control-Allow-Credentials:', res.get('Access-Control-Allow-Credentials') || 'Not Set');
+        // console.log('CORS DEBUG: OPTIONS Request - Headers SENT:'); // Too verbose
+        // console.log('  Access-Control-Allow-Origin:', res.get('Access-Control-Allow-Origin') || 'Not Set'); // Too verbose
         res.sendStatus(204); // End the preflight request here with 204
     } else {
         next(); // Continue for actual requests (GET, POST, etc.)
@@ -120,7 +115,6 @@ const limiter = rateLimit({
 app.use('/api/', limiter);
 
 // Multer setup for file uploads (memory storage for efficiency)
-// This setup is for the /api/generate-final-tattoo endpoint, accepting two image files.
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
@@ -364,18 +358,9 @@ app.post('/api/generate-final-tattoo',
             // --- Prepare Image Data ---
             const skinImageBuffer = skinImageFile.buffer;
             const tattooDesignImageBase64 = tattooDesignImageFile.buffer.toString('base64');
-
-            // DEBUGGING: Log information about the received Base64 strings
-            console.log('Backend DEBUG: tattooDesignImageBase64 length:', tattooDesignImageBase64.length);
-            console.log('Backend DEBUG: tattooDesignImageBase64 starts with (first 50 chars):', tattooDesignImageBase64.substring(0, 50));
-            console.log('Backend DEBUG: mask length:', mask.length);
-            console.log('Backend DEBUG: mask starts with (first 50 chars):', mask.substring(0, 50));
             
             // Basic validation for base64 strings after conversion from buffer for consistency
             if (!isValidBase64(tattooDesignImageBase64) || !isValidBase64(mask)) {
-                // More detailed error logging
-                console.error('Server DEBUG: isValidBase64 check FAILED for tattooDesignImageBase64:', !isValidBase64(tattooDesignImageBase64));
-                console.error('Server DEBUG: isValidBase64 check FAILED for mask:', !isValidBase64(mask));
                 console.error('Server: Invalid Base64 data detected for tattoo design or mask. Returning 400.');
                 return res.status(400).json({ error: 'Invalid image data detected during processing.' });
             }
@@ -391,17 +376,10 @@ app.post('/api/generate-final-tattoo',
                 console.log(`Tattoo Design Dims: ${tattooDesignDimensions.width}x${tattooDesignDimensions.height}`);
                 console.log(`Mask Dims: ${maskDimensions.width}x${maskDimensions.height}`);
 
-                // All three should match for optimal inpainting
                 if (skinImageDimensions.width !== maskDimensions.width || skinImageDimensions.height !== maskDimensions.height) {
                     console.error('Skin image and Mask dimensions do NOT match!');
                     return res.status(400).json({ error: 'Skin image and mask dimensions must be identical.' });
                 }
-                // Tattoo design image dimensions should be reasonably sized, not necessarily exact match to skin.
-                // Flux Kontext will handle scaling the reference_image within the mask.
-                // console.log('Skin Image Base64 (first 100 chars):', skinImageBuffer.toString('base64').substring(0, 100) + '...'); // Too verbose for regular logs
-                // console.log('Tattoo Design Base64 (first 100 chars):', tattooDesignImageBase64.substring(0, 100) + '...'); // Too verbose for regular logs
-                // console.log('Mask Base64 (first 100 chars):', mask.substring(0, 100) + '...'); // Too verbose for regular logs
-
             } catch (dimError) {
                 console.error('Error getting image/mask dimensions:', dimError.message);
                 return res.status(500).json({ error: 'Failed to read image dimensions for validation.' });
@@ -412,7 +390,7 @@ app.post('/api/generate-final-tattoo',
                 skinImageBuffer,
                 tattooDesignImageBase64,
                 mask,
-                userPromptText, // Pass user's optional prompt text (it's gone from UX, but keep param for now)
+                userPromptText,
                 userId,
                 3, // numVariations: Request 3 images
                 process.env.FLUX_API_KEY
@@ -430,6 +408,14 @@ app.post('/api/generate-final-tattoo',
         } catch (error) {
             console.error('API Error in /api/generate-final-tattoo:', error);
 
+            // CRITICAL CHANGE: Handle 'Content Moderated' error specifically
+            if (error.message.includes('Flux API: Content Moderated')) {
+                return res.status(403).json({ // 403 Forbidden is appropriate for moderation
+                    error: error.message, // Send the specific message from fluxPlacementHandler
+                    // You might want to include more details from Flux if available
+                });
+            }
+
             if (error.message.includes('Insufficient tokens')) {
                 return res.status(402).json({ error: error.message });
             }
@@ -437,19 +423,22 @@ app.post('/api/generate-final-tattoo',
                 let errorMessage = 'File upload error.';
                 if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
                     errorMessage = 'One of the uploaded files is too large. Maximum size is 5MB per file.';
+                (Google)
                 } else {
-                    errorMessage = error.message; // Use specific error message if available
+                    errorMessage = error.message;
                 }
                 return res.status(400).json({ error: errorMessage });
             }
-            if (error.message.includes('Image and mask dimensions do NOT match') ||
+            if (error.message.includes('Skin image and mask dimensions do NOT match') ||
                 error.message.includes('Invalid image data detected') ||
                 error.message.includes('Failed to read image dimensions') ||
-                error.message.includes('Invalid tattoo design image data')) {
+                error.message.includes('Invalid tattoo design image data') ||
+                error.message.includes('Drawn mask area is too small or empty') || // Added new mask error
+                error.message.includes('Failed to resize tattoo design for placement')) { // Added new resize error
                 return res.status(400).json({ error: `Image processing error: ${error.message}` });
             }
             if (error.message.includes('Flux API generation error') ||
-                error.message.includes('Generation timeout') ||
+                error.message.includes('Refinement timeout') ||
                 error.message.includes('Mask inversion failed') ||
                 error.message.includes('Failed to upload image to storage')) {
                 return res.status(500).json({ error: `AI generation or storage failed: ${error.message}` });

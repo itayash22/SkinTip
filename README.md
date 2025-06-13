@@ -85,6 +85,7 @@ SkinTip operates on a token system to manage AI generation costs.
 * 🔄 Payment integration with Stripe for token purchases.
 * 🔄 Artist portfolio management and real artist profiles.
 * 🔄 Social sharing enhancements (e.g., direct Instagram sharing after download).
+* Go over entire UX and text and polish
 
 ## 🚀 How to Use (Current Workflow)
 

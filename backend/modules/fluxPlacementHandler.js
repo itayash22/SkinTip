@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-13_V1.17_SHARP_COMPOSITE_WITH_MASK_BOUNDING_BOX_AND_ALPHA'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-13_V1.18_MULTIPLE_FLUX_CALLS_WITH_FIDELITY_AND_SEED'); // UPDATED VERSION LOG
 
 const axios = require('axios');
 const sharp = require('sharp');
@@ -17,11 +17,10 @@ async function getMaskBoundingBox(maskBuffer, width, height) {
     let minX = width, minY = height, maxX = 0, maxY = 0;
     let foundWhite = false;
 
-    // Sharp's raw buffer is typically 1 byte per pixel for grayscale (0-255)
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
-            const pixelValue = maskBuffer[y * width + x]; // Assumes 1 channel (grayscale raw)
-            if (pixelValue > 0) { // If pixel is not black (i.e., white or anything above 0)
+            const pixelValue = maskBuffer[y * width + x];
+            if (pixelValue > 0) {
                 foundWhite = true;
                 minX = Math.min(minX, x);
                 minY = Math.min(minY, y);
@@ -33,12 +32,9 @@ async function getMaskBoundingBox(maskBuffer, width, height) {
 
     if (!foundWhite) {
         console.warn('WARNING: No white pixels found in mask. Bounding box is empty.');
-        // Return a default or throw error if mask is entirely black. For now, return empty to be handled.
         return { minX: 0, minY: 0, maxX: 0, maxY: 0, width: 0, height: 0, isEmpty: true };
     }
 
-    // Add some optional padding to the bounding box, to give the tattoo some breathing room
-    // Be cautious with padding; too much can cause the tattoo to go outside the drawn area.
     const padding = 0; // Keeping padding at 0 for now for exact fit
     minX = Math.max(0, minX - padding);
     minY = Math.max(0, minY - padding);
@@ -50,7 +46,7 @@ async function getMaskBoundingBox(maskBuffer, width, height) {
         minY: minY,
         maxX: maxX,
         maxY: maxY,
-        width: maxX - minX + 1, // +1 because width/height are inclusive
+        width: maxX - minX + 1,
         height: maxY - minY + 1,
         isEmpty: false
     };
@@ -61,17 +57,15 @@ const fluxPlacementHandler = {
 
     /**
      * Inverts the colors of a Base64 encoded PNG mask image.
-     * (This function is not directly used in the current Flux API payload or Sharp composite with new approach,
-     * but kept as a utility).
      */
     invertMask: async (maskBase64) => {
         const buffer = Buffer.from(maskBase64, 'base64');
         try {
             console.log('Mask Invert DEBUG: Attempting inversion...');
             const invertedBuffer = await sharp(buffer)
-                .ensureAlpha() // Ensure it has an alpha channel for consistent negation
-                .negate({ alpha: false }) // Invert colors, but don't touch alpha channel
-                .png() // Convert to PNG
+                .ensureAlpha()
+                .negate({ alpha: false })
+                .png()
                 .toBuffer();
             console.log('Mask successfully inverted.');
             const outputMaskMetadata = await sharp(invertedBuffer).metadata();
@@ -86,14 +80,9 @@ const fluxPlacementHandler = {
 
     /**
      * Applies a watermark to an image buffer and returns the watermarked image as a buffer.
-     * @param {Buffer} imageBuffer The buffer of the image to watermark.
-     * @returns {Promise<Buffer>} A promise that resolves with the watermarked image buffer.
      */
     applyWatermark: async (imageBuffer) => {
         try {
-            // console.log('Watermark DEBUG: imageBuffer length (bytes):', imageBuffer.length); // Too verbose
-            // console.log('Watermark DEBUG: imageBuffer first 20 bytes (hex):', imageBuffer.toString('hex', 0, 20)); // Too verbose
-
             const watermarkText = 'SkinTip.AI';
             const watermarkSvg = `<svg width="200" height="30" viewBox="0 0 200 30" xmlns="http://www.w3.org/2000/svg">
                                     <text x="10" y="25" font-family="Arial, sans-serif" font-size="16" fill="#FFFFFF" fill-opacity="0.5">${watermarkText}</text>
@@ -118,24 +107,18 @@ const fluxPlacementHandler = {
                     left: left,
                     blend: 'over'
                 }])
-                .jpeg({ quality: 90 }) // Ensure output is JPEG for consistent quality/size
+                .jpeg({ quality: 90 })
                 .toBuffer();
 
             return watermarkedBuffer;
         } catch (error) {
             console.error('Error applying watermark (caught):', error);
-            return imageBuffer; // Return original image if watermarking fails
+            return imageBuffer;
         }
     },
 
     /**
      * Uploads an image buffer to Supabase Storage and returns its public URL.
-     * @param {Buffer} imageBuffer The image buffer to upload.
-     * @param {string} fileName The desired filename (e.g., 'tattoo_uuid.jpeg').
-     * @param {string} userId The ID of the user for path organization.
-     * @param {string} folder Optional subfolder within the user's directory (e.g., 'debug').
-     * @returns {Promise<string>} The public URL of the uploaded image.
-     * @throws {Error} If Supabase upload fails.
      */
     uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '') => {
         const filePath = `${userId}/${folder ? folder + '/' : ''}${fileName}`;
@@ -143,7 +126,7 @@ const fluxPlacementHandler = {
             .from(SUPABASE_STORAGE_BUCKET)
             .upload(filePath, imageBuffer, {
                 contentType: 'image/jpeg',
-                upsert: false // Do not overwrite existing files with same name
+                upsert: false
             });
 
         if (error) {
@@ -167,15 +150,7 @@ const fluxPlacementHandler = {
     /**
      * Calls the Flux Kontext API to place a tattoo design onto a skin image.
      * Handles all image preprocessing (resizing, mask inversion, watermarking, storage).
-     * @param {Buffer} skinImageBuffer The buffer of the user's skin photo.
-     * @param {string} tattooDesignImageBase64 The base64 string of the tattoo design image.
-     * @param {string} maskBase64 The base64 string of the drawing mask (white area is tattoo).
-     * @param {string} userPrompt An optional text prompt for guiding the placement.
-     * @param {string} userId The ID of the user for path organization.
-     * @param {number} numVariations The number of variations to request (e.g., 3).
-     * @param {string} fluxApiKey The Flux API key.
-     * @returns {Promise<string[]>} An array of public URLs to the watermarked, generated images.
-     * @throws {Error} If API call, image processing, or upload fails.
+     * Now makes multiple Flux API calls to get multiple variations.
      */
     placeTattooOnSkin: async (skinImageBuffer, tattooDesignImageBase64, maskBase64, userPrompt, userId, numVariations, fluxApiKey) => {
         console.log('Starting Flux tattoo placement process...');
@@ -184,22 +159,22 @@ const fluxPlacementHandler = {
         let tattooDesignBuffer;
         try {
             tattooDesignBuffer = Buffer.from(tattooDesignImageBase64, 'base64');
-            tattooDesignBuffer = await sharp(tattooDesignBuffer).png().toBuffer(); // Ensure PNG for alpha support
+            tattooDesignBuffer = await sharp(tattooDesignBuffer).png().toBuffer();
             console.log('Tattoo design image converted to PNG buffer.');
         } catch (error) {
             console.error('Error processing tattoo design image base64:', error);
             throw new Error('Invalid tattoo design image data provided.');
         }
 
-        // 2. Prepare Mask Buffer. Frontend mask is white for tattoo area, black elsewhere.
+        // 2. Prepare Mask Buffer.
         const originalMaskBuffer = Buffer.from(maskBase64, 'base64');
         let maskBuffer;
         let maskMetadata;
         try {
             maskMetadata = await sharp(originalMaskBuffer).metadata();
             maskBuffer = await sharp(originalMaskBuffer)
-                .grayscale() // Ensure it's grayscale (1 channel)
-                .raw()       // Get raw pixel data
+                .grayscale()
+                .raw()
                 .toBuffer();
             console.log(`Mask buffer converted to raw grayscale. Dims: ${maskMetadata.width}x${maskMetadata.height}, channels: 1.`);
         } catch (error) {
@@ -268,17 +243,15 @@ const fluxPlacementHandler = {
             compositedImageBuffer = await sharp(skinImageBuffer)
                 .composite([
                     {
-                        input: tattooForPlacement, // The tattoo design, now with transparency and sized for the mask area
+                        input: tattooForPlacement,
                         blend: 'over',
                         tile: false,
-                        left: maskBoundingBox.minX, // Position at the mask's calculated left edge
-                        top: maskBoundingBox.minY,   // Position at the mask's calculated top edge
-                        // This mask ensures the tattoo is clipped to the exact irregular shape drawn by the user.
-                        // It acts as an alpha mask for this composite layer, independent of the tattoo's internal alpha.
-                        mask: maskBuffer 
+                        left: maskBoundingBox.minX,
+                        top: maskBoundingBox.minY,
+                        mask: maskBuffer
                     }
                 ])
-                .jpeg({ quality: 90 }) // Output as JPEG
+                .jpeg({ quality: 90 })
                 .toBuffer();
             console.log('Tattoo manually composited onto skin image with correct sizing, positioning, and clipping.');
 
@@ -303,116 +276,124 @@ const fluxPlacementHandler = {
             throw new Error(`Failed to composite tattoo onto skin with correct positioning: ${error.message}`);
         }
 
-
-        // 4. Construct the prompt for Flux Kontext (Now focused on blending/realism)
-        const effectivePrompt = `Make the tattoo look naturally placed on the skin, blend seamlessly, adjust lighting and shadows for realism. Realistic photo, professional tattoo photography, high detail. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
-        console.log('Effective AI Refinement Prompt:', effectivePrompt);
-
-        // 5. Make the Flux Kontext API call with the pre-composited image
-        const fluxPayload = {
-            prompt: effectivePrompt,
-            input_image: compositedImageBuffer.toString('base64'),
-            mask_image: '', // No mask for full image blending/refinement by Flux
-            n: numVariations,
-            output_format: 'jpeg',
-            fidelity: 0.8,
-            guidance_scale: 7.0,
-        };
-
-        const fluxHeaders = {
-            'Content-Type': 'application/json',
-            'x-key': fluxApiKey
-        };
-
-        console.log('Calling Flux Kontext API for blending with payload (truncated images):');
-        const debugPayload = { ...fluxPayload };
-        debugPayload.input_image = debugPayload.input_image ? debugPayload.input_image.substring(0, 50) + '...' : 'N/A';
-        if (debugPayload.mask_image === '') debugPayload.mask_image = 'Empty String';
-        if (debugPayload.reference_images) delete debugPayload.reference_images;
-        console.log(JSON.stringify(debugPayload, null, 2));
-
-        let fluxResponse;
-        try {
-            fluxResponse = await axios.post(
-                'https://api.bfl.ai/v1/flux-kontext-pro',
-                fluxPayload,
-                {
-                    headers: fluxHeaders,
-                    timeout: 90000
-                }
-            );
-        } catch (error) {
-            console.error('Flux API call failed:', error.response?.data || error.message);
-            throw new Error(`Flux API generation error: ${error.response?.data?.detail || error.message}`);
-        }
-
-        const taskId = fluxResponse.data.id;
-        if (!taskId) {
-            console.error('Flux API did not return a task ID:', fluxResponse.data);
-            throw new Error('Flux API did not start refinement task.');
-        }
-
-        // 6. Poll for results
-        let attempts = 0;
+        // 4. Prepare for multiple Flux API calls
         const generatedImageUrls = [];
-        while (attempts < 60 && generatedImageUrls.length < numVariations) {
-            attempts++;
-            await new Promise(resolve => setTimeout(resolve, 2000));
+        const basePrompt = `Make the tattoo look naturally placed on the skin, blend seamlessly, adjust lighting and shadows for realism. Realistic photo, professional tattoo photography, high detail. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
 
-            const result = await axios.get(
-                `https://api.bfl.ai/v1/get_result?id=${taskId}`,
-                {
-                    headers: { 'x-key': fluxApiKey },
-                    timeout: 10000
-                }
-            );
+        console.log(`Making ${numVariations} calls to Flux API...`);
 
-            console.log('Flux Polling Result Data (FULL RESPONSE):', JSON.stringify(result.data, null, 2));
+        for (let i = 0; i < numVariations; i++) {
+            const currentSeed = Date.now() + i; // Vary seed for different results
+            console.log(`Calling Flux API for variation ${i + 1} with seed: ${currentSeed}`);
 
-            // CRITICAL CHANGE: Stop polling and throw error if content is moderated or another final error occurs
-            if (result.data.status === 'Content Moderated') {
-                const moderationReason = result.data.details && result.data.details['Moderation Reasons'] ?
-                                         result.data.details['Moderation Reasons'].join(', ') : 'Unknown reason';
-                console.error(`Flux API Polling terminated: Content Moderated. Reason: ${moderationReason}`);
-                throw new Error(`Flux API: Content Moderated - The image or request triggered a moderation filter. Reason: ${moderationReason}. Please try a different design.`);
-            }
+            const fluxPayload = {
+                prompt: basePrompt,
+                input_image: compositedImageBuffer.toString('base64'),
+                mask_image: '', // Still no mask for full image blending/refinement by Flux
+                n: 1, // Request 1 variation per call
+                output_format: 'jpeg',
+                fidelity: 0.6, // Adjusted fidelity for more blending
+                guidance_scale: 7.0,
+                seed: currentSeed // Pass the varying seed
+            };
 
-            if (result.data.status === 'Error') {
-                console.error('Flux API Polling Error:', result.data);
-                throw new Error('Image refinement failed during polling: ' + JSON.stringify(result.data));
-            }
+            const fluxHeaders = {
+                'Content-Type': 'application/json',
+                'x-key': fluxApiKey
+            };
 
-            if (result.data.status === 'Ready') {
-                const imageUrlFromFlux = result.data.result && result.data.result.sample;
-
-                if (imageUrlFromFlux) {
-                    let imageBuffer;
-                    try {
-                        const imageResponse = await axios.get(imageUrlFromFlux, { responseType: 'arraybuffer' });
-                        imageBuffer = Buffer.from(imageResponse.data);
-                        console.log(`Successfully downloaded image from Flux URL: ${imageUrlFromFlux.substring(0, 50)}...`);
-                    } catch (downloadError) {
-                        console.error('Error downloading image from Flux URL:', imageUrlFromFlux, downloadError.message);
-                        throw new Error(`Failed to download image from Flux URL: ${downloadError.message}`);
+            let fluxResponse;
+            try {
+                fluxResponse = await axios.post(
+                    'https://api.bfl.ai/v1/flux-kontext-pro',
+                    fluxPayload,
+                    {
+                        headers: fluxHeaders,
+                        timeout: 90000 // Increased timeout for potentially longer generation
                     }
+                );
+            } catch (error) {
+                console.error(`Flux API call for variation ${i + 1} failed:`, error.response?.data || error.message);
+                // If one call fails, we still want to try the others, but we must indicate this one failed.
+                // For now, let's just log and continue, but for production, you might want a more robust retry/fail policy.
+                console.warn(`Skipping variation ${i + 1} due to API call failure.`);
+                continue; // Skip to the next iteration
+            }
 
-                    const watermarkedBuffer = await fluxPlacementHandler.applyWatermark(imageBuffer);
-                    const fileName = `tattoo-${uuidv4()}.jpeg`;
-                    const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarkedBuffer, fileName, userId);
-                    generatedImageUrls.push(publicUrl);
-                    console.log(`Successfully generated and watermarked 1 image.`);
-                    break; // Assuming one sample per task for now, so break after getting it.
+            const taskId = fluxResponse.data.id;
+            if (!taskId) {
+                console.error(`Flux API for variation ${i + 1} did not return a task ID:`, fluxResponse.data);
+                console.warn(`Skipping variation ${i + 1} due to missing task ID.`);
+                continue; // Skip to the next iteration
+            }
+
+            // Poll for results for THIS specific task ID
+            let attempts = 0;
+            let currentImageReady = false;
+            while (attempts < 60 && !currentImageReady) { // Poll until this image is ready or timeout
+                attempts++;
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                const result = await axios.get(
+                    `https://api.bfl.ai/v1/get_result?id=${taskId}`,
+                    {
+                        headers: { 'x-key': fluxApiKey },
+                        timeout: 10000
+                    }
+                );
+
+                console.log(`Flux Polling Result Data for Task ${taskId} (Attempt ${attempts}):`, JSON.stringify(result.data, null, 2));
+
+                if (result.data.status === 'Content Moderated') {
+                    const moderationReason = result.data.details && result.data.details['Moderation Reasons'] ?
+                                             result.data.details['Moderation Reasons'].join(', ') : 'Unknown reason';
+                    console.error(`Flux API Polling terminated for Task ${taskId}: Content Moderated. Reason: ${moderationReason}`);
+                    console.warn(`Skipping variation ${i + 1} due to content moderation.`);
+                    currentImageReady = true; // Mark as done, but no image to add
+                    // No throw here, because we want to continue with other variations if possible
+                } else if (result.data.status === 'Error') {
+                    console.error(`Flux API Polling Error for Task ${taskId}:`, result.data);
+                    console.warn(`Skipping variation ${i + 1} due to Flux API error during polling.`);
+                    currentImageReady = true; // Mark as done, but no image to add
+                } else if (result.data.status === 'Ready') {
+                    const imageUrlFromFlux = result.data.result && result.data.result.sample;
+
+                    if (imageUrlFromFlux) {
+                        let imageBuffer;
+                        try {
+                            const imageResponse = await axios.get(imageUrlFromFlux, { responseType: 'arraybuffer' });
+                            imageBuffer = Buffer.from(imageResponse.data);
+                            console.log(`Successfully downloaded image from Flux URL for Task ${taskId}: ${imageUrlFromFlux.substring(0, 50)}...`);
+                        } catch (downloadError) {
+                            console.error(`Error downloading image from Flux URL for Task ${taskId}:`, imageUrlFromFlux, downloadError.message);
+                            console.warn(`Skipping variation ${i + 1} due to download error.`);
+                            currentImageReady = true;
+                            continue; // Skip to next polling attempt if this specific download fails.
+                        }
+
+                        const watermarkedBuffer = await fluxPlacementHandler.applyWatermark(imageBuffer);
+                        const fileName = `tattoo-${uuidv4()}.jpeg`;
+                        const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarkedBuffer, fileName, userId);
+                        generatedImageUrls.push(publicUrl);
+                        console.log(`Successfully generated and watermarked 1 image for variation ${i + 1}.`);
+                        currentImageReady = true; // Mark this image as ready
+                    } else {
+                        console.warn(`Flux API for Task ${taskId} returned Ready status but no valid image URL found in "sample".`, result.data);
+                        console.warn(`Skipping variation ${i + 1} due to malformed Flux output.`);
+                        currentImageReady = true;
+                    }
                 } else {
-                    console.warn('Flux API returned Ready status but no valid image URL found in "sample".', result.data);
-                    throw new Error('Flux API returned no images or malformed output.');
+                    console.log(`Polling attempt ${attempts}: ${result.data.status} for Task ${taskId}.`);
                 }
             }
 
-            console.log(`Polling attempt ${attempts}: ${result.data.status} for refinement.`);
-        }
+            if (!currentImageReady) {
+                console.warn(`Refinement timeout for variation ${i + 1}: No image was generated within the time limit.`);
+            }
+        } // End of for loop for multiple variations
 
         if (generatedImageUrls.length === 0) {
-            throw new Error('Refinement timeout: No images were generated within the time limit.');
+            throw new Error('Flux API: No images were generated across all attempts. Please try again or with a different design.');
         }
         
         return generatedImageUrls;

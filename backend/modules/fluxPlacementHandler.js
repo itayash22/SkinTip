@@ -12,7 +12,7 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY; // Use the servic
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generated-tattoos'; // Configure this bucket in Render
 
-// NEW HELPER FUNCTION: To find the bounding box of the white area in a raw grayscale mask buffer
+// HELPER FUNCTION: To find the bounding box of the white area in a raw grayscale mask buffer
 async function getMaskBoundingBox(maskBuffer, width, height) {
     let minX = width, minY = height, maxX = 0, maxY = 0;
     let foundWhite = false;
@@ -180,13 +180,11 @@ const fluxPlacementHandler = {
     placeTattooOnSkin: async (skinImageBuffer, tattooDesignImageBase64, maskBase64, userPrompt, userId, numVariations, fluxApiKey) => {
         console.log('Starting Flux tattoo placement process...');
 
-        // 1. Convert tattoo design Base64 to Buffer. Ensure PNG for potential transparency.
+        // 1. Convert tattoo design Base64 to Buffer.
         let tattooDesignBuffer;
         try {
             tattooDesignBuffer = Buffer.from(tattooDesignImageBase64, 'base64');
-            // Force PNG to ensure it can support an alpha channel later if it's a JPG input.
-            // This step does NOT make an opaque background transparent.
-            tattooDesignBuffer = await sharp(tattooDesignBuffer).png().toBuffer();
+            tattooDesignBuffer = await sharp(tattooDesignBuffer).png().toBuffer(); // Ensure PNG for alpha support
             console.log('Tattoo design image converted to PNG buffer.');
         } catch (error) {
             console.error('Error processing tattoo design image base64:', error);
@@ -204,7 +202,6 @@ const fluxPlacementHandler = {
                 .raw()       // Get raw pixel data
                 .toBuffer();
             console.log(`Mask buffer converted to raw grayscale. Dims: ${maskMetadata.width}x${maskMetadata.height}, channels: 1.`);
-            // console.log('DEBUG: maskBuffer length (bytes):', maskBuffer.length); // Too verbose
         } catch (error) {
             console.error('Error processing mask for Sharp composition:', error);
             throw new Error(`Failed to prepare mask for composition: ${error.message}`);
@@ -224,35 +221,30 @@ const fluxPlacementHandler = {
         console.log('DEBUG: Calculated Mask Bounding Box:', maskBoundingBox);
 
         // --- Step 2.2: Make the black background of the tattoo design transparent ---
-        // This heuristic makes pure black pixels transparent. Important for JPGs with solid black backgrounds.
-        let tattooDesignWithAlphaBuffer = tattooDesignBuffer; // Start with the initial tattoo buffer (already PNG)
+        let tattooDesignWithAlphaBuffer = tattooDesignBuffer;
         try {
             const tattooMeta = await sharp(tattooDesignBuffer).metadata();
-
-            // If the image currently lacks a proper alpha channel or is explicitly a JPG (converted to PNG without transparency)
             if (tattooMeta.format === 'jpeg' || (tattooMeta.format === 'png' && tattooMeta.channels < 4)) {
                 console.log('Attempting to add transparency to tattoo design by keying out black background...');
-                
-                // Create an alpha mask where black pixels become transparent (0) and other colors become opaque (255)
                 const alphaMaskFromBlack = await sharp(tattooDesignBuffer)
-                    .threshold(1) // Pixels > 0 (not pure black) become 255 (white), pure black (0) remains 0.
-                    .toColourspace('b-w') // Convert to 1-bit black and white
-                    .raw() // Get raw pixel data for alpha channel
+                    .threshold(1)
+                    .toColourspace('b-w')
+                    .raw()
                     .toBuffer();
-
+                
                 tattooDesignWithAlphaBuffer = await sharp(tattooDesignBuffer)
-                    .ensureAlpha() // Ensure the image has an alpha channel to join to
+                    .ensureAlpha()
                     .joinChannel(alphaMaskFromBlack, { raw: {
                         width: tattooMeta.width,
                         height: tattooMeta.height,
-                        channels: 1 // Single channel for alpha
+                        channels: 1
                     }})
                     .toBuffer();
                 console.log('Successfully processed tattoo design to make black background transparent.');
             }
         } catch (alphaProcessError) {
             console.warn('Warning: Failed to process tattoo design for transparency (black background removal heuristic). Proceeding with original opaque buffer.', alphaProcessError.message);
-            tattooDesignWithAlphaBuffer = tattooDesignBuffer; // Fallback if error occurs
+            tattooDesignWithAlphaBuffer = tattooDesignBuffer;
         }
 
         // --- Step 2.3: Resize the tattoo design to fit the mask's bounding box and prepare for placement ---
@@ -260,8 +252,8 @@ const fluxPlacementHandler = {
         try {
             tattooForPlacement = await sharp(tattooDesignWithAlphaBuffer)
                 .resize(maskBoundingBox.width, maskBoundingBox.height, {
-                    fit: 'contain', // Maintain aspect ratio
-                    background: { r: 0, g: 0, b: 0, alpha: 0 } // Ensure transparent background if scaling down
+                    fit: 'contain',
+                    background: { r: 0, g: 0, b: 0, alpha: 0 }
                 })
                 .toBuffer();
             console.log(`Tattoo design resized specifically for mask bounding box: ${maskBoundingBox.width}x${maskBoundingBox.height}.`);
@@ -277,7 +269,7 @@ const fluxPlacementHandler = {
                 .composite([
                     {
                         input: tattooForPlacement, // The tattoo design, now with transparency and sized for the mask area
-                        blend: 'over', // Blends the input over the base image
+                        blend: 'over',
                         tile: false,
                         left: maskBoundingBox.minX, // Position at the mask's calculated left edge
                         top: maskBoundingBox.minY,   // Position at the mask's calculated top edge
@@ -297,7 +289,7 @@ const fluxPlacementHandler = {
                     compositedImageBuffer,
                     debugFileName,
                     userId,
-                    'debug' // Optional subfolder for debug images
+                    'debug'
                 );
                 console.log(`--- DEBUG: SHARP COMPOSITED IMAGE URL: ${debugPublicUrl} ---`);
                 console.log('^ Please check this URL in your browser to verify Sharp\'s output.');
@@ -313,18 +305,18 @@ const fluxPlacementHandler = {
 
 
         // 4. Construct the prompt for Flux Kontext (Now focused on blending/realism)
-        const effectivePrompt = `Make the tattoo look naturally placed on the skin, blend seamlessly, adjust lighting and shadows for realism. Realistic photo, professional tattoo photography, high detail. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`; // REFINED PROMPT
+        const effectivePrompt = `Make the tattoo look naturally placed on the skin, blend seamlessly, adjust lighting and shadows for realism. Realistic photo, professional tattoo photography, high detail. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
         console.log('Effective AI Refinement Prompt:', effectivePrompt);
 
-        // 5. Make the Flux Kontext API call with the pre-composited image (Hybrid Approach Step 2)
+        // 5. Make the Flux Kontext API call with the pre-composited image
         const fluxPayload = {
             prompt: effectivePrompt,
-            input_image: compositedImageBuffer.toString('base64'), // Send the manually composited image
-            mask_image: '', // No mask for full image blending/refinement by Flux (send empty string if required, or omit)
-            n: numVariations, // Request 3 variations
+            input_image: compositedImageBuffer.toString('base64'),
+            mask_image: '', // No mask for full image blending/refinement by Flux
+            n: numVariations,
             output_format: 'jpeg',
-            fidelity: 0.8, // Adjusted fidelity for blending, not strict content transfer
-            guidance_scale: 7.0, // Adjusted for blending, not strict adherence to initial prompt content
+            fidelity: 0.8,
+            guidance_scale: 7.0,
         };
 
         const fluxHeaders = {
@@ -335,8 +327,8 @@ const fluxPlacementHandler = {
         console.log('Calling Flux Kontext API for blending with payload (truncated images):');
         const debugPayload = { ...fluxPayload };
         debugPayload.input_image = debugPayload.input_image ? debugPayload.input_image.substring(0, 50) + '...' : 'N/A';
-        if (debugPayload.mask_image === '') debugPayload.mask_image = 'Empty String'; // For log clarity
-        if (debugPayload.reference_images) delete debugPayload.reference_images; // Ensure reference_images is not sent
+        if (debugPayload.mask_image === '') debugPayload.mask_image = 'Empty String';
+        if (debugPayload.reference_images) delete debugPayload.reference_images;
         console.log(JSON.stringify(debugPayload, null, 2));
 
         let fluxResponse;
@@ -346,7 +338,7 @@ const fluxPlacementHandler = {
                 fluxPayload,
                 {
                     headers: fluxHeaders,
-                    timeout: 90000 // Increased timeout for potentially longer generation
+                    timeout: 90000
                 }
             );
         } catch (error) {
@@ -377,6 +369,19 @@ const fluxPlacementHandler = {
 
             console.log('Flux Polling Result Data (FULL RESPONSE):', JSON.stringify(result.data, null, 2));
 
+            // CRITICAL CHANGE: Stop polling and throw error if content is moderated or another final error occurs
+            if (result.data.status === 'Content Moderated') {
+                const moderationReason = result.data.details && result.data.details['Moderation Reasons'] ?
+                                         result.data.details['Moderation Reasons'].join(', ') : 'Unknown reason';
+                console.error(`Flux API Polling terminated: Content Moderated. Reason: ${moderationReason}`);
+                throw new Error(`Flux API: Content Moderated - The image or request triggered a moderation filter. Reason: ${moderationReason}. Please try a different design.`);
+            }
+
+            if (result.data.status === 'Error') {
+                console.error('Flux API Polling Error:', result.data);
+                throw new Error('Image refinement failed during polling: ' + JSON.stringify(result.data));
+            }
+
             if (result.data.status === 'Ready') {
                 const imageUrlFromFlux = result.data.result && result.data.result.sample;
 
@@ -396,21 +401,11 @@ const fluxPlacementHandler = {
                     const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarkedBuffer, fileName, userId);
                     generatedImageUrls.push(publicUrl);
                     console.log(`Successfully generated and watermarked 1 image.`);
-                    break; // Exit loop after getting the first ready image if not requesting multiple
-                          // If numVariations is strictly 3 and Flux returns one by one, this break needs re-evaluation.
-                          // For now, assuming it returns one sample, and we need to poll for more if needed.
-                          // The Flux API docs usually show `sample` as the single result.
-                          // If `n` variations implies N `get_result` calls, this loop needs to handle that.
-                          // Given 'sample' is singular, let's assume it's one result per task ID for simplicity.
+                    break; // Assuming one sample per task for now, so break after getting it.
                 } else {
                     console.warn('Flux API returned Ready status but no valid image URL found in "sample".', result.data);
                     throw new Error('Flux API returned no images or malformed output.');
                 }
-            }
-
-            if (result.data.status === 'Error') {
-                console.error('Flux API Polling Error:', result.data);
-                throw new Error('Image refinement failed during polling: ' + JSON.stringify(result.data));
             }
 
             console.log(`Polling attempt ${attempts}: ${result.data.status} for refinement.`);

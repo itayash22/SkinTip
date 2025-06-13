@@ -52,6 +52,7 @@ app.use((req, res, next) => {
     next();
 });
 
+// Primary CORS configuration
 app.use(cors({
     origin: function (origin, callback) {
         const allowedOrigins = [
@@ -74,17 +75,12 @@ app.use(cors({
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-key'],
-    preflightContinue: false,
-    optionsSuccessStatus: 204
+    preflightContinue: false, // This tells the 'cors' middleware to handle OPTIONS requests itself
+    optionsSuccessStatus: 204 // Standard status for successful OPTIONS request
 }));
 
-app.use((req, res, next) => {
-    if (req.method === 'OPTIONS') {
-        res.sendStatus(204);
-    } else {
-        next();
-    }
-});
+// REMOVED: The conflicting custom OPTIONS handling middleware block was here.
+// The `cors()` middleware above handles preflight requests directly due to `preflightContinue: false`.
 
 
 app.use(express.json());
@@ -365,7 +361,7 @@ app.post('/api/generate-final-tattoo',
             // --- Call Flux Kontext Placement Handler ---
             const generatedImageUrls = await fluxKontextHandler.placeTattooOnSkin(
                 skinImageBuffer,
-                tattooDesignImageBase64,
+                tattooDesignImageBase66,
                 mask,
                 userPromptText,
                 userId,
@@ -410,7 +406,7 @@ app.post('/api/generate-final-tattoo',
                 error.message.includes('Invalid tattoo design image data') ||
                 error.message.includes('Drawn mask area is too small or empty') ||
                 error.message.includes('Failed to resize tattoo design for placement') ||
-                error.message.includes('No images were generated across all attempts')) { // New error message for multiple call failures
+                error.message.includes('No images were generated across all attempts')) {
                 return res.status(400).json({ error: `Image processing error: ${error.message}` });
             }
             if (error.message.includes('Flux API generation error') ||

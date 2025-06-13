@@ -49,30 +49,21 @@ app.use(helmet());
 
 // Custom CORS Debugging Middleware - Add before cors() to inspect origin
 app.use((req, res, next) => {
-    // console.log('CORS DEBUG: Incoming Request - Method:', req.method); // Too verbose for general logs
-    // console.log('CORS DEBUG: Incoming Request - Origin Header:', req.headers.origin); // Too verbose for general logs
-    // console.log('CORS DEBUG: Incoming Request - Access-Control-Request-Headers:', req.headers['access-control-request-headers']); // Too verbose for general logs
     next();
 });
 
 app.use(cors({
     origin: function (origin, callback) {
-        // Explicitly list all allowed origins. If process.env.FRONTEND_URL is not set, allow localhost for development.
         const allowedOrigins = [
             process.env.FRONTEND_URL,
             'https://itayash22.github.io', // Your specific GitHub Pages URL
             'http://localhost:8080',      // Common local development port
             'http://127.0.0.1:8080'        // Another common local development IP
-        ].filter(Boolean); // Filter out any undefined or null values
+        ].filter(Boolean);
 
-        // console.log('CORS DEBUG: Configured Allowed Origins:', allowedOrigins); // Too verbose
-        // console.log('CORS DEBUG: Current Request Origin:', origin); // Too verbose
-
-        // Allow requests with no origin (like mobile apps, curl requests, or same-origin on some setups)
         if (!origin) return callback(null, true);
 
         if (allowedOrigins.includes(origin)) {
-            // console.log('CORS DEBUG: Origin Allowed:', origin); // Too verbose
             return callback(null, true);
         } else {
             const msg = `The CORS policy for this site does not allow access from Origin ${origin}. You should ensure your FRONTEND_URL environment variable is set correctly on Render or add ${origin} to allowed list.`;
@@ -81,20 +72,17 @@ app.use(cors({
         }
     },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Explicitly allow all methods your API uses
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-key'], // Explicitly allow headers your frontend sends (Authorization is crucial)
-    preflightContinue: false, // Let the cors middleware handle preflights
-    optionsSuccessStatus: 204 // Standard status for successful OPTIONS request
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-key'],
+    preflightContinue: false,
+    optionsSuccessStatus: 204
 }));
 
-// Custom Middleware AFTER cors() to log response headers for preflight
 app.use((req, res, next) => {
     if (req.method === 'OPTIONS') {
-        // console.log('CORS DEBUG: OPTIONS Request - Headers SENT:'); // Too verbose
-        // console.log('  Access-Control-Allow-Origin:', res.get('Access-Control-Allow-Origin') || 'Not Set'); // Too verbose
-        res.sendStatus(204); // End the preflight request here with 204
+        res.sendStatus(204);
     } else {
-        next(); // Continue for actual requests (GET, POST, etc.)
+        next();
     }
 });
 
@@ -149,9 +137,7 @@ const authenticateToken = async (req, res, next) => {
     }
 
     try {
-        // Verify the JWT token
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        // Fetch user from Supabase to ensure token corresponds to an active user
         const { data: user, error } = await supabase
             .from('users')
             .select('*')
@@ -162,7 +148,7 @@ const authenticateToken = async (req, res, next) => {
             return res.status(403).json({ error: 'Invalid token' });
         }
 
-        req.user = user; // Attach user object to request
+        req.user = user;
         next();
     } catch (error) {
         console.error('Authentication error:', error.message);
@@ -179,7 +165,6 @@ app.post('/api/auth/register', async (req, res) => {
             return res.status(400).json({ error: 'All fields are required' });
         }
 
-        // Check if user exists (email or username)
         const { data: existingUser } = await supabase
             .from('users')
             .select('id')
@@ -190,17 +175,15 @@ app.post('/api/auth/register', async (req, res) => {
             return res.status(409).json({ error: 'User with this email or username already exists' });
         }
 
-        // Hash password
         const passwordHash = await bcrypt.hash(password, 10);
 
-        // Create user in Supabase (with initial tokens)
         const { data: newUser, error } = await supabase
             .from('users')
             .insert({
                 email,
                 password_hash: passwordHash,
                 username,
-                tokens_remaining: 20 // Grant initial free tokens
+                tokens_remaining: 20
             })
             .select()
             .single();
@@ -210,7 +193,6 @@ app.post('/api/auth/register', async (req, res) => {
             return res.status(500).json({ error: 'Failed to create user' });
         }
 
-        // Generate JWT
         const token = jwt.sign(
             { userId: newUser.id, email: newUser.email },
             process.env.JWT_SECRET,
@@ -241,7 +223,6 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(400).json({ error: 'Email and password required' });
         }
 
-        // Get user from Supabase
         const { data: user, error } = await supabase
             .from('users')
             .select('*')
@@ -252,13 +233,11 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        // Verify password
         const validPassword = await bcrypt.compare(password, user.password_hash);
         if (!validPassword) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        // Generate JWT
         const token = jwt.sign(
             { userId: user.id, email: user.email },
             process.env.JWT_SECRET,
@@ -281,7 +260,7 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
-// Helper function to validate base64 (already in fluxKontextHandler, but good to keep general util here)
+// Helper function to validate base64
 function isValidBase64(str) {
     if (!str || str.length < 100) return false;
     try {
@@ -293,11 +272,10 @@ function isValidBase64(str) {
 }
 
 // --- NEW TEMPORARY ENDPOINT TO ADD TOKENS FOR TESTING ---
-// !!! WARNING: This endpoint should be removed or heavily secured (e.g., admin-only) in production. !!!
 app.post('/api/add-test-tokens', authenticateToken, async (req, res) => {
     try {
         const userId = req.user.id;
-        const amount = req.body.amount || 200; // Default to 200 tokens if not specified
+        const amount = req.body.amount || 200;
 
         console.log(`Attempting to add ${amount} test tokens for user ${userId}.`);
 
@@ -315,10 +293,10 @@ app.post('/api/add-test-tokens', authenticateToken, async (req, res) => {
 // --- END TEMPORARY ENDPOINT ---
 
 
-// --- NEW GENERATION ENDPOINT: /api/generate-final-tattoo ---
+// --- GENERATION ENDPOINT: /api/generate-final-tattoo ---
 app.post('/api/generate-final-tattoo',
-    authenticateToken, // Authenticate user
-    upload.fields([ // Expects two image files
+    authenticateToken,
+    upload.fields([
         { name: 'skinImage', maxCount: 1 },
         { name: 'tattooDesignImage', maxCount: 1 }
     ]),
@@ -326,8 +304,8 @@ app.post('/api/generate-final-tattoo',
         try {
             console.log('API: /api/generate-final-tattoo endpoint called.');
 
-            const userId = req.user.id; // User ID from authenticated token
-            const { mask, prompt: userPromptText } = req.body; // 'mask' is base64, 'prompt' is optional text
+            const userId = req.user.id;
+            const { mask, prompt: userPromptText } = req.body;
             const skinImageFile = req.files.skinImage ? req.files.skinImage[0] : null;
             const tattooDesignImageFile = req.files.tattooDesignImage ? req.files.tattooDesignImage[0] : null;
 
@@ -344,12 +322,12 @@ app.post('/api/generate-final-tattoo',
                         'https://picsum.photos/512/512?random=2',
                         'https://picsum.photos/512/512?random=3'
                     ],
-                    tokens_remaining: req.user.tokens_remaining // Return current user tokens
+                    tokens_remaining: req.user.tokens_remaining
                 });
             }
 
             // --- Token Check ---
-            const tokensRequired = process.env.NODE_ENV === 'development' ? 0 : 15; // Set to 0 in dev for free testing
+            const tokensRequired = process.env.NODE_ENV === 'development' ? 0 : 15;
             const hasEnoughTokens = await tokenService.checkTokens(userId, 'FLUX_PLACEMENT', tokensRequired);
             if (!hasEnoughTokens) {
                 return res.status(402).json({ error: `Insufficient tokens. This action costs ${tokensRequired} tokens.` });
@@ -359,7 +337,6 @@ app.post('/api/generate-final-tattoo',
             const skinImageBuffer = skinImageFile.buffer;
             const tattooDesignImageBase64 = tattooDesignImageFile.buffer.toString('base64');
             
-            // Basic validation for base64 strings after conversion from buffer for consistency
             if (!isValidBase64(tattooDesignImageBase64) || !isValidBase64(mask)) {
                 console.error('Server: Invalid Base64 data detected for tattoo design or mask. Returning 400.');
                 return res.status(400).json({ error: 'Invalid image data detected during processing.' });
@@ -402,17 +379,16 @@ app.post('/api/generate-final-tattoo',
 
             res.json({
                 images: generatedImageUrls,
-                tokens_remaining: newTokens // Send updated token balance to frontend
+                tokens_remaining: newTokens
             });
 
         } catch (error) {
             console.error('API Error in /api/generate-final-tattoo:', error);
 
-            // CRITICAL CHANGE: Handle 'Content Moderated' error specifically
+            // Handle 'Content Moderated' error specifically (from fluxPlacementHandler)
             if (error.message.includes('Flux API: Content Moderated')) {
-                return res.status(403).json({ // 403 Forbidden is appropriate for moderation
-                    error: error.message, // Send the specific message from fluxPlacementHandler
-                    // You might want to include more details from Flux if available
+                return res.status(403).json({
+                    error: error.message,
                 });
             }
 
@@ -423,7 +399,6 @@ app.post('/api/generate-final-tattoo',
                 let errorMessage = 'File upload error.';
                 if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
                     errorMessage = 'One of the uploaded files is too large. Maximum size is 5MB per file.';
-                (Google)
                 } else {
                     errorMessage = error.message;
                 }
@@ -433,8 +408,9 @@ app.post('/api/generate-final-tattoo',
                 error.message.includes('Invalid image data detected') ||
                 error.message.includes('Failed to read image dimensions') ||
                 error.message.includes('Invalid tattoo design image data') ||
-                error.message.includes('Drawn mask area is too small or empty') || // Added new mask error
-                error.message.includes('Failed to resize tattoo design for placement')) { // Added new resize error
+                error.message.includes('Drawn mask area is too small or empty') ||
+                error.message.includes('Failed to resize tattoo design for placement') ||
+                error.message.includes('No images were generated across all attempts')) { // New error message for multiple call failures
                 return res.status(400).json({ error: `Image processing error: ${error.message}` });
             }
             if (error.message.includes('Flux API generation error') ||

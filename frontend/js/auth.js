@@ -12,7 +12,7 @@ const auth = {
     authSwitchLink: null,
     authError: null,
     logoutBtn: null,
-    userInfoSpan: null,
+    userInfoSpan: null, // Ensure this is correctly referenced
 
     isRegisterMode: false,
 
@@ -31,7 +31,7 @@ const auth = {
         
         // These elements are in index.html, but auth.js needs to manage them globally
         auth.logoutBtn = document.getElementById('logoutBtn');
-        auth.userInfoSpan = document.getElementById('userInfo');
+        auth.userInfoSpan = document.getElementById('userInfo'); // Make sure this reference is solid
 
         console.log('Auth init function started.');
 
@@ -161,7 +161,7 @@ const auth = {
             localStorage.setItem('user_info', JSON.stringify(data.user));
 
             auth.hideModal();
-            auth.updateUIForAuth(true);
+            auth.updateUIForAuth(true); // Call updateUIForAuth to refresh display
             
             // Redirect to index.html after successful auth, if on welcome.html
             if (window.location.pathname.split('/').pop() === 'welcome.html') {
@@ -191,32 +191,43 @@ const auth = {
     },
 
     updateUIForAuth: (isAuthenticated) => {
+        // Ensure userInfoSpan and logoutBtn are correctly referenced before using them
+        const userInfoSpan = document.getElementById('userInfo');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const loginBtn = document.getElementById('loginBtn'); // For welcome.html
+        const registerBtn = document.getElementById('registerBtn'); // For welcome.html
+        const heroRegisterBtn = document.getElementById('heroRegisterBtn'); // For welcome.html
+
         if (isAuthenticated) {
-            if (auth.userInfoSpan) {
-                auth.userInfoSpan.textContent = `${STATE.user.username || STATE.user.email} (${STATE.userTokens} tokens)`;
+            if (userInfoSpan && STATE.user) { // Check STATE.user exists too
+                userInfoSpan.textContent = `${STATE.user.username || STATE.user.email} (${STATE.userTokens} tokens)`;
+                userInfoSpan.style.display = 'inline-block'; // Ensure it's visible
             }
-            if (auth.logoutBtn) {
-                auth.logoutBtn.style.display = 'inline-block';
+            if (logoutBtn) {
+                logoutBtn.style.display = 'inline-block';
             }
             // Hide welcome page buttons if on welcome.html and logged in
-            if (window.location.pathname.split('/').pop() === 'welcome.html') {
-                document.getElementById('loginBtn')?.style.display = 'none';
-                document.getElementById('registerBtn')?.style.display = 'none';
-                document.getElementById('heroRegisterBtn')?.style.display = 'none';
+            const currentPage = window.location.pathname.split('/').pop();
+            if (currentPage === 'welcome.html') {
+                if (loginBtn) loginBtn.style.display = 'none';
+                if (registerBtn) registerBtn.style.display = 'none';
+                if (heroRegisterBtn) heroRegisterBtn.style.display = 'none';
             }
-            utils.updateTokenDisplay(); // Refresh token display on app page
-        } else {
-            if (auth.userInfoSpan) {
-                auth.userInfoSpan.textContent = '';
+            utils.updateTokenDisplay(); // Refresh token display on app page (index.html)
+        } else { // Not authenticated
+            if (userInfoSpan) {
+                userInfoSpan.textContent = '';
+                userInfoSpan.style.display = 'none'; // Hide if not logged in
             }
-            if (auth.logoutBtn) {
-                auth.logoutBtn.style.display = 'none';
+            if (logoutBtn) {
+                logoutBtn.style.display = 'none';
             }
             // Show welcome page buttons if on welcome.html and logged out
-            if (window.location.pathname.split('/').pop() === 'welcome.html') {
-                document.getElementById('loginBtn')?.style.display = 'inline-block';
-                document.getElementById('registerBtn')?.style.display = 'inline-block';
-                document.getElementById('heroRegisterBtn')?.style.display = 'inline-block';
+            const currentPage = window.location.pathname.split('/').pop();
+            if (currentPage === 'welcome.html') {
+                if (loginBtn) loginBtn.style.display = 'inline-block';
+                if (registerBtn) registerBtn.style.display = 'inline-block';
+                if (heroRegisterBtn) heroRegisterBtn.style.display = 'inline-block';
             }
         }
     }

@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-14_V1.22_FLUX_PARAM_FINE_TUNE'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-14_V1.23_ALPHA_MASK_DIM_FIX'); // UPDATED VERSION LOG
 
 const axios = require('axios');
 const sharp = require('sharp');
@@ -19,7 +19,7 @@ async function getMaskBoundingBox(maskBuffer, width, height) {
 
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
-            const pixelValue = maskBuffer[y * width + x];
+            const pixelValue = maskBuffer [y * width + x];
             if (pixelValue > 0) {
                 foundWhite = true;
                 minX = Math.min(minX, x);
@@ -199,14 +199,14 @@ const fluxPlacementHandler = {
         let tattooDesignWithAlphaBuffer = tattooDesignBuffer; // Start with the initial tattoo buffer (already PNG)
         try {
             const tattooMeta = await sharp(tattooDesignBuffer).metadata();
-            
+
             // Only attempt background removal if it's a JPG (always opaque) or a PNG without alpha
             if (tattooMeta.format === 'jpeg' || (tattooMeta.format === 'png' && tattooMeta.channels < 4)) {
                 console.log('Attempting to add transparency to tattoo design using background color heuristic...');
 
                 // Sample a 3x3 pixel area at the top-left corner to get a more robust background color.
                 const sampleAreaSize = Math.min(3, tattooMeta.width, tattooMeta.height); // Use 3x3 or smaller if image is tiny
-                
+
                 let samplePixelData;
                 try {
                     samplePixelData = await sharp(tattooDesignBuffer)
@@ -225,17 +225,17 @@ const fluxPlacementHandler = {
                     tattooDesignWithAlphaBuffer = tattooDesignBuffer; // Fallback
                     throw new Error('Invalid pixel data obtained for background detection.'); // Propagate to outer catch
                 }
-                
+
                 let sumR = 0, sumG = 0, sumB = 0;
                 let numPixels = 0;
 
                 // Calculate average color of the sampled area
                 const channels = samplePixelData.info.channels;
                 for (let i = 0; i < samplePixelData.data.length; i += channels) {
-                    sumR += samplePixelData.data[i];
+                    sumR += samplePixelData.data [i];
                     // Ensure we don't try to read undefined channels for grayscale images (channels = 1)
-                    sumG += (channels > 1 ? samplePixelData.data[i + 1] : samplePixelData.data[i]);
-                    sumB += (channels > 2 ? samplePixelData.data[i + 2] : samplePixelData.data[i]);
+                    sumG += (channels > 1 ? samplePixelData.data [i + 1] : samplePixelData.data [i]);
+                    sumB += (channels > 2 ? samplePixelData.data [i + 2] : samplePixelData.data [i]);
                     numPixels++;
                 }
                 const avgR = sumR / numPixels;
@@ -260,9 +260,9 @@ const fluxPlacementHandler = {
                         .raw()
                         .toBuffer();
                     alphaMaskRawBuffer = await sharp(alphaMaskRawBuffer, { raw: { width: tattooMeta.width, height: tattooMeta.height, channels: 1 } })
-                                          .negate()
-                                          .raw()
-                                          .toBuffer();
+                        .negate()
+                        .raw()
+                        .toBuffer();
 
                 } else if (isBackgroundBlack) {
                     console.log('Detected black background. Keying out black...');
@@ -275,12 +275,12 @@ const fluxPlacementHandler = {
                     console.warn('Background color is neither clearly black nor white based on average. Cannot apply automatic transparency heuristic.');
                     throw new Error('Tattoo design has a complex or non-uniform background. Auto-transparency skipped. Please upload a PNG with a truly transparent background.');
                 }
-                
+
                 tattooDesignWithAlphaBuffer = await sharp(tattooDesignBuffer)
                     .ensureAlpha()
                     .joinChannel(alphaMaskRawBuffer, { raw: {
                         width: tattooMeta.width,
-                        height: tattooMeta.height, // Corrected: ensure this is tattooMeta.height, not tattooMeta.width
+                        height: tattooMeta.height, // CORRECTED HEIGHT HERE!
                         channels: 1
                     }})
                     .toBuffer();
@@ -318,7 +318,7 @@ const fluxPlacementHandler = {
                         tile: false,
                         left: maskBoundingBox.minX,
                         top: maskBoundingBox.minY,
-                        mask: maskBuffer 
+                        mask: maskBuffer
                     }
                 ])
                 .jpeg({ quality: 90 })
@@ -413,7 +413,7 @@ const fluxPlacementHandler = {
 
                 if (result.data.status === 'Content Moderated') {
                     const moderationReason = result.data.details && result.data.details['Moderation Reasons'] ?
-                                             result.data.details['Moderation Reasons'].join(', ') : 'Unknown reason';
+                        result.data.details['Moderation Reasons'].join(', ') : 'Unknown reason';
                     console.error(`Flux API Polling terminated for Task ${taskId}: Content Moderated. Reason: ${moderationReason}`);
                     console.warn(`Skipping variation ${i + 1} due to content moderation.`);
                     currentImageReady = true;
@@ -461,7 +461,7 @@ const fluxPlacementHandler = {
         if (generatedImageUrls.length === 0) {
             throw new Error('Flux API: No images were generated across all attempts. Please try again or with a different design.');
         }
-        
+
         return generatedImageUrls;
     }
 };

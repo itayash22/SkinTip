@@ -14,41 +14,13 @@
         <div class="container">
             <div class="nav-brand">
                 <h1>SkinTip</h1>
-                <span class="tagline">Try b4 you Dye</p> </div>
+                <span class="tagline">Try b4 you Dye</span> </div>
             <div class="nav-menu">
                 <span id="userInfo" class="user-info"></span>
                 <button id="logoutBtn" class="btn btn-outline" style="display:none;">Logout</button>
             </div>
         </div>
     </nav>
-
-    <div id="authModal" class="modal">
-        <div class="modal-content">
-            <div class="auth-container">
-                <h2 id="authTitle">Login to SkinTip</h2>
-                <form id="authForm">
-                    <div class="form-group">
-                        <label for="email">Email</label>
-                        <input type="email" id="email" name="email" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="password">Password</label>
-                        <input type="password" id="password" name="password" required>
-                    </div>
-                    <div id="usernameGroup" class="form-group" style="display: none;">
-                        <label for="username">Username</label>
-                        <input type="text" id="username" name="username">
-                    </div>
-                    <button type="submit" class="btn btn-primary">Login</button>
-                    <p class="auth-switch">
-                        <span id="authSwitchText">Don't have an account?</span>
-                        <a href="#" id="authSwitchLink">Register</a>
-                    </p>
-                </form>
-                <div id="authError" class="error-message"></div>
-            </div>
-        </div>
-    </div>
 
     <main class="main-content">
         <div class="container">
@@ -77,20 +49,13 @@
                 </div>
 
                 <div class="external-idea-guidance">
-                    <p>Need a tattoo idea? We recommend using an AI image generator like Sora or Midjourney!</p>
-                    <p>
-                        <a href="https://copilot.microsoft.com/images/create" target="_blank" class="btn btn-outline btn-sm">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-magic" viewBox="0 0 16 16">
-                                <path d="M9.5 2.672a.5.5 0 0 1 .223.385l.223 1.006c.067.3.338.495.642.495h.642a.5.5 0 0 1 .474.654l-.223 1.006a.5.5 0 0 1-.642.495h-.642a.5.5 0 0 1-.474-.654l.223-1.006a.5.5 0 0 1 .223-.385zM14.243 5.378a.5.5 0 0 1 .223.385l.223 1.006c.067.3.338.495.642.495h.642a.5.5 0 0 1 .474.654l-.223 1.006a.5.5 0 0 1-.642.495h-.642a.5.5 0 0 1-.474-.654l.223-1.006a.5.5 0 0 1 .223-.385zM8.5 10.672a.5.5 0 0 1 .223.385l.223 1.006c.067.3.338.495.642.495h.642a.5.5 0 0 1 .474.654l-.223 1.006a.5.5 0 0 1-.642.495h-.642a.5.5 0 0 1-.474-.654l.223-1.006a.5.5 0 0 1 .223-.385zM3.5 1.672a.5.5 0 0 1 .223.385l.223 1.006c.067.3.338.495.642.495h.642a.5.5 0 0 1 .474.654l-.223 1.006a.5.5 0 0 1-.642.495h-.642a.5.5 0 0 1-.474-.654l.223-1.006a.5.5 0 0 1 .223-.385zM12 9.5a.5.5 0 0 0-.964-.223L10.368 8.1l-.707-.707L8.1 7.182a.5.5 0 0 0-.67.092l-.128.163a.5.5 0 0 0-.092.67l.707.707L7.182 8.1a.5.5 0 0 0-.092-.67l-.163-.128a.5.5 0 0 0-.67.092L4.632 9.1l-.707.707L.182 14.1a.5.5 0 0 0-.092.67l.163.128a.5.5 0 0 0 .67.092l2.828-2.829l.707-.707L4.632 10.818a.5.5 0 0 0 .67-.092l.128-.163a.5.5 0 0 0 .092-.67l-.707-.707L10.818 4.632a.5.5 0 0 0 .67.092l.163.128a.5.5 0 0 0 .092.67l-.707.707L14.1 3.818a.5.5 0 0 0 .092-.67l-.163-.128z"/>
-                            </svg>
-                            Try AI Idea Generator (Bing Copilot)
-                        </a>
-                    </p>
-                    <div class="prompt-tip-box"> <p class="prompt-tip-header">💡 Pro Tip for AI Generators:</p>
+                    <div class="prompt-tip-box">
+                        <p class="prompt-tip-header">💡 Pro Tip for AI Generators:</p>
                         <p class="prompt-tip-content">
                             Ask for a sketch on a **transparent background**, **NOT** a tattoo on skin. <br>
                             For example: <br>
-                            "legendary king snake sketch black and white. no background. .png file" </p>
+                            "legendary king snake sketch black and white. no background. .png file"
+                        </p>
                     </div>
                 </div>
 
@@ -381,52 +346,6 @@
             displayArtists(allArtists);
         }
 
-        function displayArtists(artists) {
-            const artistsGrid = document.getElementById('artistsGrid');
-            if (artists.length === 0) {
-                artistsGrid.innerHTML = '<div class="empty-state"><p>No artists found matching your criteria</p></div>';
-                return;
-            }
-            artistsGrid.innerHTML = artists.map(artist => {
-                let portfolioImages = '';
-                if (Array.isArray(artist.portfolio)) {
-                    portfolioImages = artist.portfolio.map((img, index) =>
-                        `<img src="${img}" alt="${artist.name} work ${index + 1}"
-                             class="portfolio-image ${index === 0 ? 'active' : ''}"
-                             style="display: ${index === 0 ? 'block' : 'none'}">`
-                    ).join('');
-                } else {
-                    portfolioImages = `<img src="${artist.portfolio}" alt="${artist.name}" class="portfolio-image active" style="display: block">`;
-                }
-                const stylesHTML = artist.styles.map(style =>
-                    `<span class="style-tag">${style}</span>`
-                ).join('');
-                return `
-                    <div class="artist-card">
-                        <div class="portfolio-gallery">
-                            ${portfolioImages}
-                            <button class="gallery-prev" onclick="changePortfolioImage(this, -1)">‹</button>
-                            <button class="gallery-next" onclick="changePortfolioImage(this, 1)">›</button>
-                        </div>
-                        <div class="artist-info">
-                            <h3>${artist.name}</h3>
-                            <p class="artist-location">📍 ${artist.location}</p>
-                            <p class="artist-bio">${artist.bio}</p>
-                            <div class="artist-styles">
-                                ${stylesHTML}
-                            </div>
-                            <div class="artist-footer">
-                                <span class="artist-likes">❤️ ${artist.likes}</span>
-                                <button class="btn btn-primary btn-sm" onclick="contactArtist('${artist.whatsapp}', '${artist.name}')">
-                                    Contact via WhatsApp
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
         function filterArtists() {
             const locationFilter = document.getElementById('locationFilter');
             const styleFilter = document.getElementById('styleFilter');
@@ -449,7 +368,7 @@
             window.contactArtist = contactArtist;
             window.changePortfolioImage = changePortfolioImage;
 
-            // Initialize auth module
+            // Initialize auth module (handles redirection for authenticated users)
             if (typeof auth !== 'undefined' && auth.init) {
                 auth.init();
             } else {
@@ -477,7 +396,6 @@
 
             const designSection = document.getElementById('designSection'); // This section will be hidden/removed
             const creditsRemainingDisplay = document.getElementById('creditsRemaining'); // Keep for token display
-            const generateCostDisplay = document.getElementById('generateCostDisplay'); // Keep for token display
             const socialShareDiv = document.getElementById('socialShare');
             const shareToInstagramBtn = document.getElementById('shareToInstagramBtn');
             const resultsSection = document.getElementById('resultsSection');
@@ -645,7 +563,7 @@
                 // Ensure user is logged in
                 if (!STATE.user || !STATE.token) {
                     utils.showError('You must be logged in to generate tattoos.');
-                    auth.showModal();
+                    auth.showModal(); // Call auth modal (now in welcome.html)
                     return;
                 }
 

@@ -1,5 +1,5 @@
 // backend/server.js
-// This file was last updated on 2025-06-13 (EOD) to fix Content Moderated errors and improve Sharp composition.
+// This file was last updated on 2025-06-14 (EOD) to fix a typo (tattooDesignImageBase66 -> tattooDesignImageBase64).
 
 require('dotenv').config();
 const express = require('express');
@@ -78,9 +78,6 @@ app.use(cors({
     preflightContinue: false, // This tells the 'cors' middleware to handle OPTIONS requests itself
     optionsSuccessStatus: 204 // Standard status for successful OPTIONS request
 }));
-
-// REMOVED: The conflicting custom OPTIONS handling middleware block was here.
-// The `cors()` middleware above handles preflight requests directly due to `preflightContinue: false`.
 
 
 app.use(express.json());
@@ -331,7 +328,8 @@ app.post('/api/generate-final-tattoo',
 
             // --- Prepare Image Data ---
             const skinImageBuffer = skinImageFile.buffer;
-            const tattooDesignImageBase64 = tattooDesignImageFile.buffer.toString('base64');
+            // CORRECTED TYPO HERE: tattooDesignImageBase66 -> tattooDesignImageBase64
+            const tattooDesignImageBase64 = tattooDesignImageFile.buffer.toString('base64'); 
             
             if (!isValidBase64(tattooDesignImageBase64) || !isValidBase64(mask)) {
                 console.error('Server: Invalid Base64 data detected for tattoo design or mask. Returning 400.');
@@ -361,7 +359,7 @@ app.post('/api/generate-final-tattoo',
             // --- Call Flux Kontext Placement Handler ---
             const generatedImageUrls = await fluxKontextHandler.placeTattooOnSkin(
                 skinImageBuffer,
-                tattooDesignImageBase66,
+                tattooDesignImageBase64, // Corrected parameter name here too
                 mask,
                 userPromptText,
                 userId,
@@ -406,7 +404,8 @@ app.post('/api/generate-final-tattoo',
                 error.message.includes('Invalid tattoo design image data') ||
                 error.message.includes('Drawn mask area is too small or empty') ||
                 error.message.includes('Failed to resize tattoo design for placement') ||
-                error.message.includes('No images were generated across all attempts')) {
+                error.message.includes('No images were generated across all attempts') ||
+                error.message.includes('Tattoo design has a complex or non-uniform background')) { // Added new error from fluxPlacementHandler
                 return res.status(400).json({ error: `Image processing error: ${error.message}` });
             }
             if (error.message.includes('Flux API generation error') ||

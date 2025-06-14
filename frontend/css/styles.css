@@ -1,20 +1,20 @@
-/* Styles for centering upload areas and cursor */
+/* General Centering for upload areas */
 .upload-area {
-    display: flex; /* Ensure flexbox for centering content */
-    flex-direction: column; /* Stack children vertically */
-    justify-content: center; /* Center vertically */
-    align-items: center; /* Center horizontally */
-    text-align: center; /* Center text within child elements */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
     cursor: pointer; /* Change cursor on hover for clickable area */
     /* Ensure other styles like border, padding, height are already present for good layout */
 }
 
-/* Add hover effect for cursor on upload areas */
+/* Hover effect for cursor on upload areas */
 .upload-area:hover {
     cursor: pointer; /* Pointer cursor for click action */
 }
 
-/* Styles for the new prompt tip box */
+/* Styles for the new prompt tip box (retained from previous iteration) */
 .prompt-tip-box {
     background-color: #f0f9ff; /* Light blue background */
     border-left: 4px solid #3b82f6; /* Blue left border */
@@ -41,4 +41,82 @@
 
 .prompt-tip-box .prompt-tip-content {
     margin: 0;
+}
+
+
+/* New styles for welcome.html */
+
+.hero-section {
+    background: linear-gradient(135deg, #6366f1, #9333ea); /* Gradient background */
+    color: white;
+    padding: 4rem 1rem;
+    text-align: center;
+    border-radius: 0.5rem;
+    margin-bottom: 3rem;
+}
+
+.hero-section h2 {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    font-weight: 700;
+}
+
+.hero-section .hero-tagline {
+    font-size: 1.25rem;
+    max-width: 600px;
+    margin: 0 auto 2rem auto;
+    opacity: 0.9;
+}
+
+.how-it-works-section {
+    padding: 2rem 0;
+    text-align: center;
+}
+
+.how-it-works-section h3 {
+    font-size: 2rem;
+    margin-bottom: 2.5rem;
+    color: #1f2937;
+}
+
+.steps-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 2rem;
+    margin-bottom: 3rem;
+}
+
+.step-item {
+    background-color: #ffffff;
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.step-item img {
+    max-width: 100%; /* Ensure images fit */
+    height: auto;
+    border-radius: 0.375rem;
+    margin-bottom: 1rem;
+    object-fit: cover; /* Cover ensures the image fills the space without distortion */
+    aspect-ratio: 16 / 9; /* Maintain a consistent aspect ratio for all step images */
+    width: 100%; /* Ensure width fills container */
+    background-color: #e0e7ff; /* Placeholder background for missing images */
+}
+/* You should create actual image files for step1_choose_tattoo.png, etc. in frontend/img/ */
+
+
+.step-item h4 {
+    font-size: 1.25rem;
+    color: #3b82f6; /* Blue for step headers */
+    margin-bottom: 0.75rem;
+}
+
+.step-item p {
+    font-size: 0.95rem;
+    color: #4b5563;
 }

@@ -50,7 +50,7 @@ const drawing = {
             document.getElementById('drawingSection').style.display = 'block';
             document.getElementById('drawingSection').scrollIntoView({ behavior: 'smooth' });
 
-            // Hide continue button initially
+            // Hide continue button initially (it will be shown after a valid mask is drawn)
             const continueBtn = document.getElementById('continueBtn');
             if (continueBtn) continueBtn.style.display = 'none';
 
@@ -90,12 +90,12 @@ const drawing = {
             drawing.stopDrawing();
         }, { passive: false });
 
-        // Clear canvas button
+        // Clear canvas button event listener - NOW WORKS
         document.getElementById('clearCanvas')?.addEventListener('click', () => {
             drawing.clearCanvas();
         });
 
-        // The "Continue to Design" button listener is handled in index.html.
+        // The "Continue to Design" (now "Generate Tattoo on Skin") button listener is handled in index.html.
     },
 
     startDrawing: (e) => {
@@ -177,24 +177,34 @@ const drawing = {
                 drawing.updateMask(); // Generate the mask image on the hidden canvas
                 drawing.selectedArea = drawing.maskCanvas.toDataURL('image/png'); // Store the mask as Base64 for API
 
-                // Show continue button
+                // Show continue button (now "Generate Tattoo on Skin")
                 const continueBtn = document.getElementById('continueBtn');
                 if (continueBtn) continueBtn.style.display = 'block';
             } else {
                 alert('Please close the shape by drawing near your starting point to define the tattoo area.');
+                // Clear the path if not closed well enough
+                drawing.currentPath = [];
+                drawing.currentPathCoords = null;
+                drawing.selectedArea = null;
+                const continueBtn = document.getElementById('continueBtn');
+                if (continueBtn) continueBtn.style.display = 'none';
             }
         } else {
             alert('Please draw a larger and more defined area for your tattoo.');
+            // Clear the path if too small
+            drawing.currentPath = [];
+            drawing.currentPathCoords = null;
+            drawing.selectedArea = null;
+            const continueBtn = document.getElementById('continueBtn');
+            if (continueBtn) continueBtn.style.display = 'none';
         }
 
-        drawing.currentPath = []; // Clear the temporary path being drawn
-        drawing.redrawCanvas(); // Redraw to show the filled selected area
+        drawing.redrawCanvas(); // Redraw to show the filled selected area or clear temporary path
     },
 
     redrawCanvas: () => {
         // Only attempt to draw if canvas and context are initialized
         if (!drawing.canvas || !drawing.ctx || !drawing.originalImage) {
-            // console.warn("Canvas not initialized, skipping redraw."); // Optional debug
             return;
         }
 
@@ -233,16 +243,12 @@ const drawing = {
     updateMask: () => {
         // Only attempt to update mask if maskCanvas and maskCtx are initialized
         if (!drawing.maskCanvas || !drawing.maskCtx || !drawing.originalImage) {
-            // console.warn("Mask canvas not initialized, skipping updateMask."); // Optional debug
             return;
         }
 
         // Create the mask on the HIDDEN canvas.
-        // Flux Kontext (and most inpainting models) expects:
-        // - BLACK: Area to be generated/replaced (where the tattoo goes)
-        // - WHITE: Area to be preserved (the surrounding skin)
-        // Our backend INVERTS the mask, so frontend must draw WHITE where we want the tattoo, and BLACK elsewhere.
-        // This means the mask image in drawing.js will look like a white shape on a black background.
+        // Frontend mask is white for the tattoo area, black elsewhere.
+        // Backend will use this directly as an alpha mask, after converting it to a raw buffer.
 
         // Start with a BLACK background for the mask canvas
         drawing.maskCtx.fillStyle = 'black';
@@ -262,19 +268,17 @@ const drawing = {
             drawing.maskCtx.closePath();
             drawing.maskCtx.fill(); // Fill the shape with white
         }
-        console.log('Mask updated on hidden canvas: drawn area is white (will be inverted to black by backend).');
+        console.log('Mask updated on hidden canvas: drawn area is white.');
     },
 
     clearCanvas: () => {
         // Only attempt to clear if canvas and context are initialized
         if (!drawing.canvas || !drawing.ctx) {
-            // console.warn("Canvas not initialized, skipping clearCanvas."); // Optional debug
             return;
         }
 
         // Clear both display and mask canvases
         drawing.ctx.clearRect(0, 0, drawing.canvas.width, drawing.canvas.height);
-        // Only clear mask canvas if it exists
         if (drawing.maskCtx && drawing.maskCanvas) {
             drawing.maskCtx.clearRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
         }
@@ -293,9 +297,11 @@ const drawing = {
             drawing.maskCtx.fillRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
         }
 
-        // Hide the continue button
+        // Hide the continue button (now "Generate Tattoo on Skin")
         const continueBtn = document.getElementById('continueBtn');
         if (continueBtn) continueBtn.style.display = 'none';
+        
+        console.log('Canvas and mask cleared. Drawing state reset.');
     },
 
     // Public getter for mask data URL (used by index.html)

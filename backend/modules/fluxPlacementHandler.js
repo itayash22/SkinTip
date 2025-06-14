@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-14_V1.19_DYNAMIC_BG_ALPHA_REMOVAL'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-14_V1.20_REFINED_DYNAMIC_BG_ALPHA_REMOVAL'); // UPDATED VERSION LOG
 
 const axios = require('axios');
 const sharp = require('sharp');
@@ -204,37 +204,47 @@ const fluxPlacementHandler = {
             if (tattooMeta.format === 'jpeg' || (tattooMeta.format === 'png' && tattooMeta.channels < 4)) {
                 console.log('Attempting to add transparency to tattoo design using background color heuristic...');
 
-                // Sample a corner pixel to determine background color (e.g., top-left)
-                const { data: pixelData } = await sharp(tattooDesignBuffer)
-                    .extract({ left: 0, top: 0, width: 1, height: 1 })
+                // Sample a 3x3 pixel area at the top-left corner to get a more robust background color.
+                // This helps if the very first pixel isn't perfectly representative.
+                const sampleAreaSize = Math.min(3, tattooMeta.width, tattooMeta.height); // Use 3x3 or smaller if image is tiny
+                const { data: samplePixelData } = await sharp(tattooDesignBuffer)
+                    .extract({ left: 0, top: 0, width: sampleAreaSize, height: sampleAreaSize })
                     .raw()
                     .toBuffer({ resolveWithObject: true });
                 
-                let backgroundColor = [0, 0, 0]; // Default to black if detection fails
-                if (pixelData.info.channels >= 3) { // RGB or RGBA
-                    backgroundColor = [pixelData.data[0], pixelData.data[1], pixelData.data[2]];
-                } else if (pixelData.info.channels === 1) { // Grayscale
-                    backgroundColor = [pixelData.data[0], pixelData.data[0], pixelData.data[0]];
+                let sumR = 0, sumG = 0, sumB = 0;
+                let numPixels = 0;
+
+                // Calculate average color of the sampled area
+                for (let i = 0; i < samplePixelData.data.length; i += samplePixelData.info.channels) {
+                    sumR += samplePixelData.data[i];
+                    sumG += samplePixelData.data[i + 1] || samplePixelData.data[i]; // For grayscale, G/B will be undefined, use R
+                    sumB += samplePixelData.data[i + 2] || samplePixelData.data[i];
+                    numPixels++;
                 }
-                console.log('Detected top-left pixel color (R,G,B):', backgroundColor);
+                const avgR = sumR / numPixels;
+                const avgG = sumG / numPixels;
+                const avgB = sumB / numPixels;
 
-                // Define thresholds for 'near black' and 'near white'
-                const isNearWhite = (c) => c > 240; // High value for white
-                const isNearBlack = (c) => c < 15; // Low value for black
+                console.log(`Sampled top-left area average color (R,G,B): (${Math.round(avgR)}, ${Math.round(avgG)}, ${Math.round(avgB)})`);
 
-                const isBackgroundWhite = isNearWhite(backgroundColor[0]) && isNearWhite(backgroundColor[1]) && isNearWhite(backgroundColor[2]);
-                const isBackgroundBlack = isNearBlack(backgroundColor[0]) && isNearBlack(backgroundColor[1]) && isNearBlack(backgroundColor[2]);
+                // Define thresholds for 'near black' and 'near white' based on average color component
+                const isNearWhite = (c) => c > 230; // More permissive for white (e.g., 230-255)
+                const isNearBlack = (c) => c < 25;  // More permissive for black (e.g., 0-25)
+
+                const isBackgroundWhite = isNearWhite(avgR) && isNearWhite(avgG) && isNearWhite(avgB);
+                const isBackgroundBlack = isNearBlack(avgR) && isNearBlack(avgG) && isNearBlack(avgB);
 
                 let alphaMaskRawBuffer;
                 if (isBackgroundWhite) {
                     console.log('Detected white background. Keying out white...');
-                    // Create mask: pixels near white become 0 (transparent), others 255 (opaque)
+                    // Threshold to make pixels > 200 white (opaque), < 200 black (transparent)
+                    // Then negate to swap: white (background) becomes black (transparent), black (tattoo) becomes white (opaque)
                     alphaMaskRawBuffer = await sharp(tattooDesignBuffer)
-                        .threshold(240) // Values >= 240 become white (255), < 240 become black (0)
+                        .threshold(200) // Lowered threshold for "white" to be more inclusive
                         .toColourspace('b-w')
                         .raw()
                         .toBuffer();
-                    // Invert this mask: white (background) becomes black (transparent), black (tattoo) becomes white (opaque)
                     alphaMaskRawBuffer = await sharp(alphaMaskRawBuffer, { raw: { width: tattooMeta.width, height: tattooMeta.height, channels: 1 } })
                                           .negate()
                                           .raw()
@@ -242,15 +252,15 @@ const fluxPlacementHandler = {
 
                 } else if (isBackgroundBlack) {
                     console.log('Detected black background. Keying out black...');
-                    // Create mask: pixels > 0 (not pure black) become white (opaque), pure black (0) remains 0 (transparent)
+                    // Pixels > 50 (not very dark) become white (opaque), < 50 remains black (transparent)
                     alphaMaskRawBuffer = await sharp(tattooDesignBuffer)
-                        .threshold(1) // Values >= 1 become white (255), 0 remains black (0)
+                        .threshold(50) // Increased threshold for "black" to be more inclusive
                         .toColourspace('b-w')
                         .raw()
                         .toBuffer();
                 } else {
-                    console.warn('Background color is neither clearly black nor white. Cannot apply automatic transparency heuristic.');
-                    throw new Error('Tattoo design has a complex or non-uniform background. Auto-transparency skipped.');
+                    console.warn('Background color is neither clearly black nor white based on average. Cannot apply automatic transparency heuristic.');
+                    throw new Error('Tattoo design has a complex or non-uniform background. Auto-transparency skipped. Please upload a PNG with a truly transparent background.');
                 }
                 
                 tattooDesignWithAlphaBuffer = await sharp(tattooDesignBuffer)

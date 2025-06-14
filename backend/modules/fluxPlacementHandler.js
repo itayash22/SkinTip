@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-14_V1.21_ROBUST_BG_ALPHA_REMOVAL_FIX'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-14_V1.22_FLUX_PARAM_FINE_TUNE'); // UPDATED VERSION LOG
 
 const axios = require('axios');
 const sharp = require('sharp');
@@ -215,8 +215,7 @@ const fluxPlacementHandler = {
                         .toBuffer({ resolveWithObject: true });
                 } catch (sampleError) {
                     console.warn(`Error during pixel sampling for background detection: ${sampleError.message}. Proceeding with original opaque buffer.`);
-                    // Fallback to original opaque buffer if sampling fails
-                    tattooDesignWithAlphaBuffer = tattooDesignBuffer;
+                    tattooDesignWithAlphaBuffer = tattooDesignBuffer; // Fallback
                     throw new Error('Failed to sample tattoo design pixels for background detection.'); // Propagate to outer catch
                 }
 
@@ -281,7 +280,7 @@ const fluxPlacementHandler = {
                     .ensureAlpha()
                     .joinChannel(alphaMaskRawBuffer, { raw: {
                         width: tattooMeta.width,
-                        height: tattooMeta.width, // NOTE: Changed height to width here - THIS IS A POTENTIAL BUG IF NOT CAUGHT
+                        height: tattooMeta.height, // Corrected: ensure this is tattooMeta.height, not tattooMeta.width
                         channels: 1
                     }})
                     .toBuffer();
@@ -362,8 +361,8 @@ const fluxPlacementHandler = {
                 mask_image: '',
                 n: 1, // Request 1 variation per call
                 output_format: 'jpeg',
-                fidelity: 0.6, // Adjusted fidelity for more blending
-                guidance_scale: 7.0,
+                fidelity: 0.5, // Adjusted fidelity for more blending
+                guidance_scale: 8.0, // Adjusted guidance_scale
                 seed: currentSeed
             };
 

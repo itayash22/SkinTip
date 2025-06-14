@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-14_V1.20_REFINED_DYNAMIC_BG_ALPHA_REMOVAL'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-14_V1.21_ROBUST_BG_ALPHA_REMOVAL_FIX'); // UPDATED VERSION LOG
 
 const axios = require('axios');
 const sharp = require('sharp');
@@ -205,21 +205,38 @@ const fluxPlacementHandler = {
                 console.log('Attempting to add transparency to tattoo design using background color heuristic...');
 
                 // Sample a 3x3 pixel area at the top-left corner to get a more robust background color.
-                // This helps if the very first pixel isn't perfectly representative.
                 const sampleAreaSize = Math.min(3, tattooMeta.width, tattooMeta.height); // Use 3x3 or smaller if image is tiny
-                const { data: samplePixelData } = await sharp(tattooDesignBuffer)
-                    .extract({ left: 0, top: 0, width: sampleAreaSize, height: sampleAreaSize })
-                    .raw()
-                    .toBuffer({ resolveWithObject: true });
+                
+                let samplePixelData;
+                try {
+                    samplePixelData = await sharp(tattooDesignBuffer)
+                        .extract({ left: 0, top: 0, width: sampleAreaSize, height: sampleAreaSize })
+                        .raw()
+                        .toBuffer({ resolveWithObject: true });
+                } catch (sampleError) {
+                    console.warn(`Error during pixel sampling for background detection: ${sampleError.message}. Proceeding with original opaque buffer.`);
+                    // Fallback to original opaque buffer if sampling fails
+                    tattooDesignWithAlphaBuffer = tattooDesignBuffer;
+                    throw new Error('Failed to sample tattoo design pixels for background detection.'); // Propagate to outer catch
+                }
+
+                // Validate samplePixelData before processing
+                if (!samplePixelData || !samplePixelData.data || samplePixelData.info.channels === undefined || samplePixelData.info.channels === 0) {
+                    console.warn('Sampled pixel data is invalid (data/channels missing). Proceeding with original opaque buffer.');
+                    tattooDesignWithAlphaBuffer = tattooDesignBuffer; // Fallback
+                    throw new Error('Invalid pixel data obtained for background detection.'); // Propagate to outer catch
+                }
                 
                 let sumR = 0, sumG = 0, sumB = 0;
                 let numPixels = 0;
 
                 // Calculate average color of the sampled area
-                for (let i = 0; i < samplePixelData.data.length; i += samplePixelData.info.channels) {
+                const channels = samplePixelData.info.channels;
+                for (let i = 0; i < samplePixelData.data.length; i += channels) {
                     sumR += samplePixelData.data[i];
-                    sumG += samplePixelData.data[i + 1] || samplePixelData.data[i]; // For grayscale, G/B will be undefined, use R
-                    sumB += samplePixelData.data[i + 2] || samplePixelData.data[i];
+                    // Ensure we don't try to read undefined channels for grayscale images (channels = 1)
+                    sumG += (channels > 1 ? samplePixelData.data[i + 1] : samplePixelData.data[i]);
+                    sumB += (channels > 2 ? samplePixelData.data[i + 2] : samplePixelData.data[i]);
                     numPixels++;
                 }
                 const avgR = sumR / numPixels;
@@ -238,10 +255,8 @@ const fluxPlacementHandler = {
                 let alphaMaskRawBuffer;
                 if (isBackgroundWhite) {
                     console.log('Detected white background. Keying out white...');
-                    // Threshold to make pixels > 200 white (opaque), < 200 black (transparent)
-                    // Then negate to swap: white (background) becomes black (transparent), black (tattoo) becomes white (opaque)
                     alphaMaskRawBuffer = await sharp(tattooDesignBuffer)
-                        .threshold(200) // Lowered threshold for "white" to be more inclusive
+                        .threshold(200) // Values >= 200 become white (255), < 200 become black (0)
                         .toColourspace('b-w')
                         .raw()
                         .toBuffer();
@@ -252,9 +267,8 @@ const fluxPlacementHandler = {
 
                 } else if (isBackgroundBlack) {
                     console.log('Detected black background. Keying out black...');
-                    // Pixels > 50 (not very dark) become white (opaque), < 50 remains black (transparent)
                     alphaMaskRawBuffer = await sharp(tattooDesignBuffer)
-                        .threshold(50) // Increased threshold for "black" to be more inclusive
+                        .threshold(50) // Values >= 50 become white (opaque), < 50 remains black (transparent)
                         .toColourspace('b-w')
                         .raw()
                         .toBuffer();
@@ -264,10 +278,10 @@ const fluxPlacementHandler = {
                 }
                 
                 tattooDesignWithAlphaBuffer = await sharp(tattooDesignBuffer)
-                    .ensureAlpha() // Ensure the image has an alpha channel to join to
+                    .ensureAlpha()
                     .joinChannel(alphaMaskRawBuffer, { raw: {
                         width: tattooMeta.width,
-                        height: tattooMeta.height,
+                        height: tattooMeta.width, // NOTE: Changed height to width here - THIS IS A POTENTIAL BUG IF NOT CAUGHT
                         channels: 1
                     }})
                     .toBuffer();

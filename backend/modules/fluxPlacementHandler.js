@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-13_V1.18_MULTIPLE_FLUX_CALLS_WITH_FIDELITY_AND_SEED'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-14_V1.19_DYNAMIC_BG_ALPHA_REMOVAL'); // UPDATED VERSION LOG
 
 const axios = require('axios');
 const sharp = require('sharp');
@@ -159,22 +159,22 @@ const fluxPlacementHandler = {
         let tattooDesignBuffer;
         try {
             tattooDesignBuffer = Buffer.from(tattooDesignImageBase64, 'base64');
-            tattooDesignBuffer = await sharp(tattooDesignBuffer).png().toBuffer();
+            tattooDesignBuffer = await sharp(tattooDesignBuffer).png().toBuffer(); // Ensure PNG for alpha support
             console.log('Tattoo design image converted to PNG buffer.');
         } catch (error) {
             console.error('Error processing tattoo design image base64:', error);
             throw new Error('Invalid tattoo design image data provided.');
         }
 
-        // 2. Prepare Mask Buffer.
+        // 2. Prepare Mask Buffer. Frontend mask is white for tattoo area, black elsewhere.
         const originalMaskBuffer = Buffer.from(maskBase64, 'base64');
         let maskBuffer;
         let maskMetadata;
         try {
             maskMetadata = await sharp(originalMaskBuffer).metadata();
             maskBuffer = await sharp(originalMaskBuffer)
-                .grayscale()
-                .raw()
+                .grayscale() // Ensure it's grayscale (1 channel)
+                .raw()       // Get raw pixel data
                 .toBuffer();
             console.log(`Mask buffer converted to raw grayscale. Dims: ${maskMetadata.width}x${maskMetadata.height}, channels: 1.`);
         } catch (error) {
@@ -195,32 +195,79 @@ const fluxPlacementHandler = {
         }
         console.log('DEBUG: Calculated Mask Bounding Box:', maskBoundingBox);
 
-        // --- Step 2.2: Make the black background of the tattoo design transparent ---
-        let tattooDesignWithAlphaBuffer = tattooDesignBuffer;
+        // --- NEW Step 2.2: Attempt to make background transparent (dynamic heuristic) ---
+        let tattooDesignWithAlphaBuffer = tattooDesignBuffer; // Start with the initial tattoo buffer (already PNG)
         try {
             const tattooMeta = await sharp(tattooDesignBuffer).metadata();
+            
+            // Only attempt background removal if it's a JPG (always opaque) or a PNG without alpha
             if (tattooMeta.format === 'jpeg' || (tattooMeta.format === 'png' && tattooMeta.channels < 4)) {
-                console.log('Attempting to add transparency to tattoo design by keying out black background...');
-                const alphaMaskFromBlack = await sharp(tattooDesignBuffer)
-                    .threshold(1)
-                    .toColourspace('b-w')
+                console.log('Attempting to add transparency to tattoo design using background color heuristic...');
+
+                // Sample a corner pixel to determine background color (e.g., top-left)
+                const { data: pixelData } = await sharp(tattooDesignBuffer)
+                    .extract({ left: 0, top: 0, width: 1, height: 1 })
                     .raw()
-                    .toBuffer();
+                    .toBuffer({ resolveWithObject: true });
+                
+                let backgroundColor = [0, 0, 0]; // Default to black if detection fails
+                if (pixelData.info.channels >= 3) { // RGB or RGBA
+                    backgroundColor = [pixelData.data[0], pixelData.data[1], pixelData.data[2]];
+                } else if (pixelData.info.channels === 1) { // Grayscale
+                    backgroundColor = [pixelData.data[0], pixelData.data[0], pixelData.data[0]];
+                }
+                console.log('Detected top-left pixel color (R,G,B):', backgroundColor);
+
+                // Define thresholds for 'near black' and 'near white'
+                const isNearWhite = (c) => c > 240; // High value for white
+                const isNearBlack = (c) => c < 15; // Low value for black
+
+                const isBackgroundWhite = isNearWhite(backgroundColor[0]) && isNearWhite(backgroundColor[1]) && isNearWhite(backgroundColor[2]);
+                const isBackgroundBlack = isNearBlack(backgroundColor[0]) && isNearBlack(backgroundColor[1]) && isNearBlack(backgroundColor[2]);
+
+                let alphaMaskRawBuffer;
+                if (isBackgroundWhite) {
+                    console.log('Detected white background. Keying out white...');
+                    // Create mask: pixels near white become 0 (transparent), others 255 (opaque)
+                    alphaMaskRawBuffer = await sharp(tattooDesignBuffer)
+                        .threshold(240) // Values >= 240 become white (255), < 240 become black (0)
+                        .toColourspace('b-w')
+                        .raw()
+                        .toBuffer();
+                    // Invert this mask: white (background) becomes black (transparent), black (tattoo) becomes white (opaque)
+                    alphaMaskRawBuffer = await sharp(alphaMaskRawBuffer, { raw: { width: tattooMeta.width, height: tattooMeta.height, channels: 1 } })
+                                          .negate()
+                                          .raw()
+                                          .toBuffer();
+
+                } else if (isBackgroundBlack) {
+                    console.log('Detected black background. Keying out black...');
+                    // Create mask: pixels > 0 (not pure black) become white (opaque), pure black (0) remains 0 (transparent)
+                    alphaMaskRawBuffer = await sharp(tattooDesignBuffer)
+                        .threshold(1) // Values >= 1 become white (255), 0 remains black (0)
+                        .toColourspace('b-w')
+                        .raw()
+                        .toBuffer();
+                } else {
+                    console.warn('Background color is neither clearly black nor white. Cannot apply automatic transparency heuristic.');
+                    throw new Error('Tattoo design has a complex or non-uniform background. Auto-transparency skipped.');
+                }
                 
                 tattooDesignWithAlphaBuffer = await sharp(tattooDesignBuffer)
-                    .ensureAlpha()
-                    .joinChannel(alphaMaskFromBlack, { raw: {
+                    .ensureAlpha() // Ensure the image has an alpha channel to join to
+                    .joinChannel(alphaMaskRawBuffer, { raw: {
                         width: tattooMeta.width,
                         height: tattooMeta.height,
                         channels: 1
                     }})
                     .toBuffer();
-                console.log('Successfully processed tattoo design to make black background transparent.');
+                console.log('Successfully processed tattoo design to make background transparent.');
             }
         } catch (alphaProcessError) {
-            console.warn('Warning: Failed to process tattoo design for transparency (black background removal heuristic). Proceeding with original opaque buffer.', alphaProcessError.message);
-            tattooDesignWithAlphaBuffer = tattooDesignBuffer;
+            console.warn('Warning: Failed to process tattoo design for transparency (background removal heuristic). Proceeding with original opaque buffer.', alphaProcessError.message);
+            tattooDesignWithAlphaBuffer = tattooDesignBuffer; // Fallback if error occurs
         }
+        // --- END NEW Step 2.2 ---
 
         // --- Step 2.3: Resize the tattoo design to fit the mask's bounding box and prepare for placement ---
         let tattooForPlacement;
@@ -248,7 +295,7 @@ const fluxPlacementHandler = {
                         tile: false,
                         left: maskBoundingBox.minX,
                         top: maskBoundingBox.minY,
-                        mask: maskBuffer
+                        mask: maskBuffer 
                     }
                 ])
                 .jpeg({ quality: 90 })
@@ -284,17 +331,16 @@ const fluxPlacementHandler = {
 
         for (let i = 0; i < numVariations; i++) {
             const currentSeed = Date.now() + i; // Vary seed for different results
-            console.log(`Calling Flux API for variation ${i + 1} with seed: ${currentSeed}`);
 
             const fluxPayload = {
                 prompt: basePrompt,
                 input_image: compositedImageBuffer.toString('base64'),
-                mask_image: '', // Still no mask for full image blending/refinement by Flux
+                mask_image: '',
                 n: 1, // Request 1 variation per call
                 output_format: 'jpeg',
                 fidelity: 0.6, // Adjusted fidelity for more blending
                 guidance_scale: 7.0,
-                seed: currentSeed // Pass the varying seed
+                seed: currentSeed
             };
 
             const fluxHeaders = {
@@ -309,28 +355,26 @@ const fluxPlacementHandler = {
                     fluxPayload,
                     {
                         headers: fluxHeaders,
-                        timeout: 90000 // Increased timeout for potentially longer generation
+                        timeout: 90000
                     }
                 );
             } catch (error) {
                 console.error(`Flux API call for variation ${i + 1} failed:`, error.response?.data || error.message);
-                // If one call fails, we still want to try the others, but we must indicate this one failed.
-                // For now, let's just log and continue, but for production, you might want a more robust retry/fail policy.
                 console.warn(`Skipping variation ${i + 1} due to API call failure.`);
-                continue; // Skip to the next iteration
+                continue;
             }
 
             const taskId = fluxResponse.data.id;
             if (!taskId) {
                 console.error(`Flux API for variation ${i + 1} did not return a task ID:`, fluxResponse.data);
                 console.warn(`Skipping variation ${i + 1} due to missing task ID.`);
-                continue; // Skip to the next iteration
+                continue;
             }
 
             // Poll for results for THIS specific task ID
             let attempts = 0;
             let currentImageReady = false;
-            while (attempts < 60 && !currentImageReady) { // Poll until this image is ready or timeout
+            while (attempts < 60 && !currentImageReady) {
                 attempts++;
                 await new Promise(resolve => setTimeout(resolve, 2000));
 
@@ -349,12 +393,11 @@ const fluxPlacementHandler = {
                                              result.data.details['Moderation Reasons'].join(', ') : 'Unknown reason';
                     console.error(`Flux API Polling terminated for Task ${taskId}: Content Moderated. Reason: ${moderationReason}`);
                     console.warn(`Skipping variation ${i + 1} due to content moderation.`);
-                    currentImageReady = true; // Mark as done, but no image to add
-                    // No throw here, because we want to continue with other variations if possible
+                    currentImageReady = true;
                 } else if (result.data.status === 'Error') {
                     console.error(`Flux API Polling Error for Task ${taskId}:`, result.data);
                     console.warn(`Skipping variation ${i + 1} due to Flux API error during polling.`);
-                    currentImageReady = true; // Mark as done, but no image to add
+                    currentImageReady = true;
                 } else if (result.data.status === 'Ready') {
                     const imageUrlFromFlux = result.data.result && result.data.result.sample;
 
@@ -368,7 +411,7 @@ const fluxPlacementHandler = {
                             console.error(`Error downloading image from Flux URL for Task ${taskId}:`, imageUrlFromFlux, downloadError.message);
                             console.warn(`Skipping variation ${i + 1} due to download error.`);
                             currentImageReady = true;
-                            continue; // Skip to next polling attempt if this specific download fails.
+                            continue;
                         }
 
                         const watermarkedBuffer = await fluxPlacementHandler.applyWatermark(imageBuffer);
@@ -376,7 +419,7 @@ const fluxPlacementHandler = {
                         const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarkedBuffer, fileName, userId);
                         generatedImageUrls.push(publicUrl);
                         console.log(`Successfully generated and watermarked 1 image for variation ${i + 1}.`);
-                        currentImageReady = true; // Mark this image as ready
+                        currentImageReady = true;
                     } else {
                         console.warn(`Flux API for Task ${taskId} returned Ready status but no valid image URL found in "sample".`, result.data);
                         console.warn(`Skipping variation ${i + 1} due to malformed Flux output.`);

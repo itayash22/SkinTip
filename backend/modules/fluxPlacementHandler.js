@@ -1,9 +1,9 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.29_FLUX_REAMBLE_DIM_FIX'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.30_FINAL_REAMBLE_FIX'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
-import { createClient } from '@supabase/supabase-js';
+import { createClient } = from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
 
 // Initialize Supabase Storage client
@@ -177,7 +177,7 @@ const fluxPlacementHandler = {
         try {
             maskMetadata = await sharp(originalMaskBuffer).metadata();
             maskBuffer = await sharp(originalMaskBuffer)
-                .grayscale() // Ensure it's grayscale (1 channel)
+                .grayscale() // Ensure it's grayscale (1 
                 .raw()       // Get raw pixel data
                 .toBuffer();
             console.log(`Mask buffer converted to raw grayscale. Dims: ${maskMetadata.width}x${maskMetadata.height}, channels: 1.`);

@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.32_FLUX_PERFORMANCE_SQUEEZE'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.33_REAMBLE_FEATHERING_IMPL'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -14,6 +14,9 @@ const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generate
 
 // CONSTANT: Padding around the mask bounding box for the area sent to Flux (in pixels)
 const CROP_PADDING = 20; // Reduced from 100px. Test with a very small padding.
+
+// CONSTANT: Feathering radius for the reassembly mask (in pixels)
+const REASSEMBLY_FEATHER_RADIUS = 15; // Controls how soft the edges are during final reassembly
 
 // HELPER FUNCTION: To find the bounding box of the white area in a raw grayscale mask buffer
 async function getMaskBoundingBox(maskBuffer, width, height) {
@@ -332,7 +335,7 @@ const fluxPlacementHandler = {
 
         // 4. Make multiple Flux API calls with the compositedCroppedImageBuffer
         const generatedImageUrls = [];
-        const basePrompt = `Make the tattoo look naturally placed and deeply integrated on the skin, blend seamlessly with existing texture and contours, adjust realistic lighting and subtle shadows for perfect realism. High-resolution photo, professional studio tattoo photography, intricate detail, no visible edges. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`; // ENHANCED PROMPT
+        const basePrompt = `Make the tattoo look naturally placed and deeply integrated on the skin, blend seamlessly with existing texture and contours, adjust realistic lighting and subtle shadows for perfect realism. High-resolution photo, professional studio tattoo photography, intricate detail, no visible edges. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
 
         console.log(`Making ${numVariations} calls to Flux API...`);
 
@@ -440,14 +443,42 @@ const fluxPlacementHandler = {
                             } else {
                                 console.log(`Flux image dimensions match cropArea: ${cropArea.width}x${cropArea.height}. No resize needed for reassembly.`);
                             }
-                            
+
+                            // --- NEW: Generate a feathered alpha mask for seamless reassembly ---
+                            const featherMaskBuffer = await sharp({
+                                create: {
+                                    width: cropArea.width,
+                                    height: cropArea.height,
+                                    channels: 1,
+                                    background: { r: 0, g: 0, b: 0, alpha: 1 } // Start with black (transparent)
+                                }
+                            })
+                            .linear(1, 0) // Makes it white
+                            .modulate({ brightness: 1, saturation: 1, hue: 0 }) // No change
+                            .blur(REASSEMBLY_FEATHER_RADIUS) // Apply blur to create feathering
+                            .raw() // Get raw pixel data for mask
+                            .toBuffer();
+                            console.log(`Generated feathered mask of ${cropArea.width}x${cropArea.height} with radius ${REASSEMBLY_FEATHER_RADIUS}.`);
+
+                            // Apply this feathered mask to the Flux-processed image
+                            const featheredFluxImage = await sharp(fluxProcessedResizedForReassembly)
+                                .ensureAlpha() // Ensure it has an alpha channel
+                                .joinChannel(featherMaskBuffer, { raw: {
+                                    width: cropArea.width,
+                                    height: cropArea.height,
+                                    channels: 1
+                                }})
+                                .toBuffer();
+                            console.log('Applied feathered mask to Flux image.');
+                            // --- END NEW FEATHERING ---
+
                             finalResultBuffer = await sharp(skinImageBuffer)
                                 .composite([
                                     {
-                                        input: fluxProcessedResizedForReassembly, // Use the (potentially resized) Flux output
-                                        left: cropArea.left, // Position it at the original crop area's left
-                                        top: cropArea.top,   // Position it at the original crop area's top
-                                        blend: 'over',       // Standard blend mode
+                                        input: featheredFluxImage, // Use the now feathered Flux output
+                                        left: cropArea.left,
+                                        top: cropArea.top,
+                                        blend: 'over',
                                     }
                                 ])
                                 .jpeg({ quality: 90 })

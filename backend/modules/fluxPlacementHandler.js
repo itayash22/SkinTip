@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.39_CONDITIONAL_FLUX_METHODS'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.40_FALLBACK_METADATA_FIX'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -241,7 +241,7 @@ const fluxPlacementHandler = {
                                 .toBuffer();
                             console.log(`Flux-generated image reassembled onto full skin image.`);
                         } catch (reassemblyError) {
-                            console.error(`ERROR: Failed to reassemble Flux image onto full skin: ${reassemblyError.message}. Using cropped Flux image for watermark/upload.`);
+                            console.error(`ERROR: Failed to reassemble Flux image onto full skin (New Method): ${reassemblyError.message}. Using cropped Flux image for watermark/upload.`);
                             finalResultBuffer = imageBuffer; // Fallback to just the cropped image
                         }
                     } else {
@@ -360,7 +360,7 @@ const fluxPlacementHandler = {
     /**
      * Executes the 'new method': Composites tattoo onto cropped skin, sends cropped image to Flux, reassembles.
      */
-    _executeNewMethod: async (skinImageBuffer, tattooDesignWithAlphaBuffer, maskBoundingBox, maskBuffer, userPrompt, userId, numVariations, fluxApiKey) => {
+    _executeNewMethod: async (skinImageBuffer, tattooDesignWithAlphaBuffer, maskBoundingBox, maskBuffer, userPrompt, userId, numVariations, fluxApiKey, maskMetadata) => { // Added maskMetadata
         console.log('DEBUG: Executing New Flux Method (Cropped Image Composite)...');
 
         // Define the cropped area to send to Flux
@@ -498,7 +498,7 @@ const fluxPlacementHandler = {
                 console.warn(`FALLBACK: Previous method failed due to content moderation. Attempting ${methodUsed} Flux Method.`);
                 try {
                     generatedUrls = await fluxPlacementHandler._executeNewMethod(
-                        skinImageBuffer, tattooDesignWithAlphaBuffer, maskBoundingBox, maskBuffer, userPrompt, userId, numVariations, fluxApiKey
+                        skinImageBuffer, tattooDesignWithAlphaBuffer, maskBoundingBox, maskBuffer, userPrompt, userId, numVariations, fluxApiKey, maskMetadata // Pass maskMetadata
                     );
                 } catch (fallbackError) {
                     console.error(`ERROR: Fallback method (${methodUsed}) also failed:`, fallbackError.message);

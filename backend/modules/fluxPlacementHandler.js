@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.36_LESS_SUBTLE_REFINEMENT'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.37_ULTRA_REFINEMENT'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -16,7 +16,7 @@ const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generate
 const CROP_PADDING = 20; // Reduced from 100px. Test with a very small padding.
 
 // CONSTANT: Feathering radius for the reassembly mask (in pixels)
-const REASSEMBLY_FEATHER_RADIUS = 18; // Slightly reduced feather radius for more defined edges
+const REASSEMBLY_FEATHER_RADIUS = 18; // Keep at 18px
 
 // HELPER FUNCTION: To find the bounding box of the white area in a raw grayscale mask buffer
 async function getMaskBoundingBox(maskBuffer, width, height) {
@@ -335,7 +335,7 @@ const fluxPlacementHandler = {
 
         // 4. Make multiple Flux API calls with the compositedCroppedImageBuffer
         const generatedImageUrls = [];
-        const basePrompt = `Integrate the tattoo design onto the skin with a realistic and intentional blending effect. The tattoo's edges should appear natural against the skin, with a slight diffusion that incorporates the skin's texture. Adjust the lighting to realistically interact with both the tattoo and the skin's surface, creating believable highlights and shadows. Aim for a high-resolution result that looks like a professionally applied tattoo, where the design and skin convincingly coexist. High-quality photo, realistic tattoo integration, defined yet natural edges, convincing lighting and skin interaction. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
+        const basePrompt = `Deeply embed and assimilate the tattoo design *into* the skin, making it an organic, seamless part of the epidermal layer. Ensure perfect blending with the skin's texture, pores, and micro-details, with no discernible boundaries or foreign appearance. Realistically simulate how light and shadow fall upon the integrated tattoo and skin, achieving hyper-realistic highlights, contours, and soft, natural shadows. Ultra-high-resolution photograph, master-level tattoo artistry, impeccable skin fusion, absolute absence of harsh edges or artificial transitions. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
 
         console.log(`Making ${numVariations} calls to Flux API...`);
 
@@ -348,8 +348,8 @@ const fluxPlacementHandler = {
                 mask_image: '', // Flux processes the cropped image
                 n: 1,
                 output_format: 'jpeg',
-                fidelity: 0.48,
-                guidance_scale: 9.5, // Increased guidance scale
+                fidelity: 0.40, // Adjusted fidelity for more blending
+                guidance_scale: 10.0, // Adjusted guidance_scale
                 seed: currentSeed
             };
 

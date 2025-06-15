@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.33_REAMBLE_FEATHERING_IMPL'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.34_FEATHER_MASK_CREATE_FIX'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -335,7 +335,7 @@ const fluxPlacementHandler = {
 
         // 4. Make multiple Flux API calls with the compositedCroppedImageBuffer
         const generatedImageUrls = [];
-        const basePrompt = `Make the tattoo look naturally placed and deeply integrated on the skin, blend seamlessly with existing texture and contours, adjust realistic lighting and subtle shadows for perfect realism. High-resolution photo, professional studio tattoo photography, intricate detail, no visible edges. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
+        const basePrompt = `Make the tattoo look naturally placed and deeply integrated on the skin, blend seamlessly with existing texture and contours, adjust realistic lighting and subtle shadows for perfect realism. High-resolution photo, professional studio tattoo photography, intricate detail, no visible edges. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`; // ENHANCED PROMPT
 
         console.log(`Making ${numVariations} calls to Flux API...`);
 
@@ -444,18 +444,17 @@ const fluxPlacementHandler = {
                                 console.log(`Flux image dimensions match cropArea: ${cropArea.width}x${cropArea.height}. No resize needed for reassembly.`);
                             }
 
-                            // --- NEW: Generate a feathered alpha mask for seamless reassembly ---
+                            // --- Generate a feathered alpha mask for seamless reassembly ---
                             const featherMaskBuffer = await sharp({
                                 create: {
                                     width: cropArea.width,
                                     height: cropArea.height,
-                                    channels: 1,
-                                    background: { r: 0, g: 0, b: 0, alpha: 1 } // Start with black (transparent)
+                                    channels: 3, // Create as RGB to avoid channels error with 'create'
+                                    background: { r: 255, g: 255, b: 255 } // Solid white background
                                 }
                             })
-                            .linear(1, 0) // Makes it white
-                            .modulate({ brightness: 1, saturation: 1, hue: 0 }) // No change
                             .blur(REASSEMBLY_FEATHER_RADIUS) // Apply blur to create feathering
+                            .grayscale() // Convert to grayscale
                             .raw() // Get raw pixel data for mask
                             .toBuffer();
                             console.log(`Generated feathered mask of ${cropArea.width}x${cropArea.height} with radius ${REASSEMBLY_FEATHER_RADIUS}.`);
@@ -470,7 +469,7 @@ const fluxPlacementHandler = {
                                 }})
                                 .toBuffer();
                             console.log('Applied feathered mask to Flux image.');
-                            // --- END NEW FEATHERING ---
+                            // --- END FEATHERING ---
 
                             finalResultBuffer = await sharp(skinImageBuffer)
                                 .composite([

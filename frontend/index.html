@@ -262,15 +262,21 @@
         }
 
 
-        // --- Artist Loading and Filtering Functions ---
+        // --- Artist Loading and Filtering Functions (MOVED TO GLOBAL SCOPE) ---
         let allArtists = []; // Declare in a scope accessible by filterArtists and displayArtists
 
-        function contactArtist(whatsapp, name) {
+        // Function definitions for contactArtist, changePortfolioImage, loadDemoArtistsWithFilter,
+        // displayArtists, and filterArtists are moved outside the DOMContentLoaded listener.
+
+        // These functions are assigned to window for global accessibility
+        // This is done to prevent ReferenceErrors if called from other parts of the script
+        // or from HTML onclick/onchange attributes that are processed globally.
+        window.contactArtist = function(whatsapp, name) {
             const message = `Hi ${name}, I'm interested in getting a tattoo! Can you help me visualize this? (from SkinTip.AI)`;
             window.open(`https://wa.me/${whatsapp}?text=${encodeURIComponent(message)}`, '_blank');
-        }
+        };
 
-        function changePortfolioImage(button, direction) {
+        window.changePortfolioImage = function(button, direction) {
             const gallery = button.closest('.portfolio-gallery');
             const images = Array.from(gallery.querySelectorAll('.portfolio-image'));
             let currentIndex = images.findIndex(img => img.classList.contains('active'));
@@ -282,9 +288,9 @@
 
             images[currentIndex].style.display = 'block';
             images[currentIndex].classList.add('active');
-        }
+        };
 
-        function loadDemoArtistsWithFilter() {
+        window.loadDemoArtistsWithFilter = function() {
             allArtists = [
                 {
                     name: 'Sarah Martinez',
@@ -343,10 +349,56 @@
                     ]
                 }
             ];
-            displayArtists(allArtists);
-        }
+            window.displayArtists(allArtists); // Use window.displayArtists here
+        };
 
-        function filterArtists() {
+        window.displayArtists = function(artists) {
+            const artistsGrid = document.getElementById('artistsGrid');
+            if (artists.length === 0) {
+                artistsGrid.innerHTML = '<div class="empty-state"><p>No artists found matching your criteria</p></div>';
+                return;
+            }
+            artistsGrid.innerHTML = artists.map(artist => {
+                let portfolioImages = '';
+                if (Array.isArray(artist.portfolio)) {
+                    portfolioImages = artist.portfolio.map((img, index) =>
+                        `<img src="${img}" alt="${artist.name} work ${index + 1}"
+                             class="portfolio-image ${index === 0 ? 'active' : ''}"
+                             style="display: ${index === 0 ? 'block' : 'none'}">`
+                    ).join('');
+                } else {
+                    portfolioImages = `<img src="${artist.portfolio}" alt="${artist.name}" class="portfolio-image active" style="display: block">`;
+                }
+                const stylesHTML = artist.styles.map(style =>
+                    `<span class="style-tag">${style}</span>`
+                ).join('');
+                return `
+                    <div class="artist-card">
+                        <div class="portfolio-gallery">
+                            ${portfolioImages}
+                            <button class="gallery-prev" onclick="changePortfolioImage(this, -1)">‹</button>
+                            <button class="gallery-next" onclick="changePortfolioImage(this, 1)">›</button>
+                        </div>
+                        <div class="artist-info">
+                            <h3>${artist.name}</h3>
+                            <p class="artist-location">📍 ${artist.location}</p>
+                            <p class="artist-bio">${artist.bio}</p>
+                            <div class="artist-styles">
+                                ${stylesHTML}
+                            </div>
+                            <div class="artist-footer">
+                                <span class="artist-likes">❤️ ${artist.likes}</span>
+                                <button class="btn btn-primary btn-sm" onclick="contactArtist('${artist.whatsapp}', '${artist.name}')">
+                                    Contact via WhatsApp
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        };
+
+        window.filterArtists = function() {
             const locationFilter = document.getElementById('locationFilter');
             const styleFilter = document.getElementById('styleFilter');
             const selectedLocation = locationFilter ? locationFilter.value : '';
@@ -357,16 +409,13 @@
                 const matchesStyle = !selectedStyle || artist.styles.includes(selectedStyle);
                 return matchesLocation && matchesStyle;
             });
-            displayArtists(filtered);
-        }
+            window.displayArtists(filtered); // Use window.displayArtists here
+        };
+        // --- END ARTIST FUNCTIONS GLOBAL SCOPE ---
+
 
         document.addEventListener('DOMContentLoaded', () => {
             console.log('🎨 SkinTip initializing (DOMContentLoaded)!');
-
-            // Assign global functions here. These were moved outside their previous nested scope.
-            // This ensures they are fully defined when assigned to window.
-            window.contactArtist = contactArtist;
-            window.changePortfolioImage = changePortfolioImage;
 
             // Initialize auth module (handles redirection for authenticated users)
             if (typeof auth !== 'undefined' && auth.init) {
@@ -641,8 +690,8 @@
                     artistsSection.style.display = 'block';
                     resultsSection.scrollIntoView({behavior: 'smooth'}); // Scroll to results section
                     socialShareDiv.style.display = 'block';
-                    loadDemoArtistsWithFilter();
-
+                    window.loadDemoArtistsWithFilter(); // Call global loadDemoArtistsWithFilter
+                    
                 } catch (error) {
                     console.error('Generation error:', error);
                     utils.hideLoading();
@@ -701,8 +750,8 @@
             // The filter event listeners for artists:
             const locationFilter = document.getElementById('locationFilter');
             const styleFilter = document.getElementById('styleFilter');
-            locationFilter?.addEventListener('input', filterArtists);
-            styleFilter?.addEventListener('change', filterArtists);
+            locationFilter?.addEventListener('input', window.filterArtists); // Use window.filterArtists here
+            styleFilter?.addEventListener('change', window.filterArtists); // Use window.filterArtists here
 
             console.log('✅ SkinTip ready!');
         });

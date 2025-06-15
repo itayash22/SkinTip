@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.40_FALLBACK_METADATA_FIX'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-16_V1.40_CONDITIONAL_FLUX_METHODS_FINAL'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -154,13 +154,13 @@ const fluxPlacementHandler = {
     },
 
     /**
-     * Common Flux API polling logic.
+     * Common Flux API polling logic. This function is called by both _executePreviousMethod and _executeNewMethod.
      */
-    _pollFluxResult: async (taskId, fluxApiKey, userId, numVariations, isCroppedMethod, basePrompt, skinImageBuffer, cropArea) => {
+    _pollFluxResult: async (taskId, fluxApiKey, userId, numExpectedImages, isCroppedMethod, basePrompt, skinImageBuffer, cropArea) => {
         let attempts = 0;
         const generatedImageUrls = []; // Collects URLs for this specific method call
 
-        while (attempts < 60 && generatedImageUrls.length < numVariations) {
+        while (attempts < 60 && generatedImageUrls.length < numExpectedImages) { // Poll until we get expected number of images
             attempts++;
             await new Promise(resolve => setTimeout(resolve, 2000));
 
@@ -178,7 +178,7 @@ const fluxPlacementHandler = {
                 const moderationReason = result.data.details && result.data.details['Moderation Reasons'] ?
                                          result.data.details['Moderation Reasons'].join(', ') : 'Unknown reason';
                 console.error(`Flux API Polling terminated for Task ${taskId}: Content Moderated. Reason: ${moderationReason}`);
-                // Throw specific error to be caught by main function for method switching
+                // Throw specific error to be caught by main function for method switching or overall error handling
                 throw new Error(`Flux API: Content Moderated - The image or request triggered a moderation filter. Reason: ${moderationReason}.`);
             }
 
@@ -201,7 +201,7 @@ const fluxPlacementHandler = {
                         throw new Error(`Failed to download image from Flux URL: ${downloadError.message}`);
                     }
 
-                    let finalResultBuffer = imageBuffer; // Default to imageBuffer if no reassembly
+                    let finalResultBuffer = imageBuffer; // Default if no reassembly is needed or fails
 
                     if (isCroppedMethod) {
                         // Reassembly for 'new method' (cropped image was sent to Flux)
@@ -239,7 +239,7 @@ const fluxPlacementHandler = {
                                 .composite([{ input: featheredFluxImage, left: cropArea.left, top: cropArea.top, blend: 'over' }])
                                 .jpeg({ quality: 90 })
                                 .toBuffer();
-                            console.log(`Flux-generated image reassembled onto full skin image.`);
+                            console.log(`Flux-generated image reassembled onto full skin image (New Method).`);
                         } catch (reassemblyError) {
                             console.error(`ERROR: Failed to reassemble Flux image onto full skin (New Method): ${reassemblyError.message}. Using cropped Flux image for watermark/upload.`);
                             finalResultBuffer = imageBuffer; // Fallback to just the cropped image
@@ -254,8 +254,8 @@ const fluxPlacementHandler = {
                     const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarkedBuffer, fileName, userId);
                     generatedImageUrls.push(publicUrl);
                     console.log(`Successfully generated and watermarked 1 image for variation.`);
-                    // We successfully processed one image, if Flux returns one per task, we're done.
-                    break;
+                    // If Flux returns multiple samples in one 'Ready' state, this loop needs to handle it.
+                    // For now, assuming one sample per 'Ready' state, so continue polling for more if needed.
                 } else {
                     console.warn(`Flux API for Task ${taskId} returned Ready status but no valid image URL found in "sample".`, result.data);
                     throw new Error('Flux API returned no images or malformed output.');
@@ -274,7 +274,7 @@ const fluxPlacementHandler = {
     /**
      * Executes the 'previous method': Composites tattoo onto full skin image, sends full image to Flux.
      */
-    _executePreviousMethod: async (skinImageBuffer, tattooDesignWithAlphaBuffer, maskBoundingBox, maskBuffer, userPrompt, userId, numVariations, fluxApiKey) => {
+    _executePreviousMethod: async (skinImageBuffer, tattooDesignWithAlphaBuffer, maskBoundingBox, maskBuffer, userPrompt, userId, numVariations, fluxApiKey, maskMetadata) => {
         console.log('DEBUG: Executing Previous Flux Method (Full Image Composite)...');
         let compositedImageBuffer;
         try {
@@ -306,7 +306,7 @@ const fluxPlacementHandler = {
                 const debugFileName = `debug_sharp_full_composite_${uuidv4()}.jpeg`;
                 const debugPublicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(
                     compositedImageBuffer, debugFileName, userId, 'debug');
-                console.log(`--- DEBUG: SHARP FULL COMPOSITED IMAGE URL (SENT TO FLUX): ${debugPublicUrl} ---`);
+                console.log(`--- DEBUG: SHARP FULL COMPOSITED IMAGE URL (SENT TO FLUX - Previous Method): ${debugPublicUrl} ---`);
             } catch (debugUploadError) { console.error('DEBUG ERROR: Failed to upload intermediate full composite image:', debugUploadError); }
 
         } catch (error) {
@@ -316,7 +316,12 @@ const fluxPlacementHandler = {
 
         const generatedImageUrls = [];
         const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey };
+        // PROMPT FOR PREVIOUS METHOD
         const basePrompt = `Make the tattoo look naturally placed on the skin, blend seamlessly, adjust lighting and shadows for realism. Realistic photo, professional tattoo photography, high detail. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
+        
+        // PARAMETERS FOR PREVIOUS METHOD
+        const FLUX_FIDELITY_PREVIOUS = 0.5;
+        const FLUX_GUIDANCE_SCALE_PREVIOUS = 8.0;
 
         for (let i = 0; i < numVariations; i++) {
             const currentSeed = Date.now() + i;
@@ -326,8 +331,8 @@ const fluxPlacementHandler = {
                 mask_image: '',
                 n: 1, // Request 1 variation per call
                 output_format: 'jpeg',
-                fidelity: 0.5, // Default fidelity for previous method
-                guidance_scale: 8.0, // Default guidance_scale for previous method
+                fidelity: FLUX_FIDELITY_PREVIOUS,
+                guidance_scale: FLUX_GUIDANCE_SCALE_PREVIOUS,
                 seed: currentSeed
             };
 
@@ -360,7 +365,7 @@ const fluxPlacementHandler = {
     /**
      * Executes the 'new method': Composites tattoo onto cropped skin, sends cropped image to Flux, reassembles.
      */
-    _executeNewMethod: async (skinImageBuffer, tattooDesignWithAlphaBuffer, maskBoundingBox, maskBuffer, userPrompt, userId, numVariations, fluxApiKey, maskMetadata) => { // Added maskMetadata
+    _executeNewMethod: async (skinImageBuffer, tattooDesignWithAlphaBuffer, maskBoundingBox, maskBuffer, userPrompt, userId, numVariations, fluxApiKey, maskMetadata) => {
         console.log('DEBUG: Executing New Flux Method (Cropped Image Composite)...');
 
         // Define the cropped area to send to Flux
@@ -410,11 +415,25 @@ const fluxPlacementHandler = {
 
         const generatedImageUrls = [];
         const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey };
+        // PROMPT FOR NEW METHOD
         const basePrompt = `Achieve an ultra-realistic skin integration where the tattoo appears to exist *beneath* the skin's surface. Blend seamlessly with the skin's natural texture, observing and subtly influencing the appearance of pores and fine lines across the tattooed area. Simulate the way the skin's undertones and blood flow would naturally interact with the tattoo's ink, creating a believable subsurface effect. The lighting and shadows must be indistinguishable from those on the surrounding untouched skin, enhancing the three-dimensionality and the sense that the tattoo is an intrinsic part of the body. Hyper-detailed photograph, expert-level realism in tattoo application and skin integration, organic and natural appearance, no suggestion of a superficial application. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
+        
+        // PARAMETERS FOR NEW METHOD
+        const FLUX_FIDELITY_NEW = 0.38;
+        const FLUX_GUIDANCE_SCALE_NEW = 10.5;
 
         for (let i = 0; i < numVariations; i++) {
             const currentSeed = Date.now() + i;
-            const fluxPayload = { prompt: basePrompt, input_image: compositedCroppedImageBuffer.toString('base64'), mask_image: '', n: 1, output_format: 'jpeg', fidelity: 0.38, guidance_scale: 10.5, seed: currentSeed };
+            const fluxPayload = {
+                prompt: basePrompt,
+                input_image: compositedCroppedImageBuffer.toString('base64'),
+                mask_image: '',
+                n: 1, // Request 1 variation per call
+                output_format: 'jpeg',
+                fidelity: FLUX_FIDELITY_NEW,
+                guidance_scale: FLUX_GUIDANCE_SCALE_NEW,
+                seed: currentSeed
+            };
 
             let fluxResponse;
             try { fluxResponse = await axios.post('https://api.bfl.ai/v1/flux-kontext-pro', fluxPayload, { headers: fluxHeaders, timeout: 90000 }); }
@@ -489,7 +508,7 @@ const fluxPlacementHandler = {
             methodUsed = 'Previous';
             console.log(`ATTEMPTING: ${methodUsed} Flux Method.`);
             generatedUrls = await fluxPlacementHandler._executePreviousMethod(
-                skinImageBuffer, tattooDesignWithAlphaBuffer, maskBoundingBox, maskBuffer, userPrompt, userId, numVariations, fluxApiKey
+                skinImageBuffer, tattooDesignWithAlphaBuffer, maskBoundingBox, maskBuffer, userPrompt, userId, numVariations, fluxApiKey, maskMetadata // Added maskMetadata here
             );
         } catch (error) {
             if (error.message.includes('Content Moderated')) {
@@ -498,7 +517,7 @@ const fluxPlacementHandler = {
                 console.warn(`FALLBACK: Previous method failed due to content moderation. Attempting ${methodUsed} Flux Method.`);
                 try {
                     generatedUrls = await fluxPlacementHandler._executeNewMethod(
-                        skinImageBuffer, tattooDesignWithAlphaBuffer, maskBoundingBox, maskBuffer, userPrompt, userId, numVariations, fluxApiKey, maskMetadata // Pass maskMetadata
+                        skinImageBuffer, tattooDesignWithAlphaBuffer, maskBoundingBox, maskBuffer, userPrompt, userId, numVariations, fluxApiKey, maskMetadata
                     );
                 } catch (fallbackError) {
                     console.error(`ERROR: Fallback method (${methodUsed}) also failed:`, fallbackError.message);

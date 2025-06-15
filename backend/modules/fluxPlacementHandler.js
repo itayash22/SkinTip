@@ -1,9 +1,9 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.31_IMPORT_SYNTAX_FIX'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.32_FINAL_REAMBLE_FEATHERING'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
-import { createClient } from '@supabase/supabase-js'; // FIX: Removed '=' from import statement
+import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
 
 // Initialize Supabase Storage client
@@ -14,6 +14,9 @@ const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generate
 
 // CONSTANT: Padding around the mask bounding box for the area sent to Flux (in pixels)
 const CROP_PADDING = 20; // Reduced from 100px. Test with a very small padding.
+
+// CONSTANT: Feathering radius for the reassembly mask (in pixels)
+const FEATHER_RADIUS = 25; // Controls how soft the edges are during final reassembly
 
 // HELPER FUNCTION: To find the bounding box of the white area in a raw grayscale mask buffer
 async function getMaskBoundingBox(maskBuffer, width, height) {
@@ -255,13 +258,11 @@ const fluxPlacementHandler = {
         // Crop the mask to the defined cropArea
         let croppedMaskBuffer;
         try {
-            // FIX: When creating a sharp instance from a raw buffer (maskBuffer), its dimensions MUST be provided.
-            // Use maskMetadata.width/height but specify channels: 1 as it's grayscale raw
             croppedMaskBuffer = await sharp(maskBuffer, { 
                 raw: { 
-                    width: maskMetadata.width, // Pass original mask width
-                    height: maskMetadata.height, // Pass original mask height
-                    channels: 1 // Explicitly set channels to 1 for grayscale raw buffer
+                    width: maskMetadata.width, 
+                    height: maskMetadata.height, 
+                    channels: 1 
                 } 
             })
                 .extract({ left: cropArea.left, top: cropArea.top, width: cropArea.width, height: cropArea.height })
@@ -426,22 +427,31 @@ const fluxPlacementHandler = {
                         // --- FINAL REASSEMBLY STEP: Paste Flux result back onto original full skin image ---
                         let finalResultBuffer;
                         try {
-                            // Start with the original full skin image buffer
+                            // First, get metadata of the image from Flux
+                            const fluxImageMetadata = await sharp(imageBuffer).metadata();
+
                             // Ensure the imageBuffer from Flux is precisely the cropArea's size for reassembly
-                            const fluxProcessedResizedForReassembly = await sharp(imageBuffer)
-                                .resize(cropArea.width, cropArea.height, {
-                                    fit: 'fill', // Force to fill the exact dimensions
-                                    kernel: sharp.kernel.lanczos3 // High quality resize
-                                })
-                                .toBuffer();
+                            // We need to check if dimensions match before resizing, if not, resize.
+                            let fluxProcessedResizedForReassembly = imageBuffer; // Start with the downloaded buffer
+                            if (fluxImageMetadata.width !== cropArea.width || fluxImageMetadata.height !== cropArea.height) {
+                                console.warn(`Flux image dimensions (${fluxImageMetadata.width}x${fluxImageMetadata.height}) do not exactly match cropArea (${cropArea.width}x${cropArea.height}). Resizing for reassembly.`);
+                                fluxProcessedResizedForReassembly = await sharp(imageBuffer)
+                                    .resize(cropArea.width, cropArea.height, {
+                                        fit: 'fill', // Force to fill the exact dimensions
+                                        kernel: sharp.kernel.lanczos3 // High quality resize
+                                    })
+                                    .toBuffer();
+                            } else {
+                                console.log(`Flux image dimensions match cropArea: ${cropArea.width}x${cropArea.height}. No resize needed for reassembly.`);
+                            }
 
                             finalResultBuffer = await sharp(skinImageBuffer)
                                 .composite([
                                     {
-                                        input: fluxProcessedResizedForReassembly, // Use the resized Flux output
-                                        left: cropArea.left, // Position it at the original crop area's left
-                                        top: cropArea.top,   // Position it at the original crop area's top
-                                        blend: 'over',       // Standard blend mode
+                                        input: fluxProcessedResizedForReassembly, // Use the (potentially resized) Flux output
+                                        left: cropArea.left,
+                                        top: cropArea.top,
+                                        blend: 'over',
                                     }
                                 ])
                                 .jpeg({ quality: 90 })

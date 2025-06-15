@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-16_V1.40_CONDITIONAL_FLUX_METHODS_FINAL'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-16_V1.41_CONDITIONAL_FLUX_PARAMS_FIX'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -156,7 +156,7 @@ const fluxPlacementHandler = {
     /**
      * Common Flux API polling logic. This function is called by both _executePreviousMethod and _executeNewMethod.
      */
-    _pollFluxResult: async (taskId, fluxApiKey, userId, numExpectedImages, isCroppedMethod, basePrompt, skinImageBuffer, cropArea) => {
+    _pollFluxResult: async (taskId, fluxApiKey, userId, numExpectedImages, isCroppedMethod, skinImageBuffer, cropArea) => {
         let attempts = 0;
         const generatedImageUrls = []; // Collects URLs for this specific method call
 
@@ -255,7 +255,8 @@ const fluxPlacementHandler = {
                     generatedImageUrls.push(publicUrl);
                     console.log(`Successfully generated and watermarked 1 image for variation.`);
                     // If Flux returns multiple samples in one 'Ready' state, this loop needs to handle it.
-                    // For now, assuming one sample per 'Ready' state, so continue polling for more if needed.
+                    // For now, assuming one sample per 'Ready' state, so break if we only need one.
+                    if (numExpectedImages === 1) break; // Break if we only expected one image per task
                 } else {
                     console.warn(`Flux API for Task ${taskId} returned Ready status but no valid image URL found in "sample".`, result.data);
                     throw new Error('Flux API returned no images or malformed output.');
@@ -316,10 +317,10 @@ const fluxPlacementHandler = {
 
         const generatedImageUrls = [];
         const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey };
-        // PROMPT FOR PREVIOUS METHOD
+        // PROMPT FOR PREVIOUS METHOD (from V1.24)
         const basePrompt = `Make the tattoo look naturally placed on the skin, blend seamlessly, adjust lighting and shadows for realism. Realistic photo, professional tattoo photography, high detail. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
         
-        // PARAMETERS FOR PREVIOUS METHOD
+        // PARAMETERS FOR PREVIOUS METHOD (from V1.24)
         const FLUX_FIDELITY_PREVIOUS = 0.5;
         const FLUX_GUIDANCE_SCALE_PREVIOUS = 8.0;
 
@@ -348,7 +349,7 @@ const fluxPlacementHandler = {
             if (!taskId) { throw new Error('Flux API did not return a task ID for previous method.'); }
 
             try {
-                const urls = await fluxPlacementHandler._pollFluxResult(taskId, fluxApiKey, userId, 1, false, basePrompt, skinImageBuffer, null); // Pass isCroppedMethod=false
+                const urls = await fluxPlacementHandler._pollFluxResult(taskId, fluxApiKey, userId, 1, false, skinImageBuffer, null); // Pass isCroppedMethod=false
                 generatedImageUrls.push(...urls);
             } catch (pollError) {
                 // If polling results in moderation, we catch it here to potentially trigger fallback.
@@ -443,7 +444,7 @@ const fluxPlacementHandler = {
             if (!taskId) { throw new Error('Flux API did not return a task ID (New Method).'); }
 
             try {
-                const urls = await fluxPlacementHandler._pollFluxResult(taskId, fluxApiKey, userId, 1, true, basePrompt, skinImageBuffer, cropArea); // Pass isCroppedMethod=true
+                const urls = await fluxPlacementHandler._pollFluxResult(taskId, fluxApiKey, userId, 1, true, skinImageBuffer, cropArea); // Pass isCroppedMethod=true
                 generatedImageUrls.push(...urls);
             } catch (pollError) {
                  if (pollError.message.includes('Content Moderated')) {
@@ -508,7 +509,7 @@ const fluxPlacementHandler = {
             methodUsed = 'Previous';
             console.log(`ATTEMPTING: ${methodUsed} Flux Method.`);
             generatedUrls = await fluxPlacementHandler._executePreviousMethod(
-                skinImageBuffer, tattooDesignWithAlphaBuffer, maskBoundingBox, maskBuffer, userPrompt, userId, numVariations, fluxApiKey, maskMetadata // Added maskMetadata here
+                skinImageBuffer, tattooDesignWithAlphaBuffer, maskBoundingBox, maskBuffer, userPrompt, userId, numVariations, fluxApiKey, maskMetadata
             );
         } catch (error) {
             if (error.message.includes('Content Moderated')) {

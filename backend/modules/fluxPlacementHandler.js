@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.27_SHARP_RAW_BUFFER_FIX'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.28_RAW_MASK_CHANNELS_FIX'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -256,7 +256,14 @@ const fluxPlacementHandler = {
         let croppedMaskBuffer;
         try {
             // FIX: When creating a sharp instance from a raw buffer (maskBuffer), its dimensions MUST be provided.
-            croppedMaskBuffer = await sharp(maskBuffer, { raw: maskMetadata }) // Pass the metadata for the raw buffer
+            // Use maskMetadata.width/height but specify channels: 1 as it's grayscale raw
+            croppedMaskBuffer = await sharp(maskBuffer, { 
+                raw: { 
+                    width: maskMetadata.width, 
+                    height: maskMetadata.height, 
+                    channels: 1 // Explicitly set channels to 1 for grayscale raw buffer
+                } 
+            })
                 .extract({ left: cropArea.left, top: cropArea.top, width: cropArea.width, height: cropArea.height })
                 .toBuffer();
             console.log(`Cropped mask to ${cropArea.width}x${cropArea.height}.`);

@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.28_RAW_MASK_CHANNELS_FIX'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.29_FILTER_BYPASS_CROP_TEST'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -13,7 +13,8 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generated-tattoos'; // Configure this bucket in Render
 
 // CONSTANT: Padding around the mask bounding box for the area sent to Flux (in pixels)
-const CROP_PADDING = 100; // Increase this for more context, decrease for smaller payload.
+// REDUCED PADDING TO TEST FILTER BYPASS
+const CROP_PADDING = 20; // Reduced from 100px. Test with a very small padding.
 
 // HELPER FUNCTION: To find the bounding box of the white area in a raw grayscale mask buffer
 async function getMaskBoundingBox(maskBuffer, width, height) {
@@ -198,7 +199,7 @@ const fluxPlacementHandler = {
         }
         console.log('DEBUG: Calculated Mask Bounding Box:', maskBoundingBox);
 
-        // --- NEW STEP: Define the cropped area to send to Flux ---
+        // --- Define the cropped area to send to Flux ---
         // Expand the mask bounding box by CROP_PADDING for context
         const cropArea = {
             left: Math.max(0, maskBoundingBox.minX - CROP_PADDING),
@@ -218,6 +219,10 @@ const fluxPlacementHandler = {
         console.log('DEBUG: Cropping area for Flux API:', cropArea);
 
         // --- Step 2.2: Simplified background transparency handling (for the tattoo) ---
+        // This heuristic ensures the tattoo design has an alpha channel.
+        // It will NOT attempt to automatically remove solid backgrounds (like white or black squares)
+        // because previous complex heuristics led to unintended cropping.
+        // For best results, users MUST upload PNGs with a truly transparent background.
         let tattooDesignWithAlphaBuffer = tattooDesignBuffer; // Start with the initial tattoo buffer (already PNG)
         try {
             const tattooMeta = await sharp(tattooDesignBuffer).metadata();
@@ -259,8 +264,8 @@ const fluxPlacementHandler = {
             // Use maskMetadata.width/height but specify channels: 1 as it's grayscale raw
             croppedMaskBuffer = await sharp(maskBuffer, { 
                 raw: { 
-                    width: maskMetadata.width, 
-                    height: maskMetadata.height, 
+                    width: maskMetadata.width, // Pass original mask width
+                    height: maskMetadata.height, // Pass original mask height
                     channels: 1 // Explicitly set channels to 1 for grayscale raw buffer
                 } 
             })

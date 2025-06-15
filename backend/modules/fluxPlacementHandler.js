@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.34_FEATHER_MASK_CREATE_FIX'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.35_FURTHER_REFINEMENT'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -16,7 +16,7 @@ const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generate
 const CROP_PADDING = 20; // Reduced from 100px. Test with a very small padding.
 
 // CONSTANT: Feathering radius for the reassembly mask (in pixels)
-const REASSEMBLY_FEATHER_RADIUS = 15; // Controls how soft the edges are during final reassembly
+const REASSEMBLY_FEATHER_RADIUS = 20; // Increased feather radius for softer edges
 
 // HELPER FUNCTION: To find the bounding box of the white area in a raw grayscale mask buffer
 async function getMaskBoundingBox(maskBuffer, width, height) {
@@ -25,7 +25,7 @@ async function getMaskBoundingBox(maskBuffer, width, height) {
 
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
-            const pixelValue = maskBuffer[y * width + x];
+            const pixelValue = maskBuffer[(y * width) + x];
             if (pixelValue > 0) {
                 foundWhite = true;
                 minX = Math.min(minX, x);
@@ -224,13 +224,13 @@ const fluxPlacementHandler = {
         let tattooDesignWithAlphaBuffer = tattooDesignBuffer; // Start with the initial tattoo buffer (already PNG)
         try {
             const tattooMeta = await sharp(tattooDesignBuffer).metadata();
-            
+
             // If the image is a JPG (always opaque) or a PNG without an explicit alpha channel,
             // we simply ensure it has an alpha channel, but we don't try to key out a background color.
             if (tattooMeta.format === 'jpeg' || (tattooMeta.format === 'png' && tattooMeta.channels < 4)) {
                 console.warn('INFO: Tattoo design image does not have an explicit alpha channel or is JPEG. Ensuring alpha but skipping complex background removal heuristic.');
                 tattooDesignWithAlphaBuffer = await sharp(tattooDesignBuffer)
-                    .ensureAlpha() 
+                    .ensureAlpha()
                     .toBuffer();
                 console.log('Tattoo design image now has an alpha channel, if it did not before.');
 
@@ -258,12 +258,12 @@ const fluxPlacementHandler = {
         // Crop the mask to the defined cropArea
         let croppedMaskBuffer;
         try {
-            croppedMaskBuffer = await sharp(maskBuffer, { 
-                raw: { 
-                    width: maskMetadata.width, 
-                    height: maskMetadata.height, 
-                    channels: 1 
-                } 
+            croppedMaskBuffer = await sharp(maskBuffer, {
+                raw: {
+                    width: maskMetadata.width,
+                    height: maskMetadata.height,
+                    channels: 1
+                }
             })
                 .extract({ left: cropArea.left, top: cropArea.top, width: cropArea.width, height: cropArea.height })
                 .toBuffer();
@@ -272,7 +272,7 @@ const fluxPlacementHandler = {
              console.error(`ERROR: Failed to crop mask image: ${maskCropError.message}. CropArea:`, cropArea, `MaskDims: ${maskMetadata.width}x${maskMetadata.height}`);
              throw new Error(`Failed to crop mask image for processing: ${maskCropError.message}`);
         }
-       
+
         // Recalculate tattoo position relative to the cropped area's top-left
         const tattooRelativeLeft = maskBoundingBox.minX - cropArea.left;
         const tattooRelativeTop = maskBoundingBox.minY - cropArea.top;
@@ -335,7 +335,7 @@ const fluxPlacementHandler = {
 
         // 4. Make multiple Flux API calls with the compositedCroppedImageBuffer
         const generatedImageUrls = [];
-        const basePrompt = `Make the tattoo look naturally placed and deeply integrated on the skin, blend seamlessly with existing texture and contours, adjust realistic lighting and subtle shadows for perfect realism. High-resolution photo, professional studio tattoo photography, intricate detail, no visible edges. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`; // ENHANCED PROMPT
+        const basePrompt = `Make the tattoo look like it is a natural part of the skin, deeply integrated with the skin's texture, pores, and subtle imperfections. Blend the edges seamlessly, ensuring no visible lines or color discrepancies. Carefully adjust the lighting and cast realistic, soft shadows that match the existing skin. High-resolution photo, professional tattoo artistry, ultra-detailed skin integration, no artificial blending artifacts. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
 
         console.log(`Making ${numVariations} calls to Flux API...`);
 
@@ -348,8 +348,8 @@ const fluxPlacementHandler = {
                 mask_image: '', // Flux processes the cropped image
                 n: 1,
                 output_format: 'jpeg',
-                fidelity: 0.45, // Adjusted fidelity for more blending
-                guidance_scale: 8.5, // Adjusted guidance_scale
+                fidelity: 0.48, // Slightly increased fidelity
+                guidance_scale: 9.0, // Increased guidance scale
                 seed: currentSeed
             };
 
@@ -449,11 +449,11 @@ const fluxPlacementHandler = {
                                 create: {
                                     width: cropArea.width,
                                     height: cropArea.height,
-                                    channels: 3, // Create as RGB to avoid channels error with 'create'
-                                    background: { r: 255, g: 255, b: 255 } // Solid white background
+                                    channels: 3, // Create as RGB
+                                    background: { r: 255, g: 255, b: 255 } // Solid white
                                 }
                             })
-                            .blur(REASSEMBLY_FEATHER_RADIUS) // Apply blur to create feathering
+                            .blur(REASSEMBLY_FEATHER_RADIUS) // Apply blur
                             .grayscale() // Convert to grayscale
                             .raw() // Get raw pixel data for mask
                             .toBuffer();
@@ -474,7 +474,7 @@ const fluxPlacementHandler = {
                             finalResultBuffer = await sharp(skinImageBuffer)
                                 .composite([
                                     {
-                                        input: featheredFluxImage, // Use the now feathered Flux output
+                                        input: featheredFluxImage, // Use the feathered Flux output
                                         left: cropArea.left,
                                         top: cropArea.top,
                                         blend: 'over',
@@ -485,9 +485,9 @@ const fluxPlacementHandler = {
                             console.log(`Flux-generated image reassembled onto full skin image.`);
                         } catch (reassemblyError) {
                             console.error(`ERROR: Failed to reassemble Flux image onto full skin: ${reassemblyError.message}. Using cropped Flux image for watermark/upload.`);
-                            finalResultBuffer = imageBuffer; // Fallback to just the cropped image if reassembly fails
+                            finalResultBuffer = imageBuffer; // Fallback
                         }
-                        
+
                         const watermarkedBuffer = await fluxPlacementHandler.applyWatermark(finalResultBuffer);
                         const fileName = `tattoo-${uuidv4()}.jpeg`;
                         const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarkedBuffer, fileName, userId);
@@ -512,7 +512,7 @@ const fluxPlacementHandler = {
         if (generatedImageUrls.length === 0) {
             throw new Error('Flux API: No images were generated across all attempts. Please try again or with a different design.');
         }
-        
+
         return generatedImageUrls;
     }
 };

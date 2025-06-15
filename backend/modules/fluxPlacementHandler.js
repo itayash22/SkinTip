@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.25_CROP_AND_REAMBLE_FOR_FLUX'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.26_SHARP_INPUT_DEBUG'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -38,9 +38,7 @@ async function getMaskBoundingBox(maskBuffer, width, height) {
         return { minX: 0, minY: 0, maxX: 0, maxY: 0, width: 0, height: 0, isEmpty: true };
     }
 
-    // Add some optional padding to the bounding box for the mask itself, if desired.
-    // Keeping padding at 0 for now as the crop_area handles expansion.
-    const padding = 0;
+    const padding = 0; // Keeping padding at 0 for now for exact fit
     minX = Math.max(0, minX - padding);
     minY = Math.max(0, minY - padding);
     maxX = Math.min(width, maxX + padding);
@@ -213,9 +211,13 @@ const fluxPlacementHandler = {
         cropArea.width = Math.min(skinWidth - cropArea.left, cropArea.width);
         cropArea.height = Math.min(skinHeight - cropArea.top, cropArea.height);
 
+        // Ensure minimum dimensions for sharp.extract, e.g., 1x1 if calculated area is 0
+        cropArea.width = Math.max(1, cropArea.width);
+        cropArea.height = Math.max(1, cropArea.height);
+
         console.log('DEBUG: Cropping area for Flux API:', cropArea);
 
-        // --- Step 2.2: Simplify background transparency handling (for the tattoo) ---
+        // --- Step 2.2: Simplified background transparency handling (for the tattoo) ---
         // This heuristic ensures the tattoo design has an alpha channel.
         // It will NOT attempt to automatically remove solid backgrounds (like white or black squares)
         // because previous complex heuristics led to unintended cropping.
@@ -228,6 +230,7 @@ const fluxPlacementHandler = {
             // we simply ensure it has an alpha channel, but we don't try to key out a background color.
             if (tattooMeta.format === 'jpeg' || (tattooMeta.format === 'png' && tattooMeta.channels < 4)) {
                 console.warn('INFO: Tattoo design image does not have an explicit alpha channel or is JPEG. Ensuring alpha but skipping complex background removal heuristic.');
+                // Simply ensure an alpha channel is present. This will not make an opaque background transparent.
                 tattooDesignWithAlphaBuffer = await sharp(tattooDesignBuffer)
                     .ensureAlpha() 
                     .toBuffer();
@@ -243,17 +246,29 @@ const fluxPlacementHandler = {
 
         // --- Step 2.3: Prepare images for local composite (all cropped to cropArea) ---
         // Crop the skin image to the defined cropArea
-        const croppedSkinBuffer = await sharp(skinImageBuffer)
-            .extract({ left: cropArea.left, top: cropArea.top, width: cropArea.width, height: cropArea.height })
-            .toBuffer();
-        console.log(`Cropped skin image to ${cropArea.width}x${cropArea.height}.`);
+        let croppedSkinBuffer;
+        try {
+            croppedSkinBuffer = await sharp(skinImageBuffer)
+                .extract({ left: cropArea.left, top: cropArea.top, width: cropArea.width, height: cropArea.height })
+                .toBuffer();
+            console.log(`Cropped skin image to ${cropArea.width}x${cropArea.height}.`);
+        } catch (skinCropError) {
+            console.error(`ERROR: Failed to crop skin image: ${skinCropError.message}. CropArea:`, cropArea, `SkinDims: ${skinWidth}x${skinHeight}`);
+            throw new Error(`Failed to crop skin image for processing: ${skinCropError.message}`);
+        }
 
         // Crop the mask to the defined cropArea
-        const croppedMaskBuffer = await sharp(maskBuffer)
-            .extract({ left: cropArea.left, top: cropArea.top, width: cropArea.width, height: cropArea.height })
-            .toBuffer();
-        console.log(`Cropped mask to ${cropArea.width}x${cropArea.height}.`);
-
+        let croppedMaskBuffer;
+        try {
+            croppedMaskBuffer = await sharp(maskBuffer)
+                .extract({ left: cropArea.left, top: cropArea.top, width: cropArea.width, height: cropArea.height })
+                .toBuffer();
+            console.log(`Cropped mask to ${cropArea.width}x${cropArea.height}.`);
+        } catch (maskCropError) {
+             console.error(`ERROR: Failed to crop mask image: ${maskCropError.message}. CropArea:`, cropArea, `MaskDims: ${maskMetadata.width}x${maskMetadata.height}`);
+             throw new Error(`Failed to crop mask image for processing: ${maskCropError.message}`);
+        }
+       
         // Recalculate tattoo position relative to the cropped area's top-left
         const tattooRelativeLeft = maskBoundingBox.minX - cropArea.left;
         const tattooRelativeTop = maskBoundingBox.minY - cropArea.top;
@@ -284,9 +299,9 @@ const fluxPlacementHandler = {
                         input: tattooForPlacement,
                         blend: 'over',
                         tile: false,
-                        left: tattooRelativeLeft, // Position relative to cropped area
+                        left: tattooRelativeLeft,
                         top: tattooRelativeTop,
-                        mask: croppedMaskBuffer // Apply the cropped mask
+                        mask: croppedMaskBuffer
                     }
                 ])
                 .jpeg({ quality: 90 })
@@ -408,7 +423,7 @@ const fluxPlacementHandler = {
                         // --- FINAL REASSEMBLY STEP: Paste Flux result back onto original full skin image ---
                         let finalResultBuffer;
                         try {
-                            // Start with the original full skin image
+                            // Start with the original full skin image buffer
                             finalResultBuffer = await sharp(skinImageBuffer)
                                 .composite([
                                     {
@@ -416,9 +431,6 @@ const fluxPlacementHandler = {
                                         left: cropArea.left, // Position it at the original crop area's left
                                         top: cropArea.top,   // Position it at the original crop area's top
                                         blend: 'over',       // Standard blend mode
-                                        // No mask here, as Flux already processed the blending within its output.
-                                        // If seams are visible, a soft feathering mask could be tried here,
-                                        // but it's much more complex.
                                     }
                                 ])
                                 .jpeg({ quality: 90 })

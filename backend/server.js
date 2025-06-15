@@ -1,5 +1,5 @@
 // backend/server.js
-// This file was last updated on 2025-06-14 (EOD) to fix ES Module import errors.
+// This file was last updated on 2025-06-15 (EOD) to fix persistent CORS errors.
 
 import 'dotenv/config'; // Use 'dotenv/config' for top-level loading with ESM
 import express from 'express';
@@ -8,13 +8,13 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import { createClient } from '@supabase/supabase-js';
-import bcryptjs from 'bcryptjs'; // Corrected import for bcryptjs
+import bcryptjs from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import sizeOf from 'image-size'; // image-size default export might be different, but typically it's named 'imageSize' or used as a function
+import sizeOf from 'image-size';
 
 // Import our new modularized services
-import tokenService from './modules/tokenService.js'; // Added .js extension
-import fluxKontextHandler from './modules/fluxPlacementHandler.js'; // Added .js extension
+import tokenService from './modules/tokenService.js';
+import fluxKontextHandler from './modules/fluxPlacementHandler.js';
 
 // Function to generate a dynamic timestamp for deployment tracking
 const getDeploymentTimestamp = () => new Date().toISOString();
@@ -43,35 +43,22 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 // Middleware
 app.use(helmet());
 
-app.use((req, res, next) => {
-    next();
-});
-
+// **CRITICAL CORS FIX:** Simplified and made more robust.
+// This allows specific origins directly and handles preflight requests.
 app.use(cors({
-    origin: function (origin, callback) {
-        const allowedOrigins = [
-            process.env.FRONTEND_URL,
-            'https://itayash22.github.io',
-            'http://localhost:8080',
-            'http://127.0.0.1:8080'
-        ].filter(Boolean);
-
-        if (!origin) return callback(null, true);
-
-        if (allowedOrigins.includes(origin)) {
-            return callback(null, true);
-        } else {
-            const msg = `The CORS policy for this site does not allow access from Origin ${origin}. You should ensure your FRONTEND_URL environment variable is set correctly on Render or add ${origin} to allowed list.`;
-            console.error('CORS ERROR: Blocking origin -', origin, msg);
-            return callback(new Error(msg), false);
-        }
-    },
+    origin: [
+        process.env.FRONTEND_URL,              // From environment variable
+        'https://itayash22.github.io',       // Explicitly allowed for GitHub Pages
+        'http://localhost:8080',             // Local development
+        'http://127.0.0.1:8080'              // Local development
+    ].filter(Boolean), // Filter out any empty/undefined values from env var
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-key'],
-    preflightContinue: false,
-    optionsSuccessStatus: 204
+    optionsSuccessStatus: 204 // Standard status for successful OPTIONS request
 }));
+
+// Removed the custom OPTIONS handling middleware block, as `express-cors` handles it.
 
 
 app.use(express.json());
@@ -410,7 +397,9 @@ app.post('/api/generate-final-tattoo',
                 error.message.includes('No images were generated across all attempts') ||
                 error.message.includes('Tattoo design has a complex or non-uniform background') ||
                 error.message.includes('Failed to sample tattoo design pixels for background detection') ||
-                error.message.includes('Invalid pixel data obtained for background detection')) {
+                error.message.includes('Invalid pixel data obtained for background detection') ||
+                error.message.includes('Failed to crop skin image for processing') || // Added new error
+                error.message.includes('Failed to crop mask image for processing')) { // Added new error
                 return res.status(400).json({ error: `Image processing error: ${error.message}` });
             }
             if (error.message.includes('Flux API generation error') ||

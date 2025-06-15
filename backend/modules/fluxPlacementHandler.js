@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.32_FINAL_REAMBLE_FEATHERING'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.32_FLUX_PERFORMANCE_SQUEEZE'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -14,9 +14,6 @@ const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generate
 
 // CONSTANT: Padding around the mask bounding box for the area sent to Flux (in pixels)
 const CROP_PADDING = 20; // Reduced from 100px. Test with a very small padding.
-
-// CONSTANT: Feathering radius for the reassembly mask (in pixels)
-const FEATHER_RADIUS = 25; // Controls how soft the edges are during final reassembly
 
 // HELPER FUNCTION: To find the bounding box of the white area in a raw grayscale mask buffer
 async function getMaskBoundingBox(maskBuffer, width, height) {
@@ -335,7 +332,7 @@ const fluxPlacementHandler = {
 
         // 4. Make multiple Flux API calls with the compositedCroppedImageBuffer
         const generatedImageUrls = [];
-        const basePrompt = `Make the tattoo look naturally placed on the skin, blend seamlessly, adjust lighting and shadows for realism. Realistic photo, professional tattoo photography, high detail. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
+        const basePrompt = `Make the tattoo look naturally placed and deeply integrated on the skin, blend seamlessly with existing texture and contours, adjust realistic lighting and subtle shadows for perfect realism. High-resolution photo, professional studio tattoo photography, intricate detail, no visible edges. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`; // ENHANCED PROMPT
 
         console.log(`Making ${numVariations} calls to Flux API...`);
 
@@ -348,8 +345,8 @@ const fluxPlacementHandler = {
                 mask_image: '', // Flux processes the cropped image
                 n: 1,
                 output_format: 'jpeg',
-                fidelity: 0.5,
-                guidance_scale: 8.0,
+                fidelity: 0.45, // Adjusted fidelity for more blending
+                guidance_scale: 8.5, // Adjusted guidance_scale
                 seed: currentSeed
             };
 
@@ -427,11 +424,10 @@ const fluxPlacementHandler = {
                         // --- FINAL REASSEMBLY STEP: Paste Flux result back onto original full skin image ---
                         let finalResultBuffer;
                         try {
-                            // First, get metadata of the image from Flux
+                            // Get metadata of the image from Flux to confirm its dimensions
                             const fluxImageMetadata = await sharp(imageBuffer).metadata();
 
                             // Ensure the imageBuffer from Flux is precisely the cropArea's size for reassembly
-                            // We need to check if dimensions match before resizing, if not, resize.
                             let fluxProcessedResizedForReassembly = imageBuffer; // Start with the downloaded buffer
                             if (fluxImageMetadata.width !== cropArea.width || fluxImageMetadata.height !== cropArea.height) {
                                 console.warn(`Flux image dimensions (${fluxImageMetadata.width}x${fluxImageMetadata.height}) do not exactly match cropArea (${cropArea.width}x${cropArea.height}). Resizing for reassembly.`);
@@ -444,14 +440,14 @@ const fluxPlacementHandler = {
                             } else {
                                 console.log(`Flux image dimensions match cropArea: ${cropArea.width}x${cropArea.height}. No resize needed for reassembly.`);
                             }
-
+                            
                             finalResultBuffer = await sharp(skinImageBuffer)
                                 .composite([
                                     {
                                         input: fluxProcessedResizedForReassembly, // Use the (potentially resized) Flux output
-                                        left: cropArea.left,
-                                        top: cropArea.top,
-                                        blend: 'over',
+                                        left: cropArea.left, // Position it at the original crop area's left
+                                        top: cropArea.top,   // Position it at the original crop area's top
+                                        blend: 'over',       // Standard blend mode
                                     }
                                 ])
                                 .jpeg({ quality: 90 })

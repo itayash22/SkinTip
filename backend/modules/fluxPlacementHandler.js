@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.35_FURTHER_REFINEMENT'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.36_LESS_SUBTLE_REFINEMENT'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -16,7 +16,7 @@ const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generate
 const CROP_PADDING = 20; // Reduced from 100px. Test with a very small padding.
 
 // CONSTANT: Feathering radius for the reassembly mask (in pixels)
-const REASSEMBLY_FEATHER_RADIUS = 20; // Increased feather radius for softer edges
+const REASSEMBLY_FEATHER_RADIUS = 18; // Slightly reduced feather radius for more defined edges
 
 // HELPER FUNCTION: To find the bounding box of the white area in a raw grayscale mask buffer
 async function getMaskBoundingBox(maskBuffer, width, height) {
@@ -335,7 +335,7 @@ const fluxPlacementHandler = {
 
         // 4. Make multiple Flux API calls with the compositedCroppedImageBuffer
         const generatedImageUrls = [];
-        const basePrompt = `Make the tattoo look like it is a natural part of the skin, deeply integrated with the skin's texture, pores, and subtle imperfections. Blend the edges seamlessly, ensuring no visible lines or color discrepancies. Carefully adjust the lighting and cast realistic, soft shadows that match the existing skin. High-resolution photo, professional tattoo artistry, ultra-detailed skin integration, no artificial blending artifacts. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
+        const basePrompt = `Integrate the tattoo design onto the skin with a realistic and intentional blending effect. The tattoo's edges should appear natural against the skin, with a slight diffusion that incorporates the skin's texture. Adjust the lighting to realistically interact with both the tattoo and the skin's surface, creating believable highlights and shadows. Aim for a high-resolution result that looks like a professionally applied tattoo, where the design and skin convincingly coexist. High-quality photo, realistic tattoo integration, defined yet natural edges, convincing lighting and skin interaction. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
 
         console.log(`Making ${numVariations} calls to Flux API...`);
 
@@ -348,8 +348,8 @@ const fluxPlacementHandler = {
                 mask_image: '', // Flux processes the cropped image
                 n: 1,
                 output_format: 'jpeg',
-                fidelity: 0.48, // Slightly increased fidelity
-                guidance_scale: 9.0, // Increased guidance scale
+                fidelity: 0.48,
+                guidance_scale: 9.5, // Increased guidance scale
                 seed: currentSeed
             };
 

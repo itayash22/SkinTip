@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-14_V1.24_SIMPLIFIED_BG_ALPHA_HANDLING'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.25_CROP_AND_REAMBLE_FOR_FLUX'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -11,6 +11,9 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY; // Use the service role key for backend access
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generated-tattoos'; // Configure this bucket in Render
+
+// CONSTANT: Padding around the mask bounding box for the area sent to Flux (in pixels)
+const CROP_PADDING = 100; // Increase this for more context, decrease for smaller payload.
 
 // HELPER FUNCTION: To find the bounding box of the white area in a raw grayscale mask buffer
 async function getMaskBoundingBox(maskBuffer, width, height) {
@@ -35,7 +38,9 @@ async function getMaskBoundingBox(maskBuffer, width, height) {
         return { minX: 0, minY: 0, maxX: 0, maxY: 0, width: 0, height: 0, isEmpty: true };
     }
 
-    const padding = 0; // Keeping padding at 0 for now for exact fit
+    // Add some optional padding to the bounding box for the mask itself, if desired.
+    // Keeping padding at 0 for now as the crop_area handles expansion.
+    const padding = 0;
     minX = Math.max(0, minX - padding);
     minY = Math.max(0, minY - padding);
     maxX = Math.min(width, maxX + padding);
@@ -186,7 +191,7 @@ const fluxPlacementHandler = {
         const skinMetadata = await sharp(skinImageBuffer).metadata();
         const skinWidth = skinMetadata.width;
         const skinHeight = skinMetadata.height;
-        console.log(`DEBUG: Skin Image Dims: ${skinWidth}x${skinHeight}`);
+        console.log(`DEBUG: Full Skin Image Dims: ${skinWidth}x${skinHeight}`);
 
         // --- Step 2.1: Determine the bounding box of the drawn mask area ---
         const maskBoundingBox = await getMaskBoundingBox(maskBuffer, maskMetadata.width, maskMetadata.height);
@@ -195,7 +200,22 @@ const fluxPlacementHandler = {
         }
         console.log('DEBUG: Calculated Mask Bounding Box:', maskBoundingBox);
 
-        // --- Step 2.2: Simplified background transparency handling ---
+        // --- NEW STEP: Define the cropped area to send to Flux ---
+        // Expand the mask bounding box by CROP_PADDING for context
+        const cropArea = {
+            left: Math.max(0, maskBoundingBox.minX - CROP_PADDING),
+            top: Math.max(0, maskBoundingBox.minY - CROP_PADDING),
+            width: Math.min(skinWidth - Math.max(0, maskBoundingBox.minX - CROP_PADDING), maskBoundingBox.width + 2 * CROP_PADDING),
+            height: Math.min(skinHeight - Math.max(0, maskBoundingBox.minY - CROP_PADDING), maskBoundingBox.height + 2 * CROP_PADDING),
+        };
+
+        // Recalculate width/height to be exact based on left/top and max dimensions
+        cropArea.width = Math.min(skinWidth - cropArea.left, cropArea.width);
+        cropArea.height = Math.min(skinHeight - cropArea.top, cropArea.height);
+
+        console.log('DEBUG: Cropping area for Flux API:', cropArea);
+
+        // --- Step 2.2: Simplify background transparency handling (for the tattoo) ---
         // This heuristic ensures the tattoo design has an alpha channel.
         // It will NOT attempt to automatically remove solid backgrounds (like white or black squares)
         // because previous complex heuristics led to unintended cropping.
@@ -208,7 +228,6 @@ const fluxPlacementHandler = {
             // we simply ensure it has an alpha channel, but we don't try to key out a background color.
             if (tattooMeta.format === 'jpeg' || (tattooMeta.format === 'png' && tattooMeta.channels < 4)) {
                 console.warn('INFO: Tattoo design image does not have an explicit alpha channel or is JPEG. Ensuring alpha but skipping complex background removal heuristic.');
-                // Simply ensure an alpha channel is present. This will not make an opaque background transparent.
                 tattooDesignWithAlphaBuffer = await sharp(tattooDesignBuffer)
                     .ensureAlpha() 
                     .toBuffer();
@@ -221,9 +240,27 @@ const fluxPlacementHandler = {
             console.error('ERROR: Failed to ensure alpha channel for tattoo design. Proceeding with original buffer.', alphaProcessError.message);
             tattooDesignWithAlphaBuffer = tattooDesignBuffer; // Fallback if error occurs
         }
-        // --- END Step 2.2 ---
 
-        // --- Step 2.3: Resize the tattoo design to fit the mask's bounding box and prepare for placement ---
+        // --- Step 2.3: Prepare images for local composite (all cropped to cropArea) ---
+        // Crop the skin image to the defined cropArea
+        const croppedSkinBuffer = await sharp(skinImageBuffer)
+            .extract({ left: cropArea.left, top: cropArea.top, width: cropArea.width, height: cropArea.height })
+            .toBuffer();
+        console.log(`Cropped skin image to ${cropArea.width}x${cropArea.height}.`);
+
+        // Crop the mask to the defined cropArea
+        const croppedMaskBuffer = await sharp(maskBuffer)
+            .extract({ left: cropArea.left, top: cropArea.top, width: cropArea.width, height: cropArea.height })
+            .toBuffer();
+        console.log(`Cropped mask to ${cropArea.width}x${cropArea.height}.`);
+
+        // Recalculate tattoo position relative to the cropped area's top-left
+        const tattooRelativeLeft = maskBoundingBox.minX - cropArea.left;
+        const tattooRelativeTop = maskBoundingBox.minY - cropArea.top;
+        console.log(`Tattoo positioned relatively at (${tattooRelativeLeft}, ${tattooRelativeTop}) within cropped area.`);
+
+
+        // Resize the tattoo design to fit the mask's bounding box and prepare for placement (within cropped area)
         let tattooForPlacement;
         try {
             tattooForPlacement = await sharp(tattooDesignWithAlphaBuffer)
@@ -238,62 +275,62 @@ const fluxPlacementHandler = {
             throw new Error('Failed to resize tattoo design for placement within mask area.');
         }
 
-        // 3. **Manual Composition with Sharp (Hybrid Approach Step 1)**
-        let compositedImageBuffer;
+        // 3. **Manual Composition with Sharp (Hybrid Approach Step 1) - ONLY on the cropped area**
+        let compositedCroppedImageBuffer;
         try {
-            compositedImageBuffer = await sharp(skinImageBuffer)
+            compositedCroppedImageBuffer = await sharp(croppedSkinBuffer)
                 .composite([
                     {
                         input: tattooForPlacement,
                         blend: 'over',
                         tile: false,
-                        left: maskBoundingBox.minX,
-                        top: maskBoundingBox.minY,
-                        mask: maskBuffer 
+                        left: tattooRelativeLeft, // Position relative to cropped area
+                        top: tattooRelativeTop,
+                        mask: croppedMaskBuffer // Apply the cropped mask
                     }
                 ])
                 .jpeg({ quality: 90 })
                 .toBuffer();
-            console.log('Tattoo manually composited onto skin image with correct sizing, positioning, and clipping.');
+            console.log('Tattoo manually composited onto cropped skin image.');
 
-            // --- DEBUGGING STEP: UPLOAD AND LOG INTERMEDIATE IMAGE ---
+            // --- DEBUGGING STEP: UPLOAD AND LOG INTERMEDIATE CROPPED IMAGE ---
             try {
-                const debugFileName = `debug_sharp_composite_${uuidv4()}.jpeg`;
+                const debugFileName = `debug_sharp_cropped_composite_${uuidv4()}.jpeg`;
                 const debugPublicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(
-                    compositedImageBuffer,
+                    compositedCroppedImageBuffer,
                     debugFileName,
                     userId,
                     'debug'
                 );
-                console.log(`--- DEBUG: SHARP COMPOSITED IMAGE URL: ${debugPublicUrl} ---`);
-                console.log('^ Please check this URL in your browser to verify Sharp\'s output.');
+                console.log(`--- DEBUG: SHARP CROPPED COMPOSITED IMAGE URL (SENT TO FLUX): ${debugPublicUrl} ---`);
+                console.log('^ Please check this URL to verify the exact image Flux receives.');
             } catch (debugUploadError) {
-                console.error('DEBUG ERROR: Failed to upload intermediate Sharp composite image:', debugUploadError);
+                console.error('DEBUG ERROR: Failed to upload intermediate cropped image:', debugUploadError);
             }
             // --- END DEBUGGING STEP ---
 
         } catch (error) {
-            console.error('Error during manual image composition (Phase 1) with positioning:', error);
-            throw new Error(`Failed to composite tattoo onto skin with correct positioning: ${error.message}`);
+            console.error('Error during manual cropped image composition:', error);
+            throw new Error(`Failed to composite tattoo onto cropped skin: ${error.message}`);
         }
 
-        // 4. Prepare for multiple Flux API calls
+        // 4. Make multiple Flux API calls with the compositedCroppedImageBuffer
         const generatedImageUrls = [];
         const basePrompt = `Make the tattoo look naturally placed on the skin, blend seamlessly, adjust lighting and shadows for realism. Realistic photo, professional tattoo photography, high detail. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
 
         console.log(`Making ${numVariations} calls to Flux API...`);
 
         for (let i = 0; i < numVariations; i++) {
-            const currentSeed = Date.now() + i; // Vary seed for different results
+            const currentSeed = Date.now() + i;
 
             const fluxPayload = {
                 prompt: basePrompt,
-                input_image: compositedImageBuffer.toString('base64'),
-                mask_image: '',
-                n: 1, // Request 1 variation per call
+                input_image: compositedCroppedImageBuffer.toString('base64'), // Send the cropped composite
+                mask_image: '', // Flux processes the cropped image
+                n: 1,
                 output_format: 'jpeg',
-                fidelity: 0.5, // Adjusted fidelity for more blending
-                guidance_scale: 8.0, // Adjusted guidance_scale
+                fidelity: 0.5,
+                guidance_scale: 8.0,
                 seed: currentSeed
             };
 
@@ -368,7 +405,31 @@ const fluxPlacementHandler = {
                             continue;
                         }
 
-                        const watermarkedBuffer = await fluxPlacementHandler.applyWatermark(imageBuffer);
+                        // --- FINAL REASSEMBLY STEP: Paste Flux result back onto original full skin image ---
+                        let finalResultBuffer;
+                        try {
+                            // Start with the original full skin image
+                            finalResultBuffer = await sharp(skinImageBuffer)
+                                .composite([
+                                    {
+                                        input: imageBuffer, // The cropped, AI-processed image from Flux
+                                        left: cropArea.left, // Position it at the original crop area's left
+                                        top: cropArea.top,   // Position it at the original crop area's top
+                                        blend: 'over',       // Standard blend mode
+                                        // No mask here, as Flux already processed the blending within its output.
+                                        // If seams are visible, a soft feathering mask could be tried here,
+                                        // but it's much more complex.
+                                    }
+                                ])
+                                .jpeg({ quality: 90 })
+                                .toBuffer();
+                            console.log(`Flux-generated image reassembled onto full skin image.`);
+                        } catch (reassemblyError) {
+                            console.error(`ERROR: Failed to reassemble Flux image onto full skin: ${reassemblyError.message}. Using cropped Flux image for watermark/upload.`);
+                            finalResultBuffer = imageBuffer; // Fallback to just the cropped image if reassembly fails
+                        }
+                        
+                        const watermarkedBuffer = await fluxPlacementHandler.applyWatermark(finalResultBuffer);
                         const fileName = `tattoo-${uuidv4()}.jpeg`;
                         const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarkedBuffer, fileName, userId);
                         generatedImageUrls.push(publicUrl);
@@ -392,7 +453,7 @@ const fluxPlacementHandler = {
         if (generatedImageUrls.length === 0) {
             throw new Error('Flux API: No images were generated across all attempts. Please try again or with a different design.');
         }
-
+        
         return generatedImageUrls;
     }
 };

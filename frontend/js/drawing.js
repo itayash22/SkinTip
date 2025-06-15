@@ -15,7 +15,7 @@ const drawing = {
         drawing.canvas = document.getElementById('drawingCanvas');
         drawing.ctx = drawing.canvas.getContext('2d');
 
-        // Create hidden mask canvas for Flux API
+        // Create hidden mask canvas for Flux AI
         drawing.maskCanvas = document.createElement('canvas');
         drawing.maskCtx = drawing.maskCanvas.getContext('2d');
 
@@ -165,6 +165,9 @@ const drawing = {
         if (!drawing.isDrawing) return; // If drawing wasn't active, do nothing
         drawing.isDrawing = false;
 
+        // Get the continue button (Generate Tattoo on Skin)
+        const continueBtn = document.getElementById('continueBtn');
+
         // Check if path is closed and has enough points (min 10 points to avoid tiny clicks)
         if (drawing.currentPath.length > 10) {
             const first = drawing.currentPath[0];
@@ -178,7 +181,6 @@ const drawing = {
                 drawing.selectedArea = drawing.maskCanvas.toDataURL('image/png'); // Store the mask as Base64 for API
 
                 // Show continue button (now "Generate Tattoo on Skin")
-                const continueBtn = document.getElementById('continueBtn');
                 if (continueBtn) continueBtn.style.display = 'block';
             } else {
                 alert('Please close the shape by drawing near your starting point to define the tattoo area.');
@@ -186,8 +188,7 @@ const drawing = {
                 drawing.currentPath = [];
                 drawing.currentPathCoords = null;
                 drawing.selectedArea = null;
-                const continueBtn = document.getElementById('continueBtn');
-                if (continueBtn) continueBtn.style.display = 'none';
+                if (continueBtn) continueBtn.style.display = 'none'; // Hide if not valid
             }
         } else {
             alert('Please draw a larger and more defined area for your tattoo.');
@@ -195,8 +196,7 @@ const drawing = {
             drawing.currentPath = [];
             drawing.currentPathCoords = null;
             drawing.selectedArea = null;
-            const continueBtn = document.getElementById('continueBtn');
-            if (continueBtn) continueBtn.style.display = 'none';
+            if (continueBtn) continueBtn.style.display = 'none'; // Hide if not valid
         }
 
         drawing.redrawCanvas(); // Redraw to show the filled selected area or clear temporary path
@@ -297,7 +297,7 @@ const drawing = {
             drawing.maskCtx.fillRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
         }
 
-        // Hide the continue button (now "Generate Tattoo on Skin")
+        // Hide the continue button (now "Generate Tattoo on Skin") explicitly on clear
         const continueBtn = document.getElementById('continueBtn');
         if (continueBtn) continueBtn.style.display = 'none';
         

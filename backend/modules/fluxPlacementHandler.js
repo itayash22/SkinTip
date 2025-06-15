@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.26_SHARP_INPUT_DEBUG'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.27_SHARP_RAW_BUFFER_FIX'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -172,7 +172,7 @@ const fluxPlacementHandler = {
         // 2. Prepare Mask Buffer. Frontend mask is white for tattoo area, black elsewhere.
         const originalMaskBuffer = Buffer.from(maskBase64, 'base64');
         let maskBuffer;
-        let maskMetadata;
+        let maskMetadata; // This metadata is crucial for raw buffer interpretation
         try {
             maskMetadata = await sharp(originalMaskBuffer).metadata();
             maskBuffer = await sharp(originalMaskBuffer)
@@ -218,10 +218,6 @@ const fluxPlacementHandler = {
         console.log('DEBUG: Cropping area for Flux API:', cropArea);
 
         // --- Step 2.2: Simplified background transparency handling (for the tattoo) ---
-        // This heuristic ensures the tattoo design has an alpha channel.
-        // It will NOT attempt to automatically remove solid backgrounds (like white or black squares)
-        // because previous complex heuristics led to unintended cropping.
-        // For best results, users MUST upload PNGs with a truly transparent background.
         let tattooDesignWithAlphaBuffer = tattooDesignBuffer; // Start with the initial tattoo buffer (already PNG)
         try {
             const tattooMeta = await sharp(tattooDesignBuffer).metadata();
@@ -230,7 +226,6 @@ const fluxPlacementHandler = {
             // we simply ensure it has an alpha channel, but we don't try to key out a background color.
             if (tattooMeta.format === 'jpeg' || (tattooMeta.format === 'png' && tattooMeta.channels < 4)) {
                 console.warn('INFO: Tattoo design image does not have an explicit alpha channel or is JPEG. Ensuring alpha but skipping complex background removal heuristic.');
-                // Simply ensure an alpha channel is present. This will not make an opaque background transparent.
                 tattooDesignWithAlphaBuffer = await sharp(tattooDesignBuffer)
                     .ensureAlpha() 
                     .toBuffer();
@@ -260,7 +255,8 @@ const fluxPlacementHandler = {
         // Crop the mask to the defined cropArea
         let croppedMaskBuffer;
         try {
-            croppedMaskBuffer = await sharp(maskBuffer)
+            // FIX: When creating a sharp instance from a raw buffer (maskBuffer), its dimensions MUST be provided.
+            croppedMaskBuffer = await sharp(maskBuffer, { raw: maskMetadata }) // Pass the metadata for the raw buffer
                 .extract({ left: cropArea.left, top: cropArea.top, width: cropArea.width, height: cropArea.height })
                 .toBuffer();
             console.log(`Cropped mask to ${cropArea.width}x${cropArea.height}.`);

@@ -1,9 +1,9 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.30_FINAL_REAMBLE_FIX'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.31_IMPORT_SYNTAX_FIX'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
-import { createClient } = from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js'; // FIX: Removed '=' from import statement
 import { v4 as uuidv4 } from 'uuid';
 
 // Initialize Supabase Storage client
@@ -13,7 +13,6 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generated-tattoos'; // Configure this bucket in Render
 
 // CONSTANT: Padding around the mask bounding box for the area sent to Flux (in pixels)
-// REDUCED PADDING TO TEST FILTER BYPASS
 const CROP_PADDING = 20; // Reduced from 100px. Test with a very small padding.
 
 // HELPER FUNCTION: To find the bounding box of the white area in a raw grayscale mask buffer
@@ -177,7 +176,7 @@ const fluxPlacementHandler = {
         try {
             maskMetadata = await sharp(originalMaskBuffer).metadata();
             maskBuffer = await sharp(originalMaskBuffer)
-                .grayscale() // Ensure it's grayscale (1 
+                .grayscale() // Ensure it's grayscale (1 channel)
                 .raw()       // Get raw pixel data
                 .toBuffer();
             console.log(`Mask buffer converted to raw grayscale. Dims: ${maskMetadata.width}x${maskMetadata.height}, channels: 1.`);
@@ -428,10 +427,18 @@ const fluxPlacementHandler = {
                         let finalResultBuffer;
                         try {
                             // Start with the original full skin image buffer
+                            // Ensure the imageBuffer from Flux is precisely the cropArea's size for reassembly
+                            const fluxProcessedResizedForReassembly = await sharp(imageBuffer)
+                                .resize(cropArea.width, cropArea.height, {
+                                    fit: 'fill', // Force to fill the exact dimensions
+                                    kernel: sharp.kernel.lanczos3 // High quality resize
+                                })
+                                .toBuffer();
+
                             finalResultBuffer = await sharp(skinImageBuffer)
                                 .composite([
                                     {
-                                        input: imageBuffer, // The cropped, AI-processed image from Flux
+                                        input: fluxProcessedResizedForReassembly, // Use the resized Flux output
                                         left: cropArea.left, // Position it at the original crop area's left
                                         top: cropArea.top,   // Position it at the original crop area's top
                                         blend: 'over',       // Standard blend mode

@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.37_ULTRA_REFINEMENT'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-15_V1.38_HYPER_INTEGRATION'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -335,7 +335,7 @@ const fluxPlacementHandler = {
 
         // 4. Make multiple Flux API calls with the compositedCroppedImageBuffer
         const generatedImageUrls = [];
-        const basePrompt = `Deeply embed and assimilate the tattoo design *into* the skin, making it an organic, seamless part of the epidermal layer. Ensure perfect blending with the skin's texture, pores, and micro-details, with no discernible boundaries or foreign appearance. Realistically simulate how light and shadow fall upon the integrated tattoo and skin, achieving hyper-realistic highlights, contours, and soft, natural shadows. Ultra-high-resolution photograph, master-level tattoo artistry, impeccable skin fusion, absolute absence of harsh edges or artificial transitions. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
+        const basePrompt = `Achieve an ultra-realistic skin integration where the tattoo appears to exist *beneath* the skin's surface. Blend seamlessly with the skin's natural texture, observing and subtly influencing the appearance of pores and fine lines across the tattooed area. Simulate the way the skin's undertones and blood flow would naturally interact with the tattoo's ink, creating a believable subsurface effect. The lighting and shadows must be indistinguishable from those on the surrounding untouched skin, enhancing the three-dimensionality and the sense that the tattoo is an intrinsic part of the body. Hyper-detailed photograph, expert-level realism in tattoo application and skin integration, organic and natural appearance, no suggestion of a superficial application. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
 
         console.log(`Making ${numVariations} calls to Flux API...`);
 
@@ -348,8 +348,8 @@ const fluxPlacementHandler = {
                 mask_image: '', // Flux processes the cropped image
                 n: 1,
                 output_format: 'jpeg',
-                fidelity: 0.40, // Adjusted fidelity for more blending
-                guidance_scale: 10.0, // Adjusted guidance_scale
+                fidelity: 0.38, // Adjusted fidelity for even more blending
+                guidance_scale: 10.5, // Adjusted guidance_scale further
                 seed: currentSeed
             };
 

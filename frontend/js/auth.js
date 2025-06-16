@@ -41,6 +41,8 @@ const auth = {
         console.log('Auth init: Raw saved token:', savedToken);
         console.log('Auth init: Raw saved user:', savedUser);
 
+        const currentPage = window.location.pathname.split('/').pop();
+
         if (savedToken && savedUser) {
             STATE.token = savedToken;
             try {
@@ -54,12 +56,16 @@ const auth = {
                 auth.updateUIForAuth(false);
             }
         } else {
+            // Not logged in
             auth.updateUIForAuth(false); // Update UI for logged-out state
+            // If on the welcome page AND not logged in, explicitly hide the modal on load
+            if (currentPage === 'welcome.html' && auth.modal) {
+                auth.hideModal(); // Ensure it's hidden if it's the welcome page and user is not logged in
+            }
         }
 
         // --- Handle Redirection based on Auth Status ---
-        const currentPage = window.location.pathname.split('/').pop();
-
+        // This must come AFTER auth.updateUIForAuth because it relies on STATE.token to be set
         if (!STATE.token && currentPage === 'index.html') {
             // Not logged in and trying to access main app, redirect to welcome
             window.location.href = 'welcome.html';

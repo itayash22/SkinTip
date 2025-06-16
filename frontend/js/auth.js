@@ -12,7 +12,7 @@ const auth = {
     authSwitchLink: null,
     authError: null,
     logoutBtn: null,
-    userInfoSpan: null, // Ensure this is correctly referenced
+    userInfoSpan: null,
 
     isRegisterMode: false,
 
@@ -31,7 +31,7 @@ const auth = {
         
         // These elements are in index.html, but auth.js needs to manage them globally
         auth.logoutBtn = document.getElementById('logoutBtn');
-        auth.userInfoSpan = document.getElementById('userInfo'); // Make sure this reference is solid
+        auth.userInfoSpan = document.getElementById('userInfo');
 
         console.log('Auth init function started.');
 

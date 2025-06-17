@@ -608,7 +608,6 @@
 
             // Continue from Drawing to Design (NOW DIRECTLY GENERATES)
             continueBtn?.addEventListener('click', async () => { // Changed to async
-                // Combined logic from previous generateBtn here
                 // Ensure user is logged in
                 if (!STATE.user || !STATE.token) {
                     utils.showError('You must be logged in to generate tattoos.');
@@ -695,7 +694,8 @@
                 } catch (error) {
                     console.error('Generation error:', error);
                     utils.hideLoading();
-                    utils.showError(`Tattoo generation failed: ${error.message}`);
+                    // MODIFIED LINE: Pass the error message directly without prepending "Tattoo generation failed: "
+                    utils.showError(error.message); 
                 }
             });
 

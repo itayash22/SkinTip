@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-17_V1.46_OLD_METHOD_SOLE_STRICT'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-17_V1.47_STRICTLY_OLD_METHOD'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';

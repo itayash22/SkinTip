@@ -1,5 +1,5 @@
 // backend/server.js
-// This file was last updated on 2025-06-14 (EOD) to fix ES Module import errors.
+// This file was last updated on 2025-06-17 (after fixing Flux API error handling).
 
 import 'dotenv/config'; // Use 'dotenv/config' for top-level loading with ESM
 import express from 'express';
@@ -8,13 +8,13 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import { createClient } from '@supabase/supabase-js';
-import bcryptjs from 'bcryptjs'; // Corrected import for bcryptjs
+import bcryptjs from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import sizeOf from 'image-size'; // image-size default export might be different, but typically it's named 'imageSize' or used as a function
+import sizeOf from 'image-size';
 
 // Import our new modularized services
-import tokenService from './modules/tokenService.js'; // Added .js extension
-import fluxKontextHandler from './modules/fluxPlacementHandler.js'; // Added .js extension
+import tokenService from './modules/tokenService.js';
+import fluxKontextHandler from './modules/fluxPlacementHandler.js';
 
 // Function to generate a dynamic timestamp for deployment tracking
 const getDeploymentTimestamp = () => new Date().toISOString();
@@ -383,9 +383,10 @@ app.post('/api/generate-final-tattoo',
         } catch (error) {
             console.error('API Error in /api/generate-final-tattoo:', error);
 
-            if (error.message.includes('Flux API: Content Moderated')) {
+            // UPDATED: Check for the exact error message from fluxPlacementHandler
+            if (error.message.includes('rendering failed due to filter issues. please upload pics without using nudity or underwear and try again')) {
                 return res.status(403).json({
-                    error: error.message,
+                    error: error.message, // Send the exact user-friendly message
                 });
             }
 
@@ -408,13 +409,16 @@ app.post('/api/generate-final-tattoo',
                 error.message.includes('Drawn mask area is too small or empty') ||
                 error.message.includes('Failed to resize tattoo design for placement') ||
                 error.message.includes('No images were generated across all attempts') ||
-                error.message.includes('Tattoo design has a complex or non-uniform background') ||
-                error.message.includes('Failed to sample tattoo design pixels for background detection') ||
-                error.message.includes('Invalid pixel data obtained for background detection')) {
+                // Removed specific old error messages no longer thrown by fluxPlacementHandler
+                // error.message.includes('Tattoo design has a complex or non-uniform background') ||
+                // error.message.includes('Failed to sample tattoo design pixels for background detection') ||
+                // error.message.includes('Invalid pixel data obtained for background detection') ||
+                error.message.includes('Image generation timed out') // Added this explicit check for timeout
+                ) {
                 return res.status(400).json({ error: `Image processing error: ${error.message}` });
             }
             if (error.message.includes('Flux API generation error') ||
-                error.message.includes('Refinement timeout') ||
+                error.message.includes('Refinement timeout') || // Already covered by specific message, but keeping for broader Flux errors
                 error.message.includes('Mask inversion failed') ||
                 error.message.includes('Failed to upload image to storage')) {
                 return res.status(500).json({ error: `AI generation or storage failed: ${error.message}` });

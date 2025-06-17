@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-17_V1.47_STRICTLY_OLD_METHOD'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-17_V1.48_NO_FALLBACK'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -152,7 +152,7 @@ const fluxPlacementHandler = {
      * This version does NOT use conditional logic or fallback methods.
      */
     placeTattooOnSkin: async (skinImageBuffer, tattooDesignImageBase64, maskBase64, userPrompt, userId, numVariations, fluxApiKey) => {
-        console.log('Starting Flux tattoo placement process (OLD/SOLE Method - No Fallback)...'); // Log which method is used
+        console.log('Starting Flux tattoo placement process (SOLE Method - No Fallback)...'); // Log which method is used
 
         // 1. Convert tattoo design Base64 to Buffer.
         let tattooDesignBuffer;
@@ -298,6 +298,7 @@ const fluxPlacementHandler = {
                 );
             } catch (error) {
                 console.error(`Flux API call for variation ${i + 1} failed:`, error.response?.data || error.message);
+                // Immediately re-throw the error, no fallback.
                 throw new Error(`Flux API generation error: ${error.response?.data?.detail || error.message}`);
             }
 
@@ -325,8 +326,8 @@ const fluxPlacementHandler = {
                     const moderationReason = result.data.details && result.data.details['Moderation Reasons'] ?
                                              result.data.details['Moderation Reasons'].join(', ') : 'Unknown reason';
                     console.error(`Flux API Polling terminated for Task ${taskId}: Content Moderated. Reason: ${moderationReason}`);
-                    // STOP EXECUTION AND THROW SPECIFIC ERROR FOR FRONTEND
-                    throw new Error(`The upload was rejected due to 'intimate' area. Reason: ${moderationReason}`); // Specific error message
+                    // Specific error message for frontend display
+                    throw new Error("rendering failed due to filter issues. please upload pics without using nudity or underwear and try again");
                 } else if (result.data.status === 'Error') {
                     console.error(`Flux API Polling Error for Task ${taskId}:`, result.data);
                     throw new Error('Image refinement failed during polling: ' + JSON.stringify(result.data));
@@ -348,7 +349,7 @@ const fluxPlacementHandler = {
                         const finalResultBuffer = imageBuffer;
 
                         const watermarkedBuffer = await fluxPlacementHandler.applyWatermark(finalResultBuffer);
-                        const fileName = `tattoo-${uuidv4()}.jpeg`; // Corrected: uuid22v4 -> uuidv4
+                        const fileName = `tattoo-${uuidv4()}.jpeg`;
                         const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarkedBuffer, fileName, userId);
                         generatedImageUrls.push(publicUrl);
                         console.log(`Successfully generated and watermarked 1 image for variation ${i + 1}.`);
@@ -364,6 +365,7 @@ const fluxPlacementHandler = {
             }
             if (!currentImageReady) {
                 console.warn(`Refinement timeout for variation ${i + 1}: No image was generated within the time limit.`);
+                throw new Error('Image generation timed out. Please try again.'); // Explicit timeout error
             }
         } // End of for loop for multiple variations
 

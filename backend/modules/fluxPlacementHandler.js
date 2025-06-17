@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-17_V1.45_NO_FALLBACK_INTIMATE_REJECT_MSG'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-17_V1.46_OLD_METHOD_SOLE_STRICT'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -348,7 +348,7 @@ const fluxPlacementHandler = {
                         const finalResultBuffer = imageBuffer;
 
                         const watermarkedBuffer = await fluxPlacementHandler.applyWatermark(finalResultBuffer);
-                        const fileName = `tattoo-${uuid22v4()}.jpeg`; // Typo: uuid22v4 -> uuidv4
+                        const fileName = `tattoo-${uuidv4()}.jpeg`; // Corrected: uuid22v4 -> uuidv4
                         const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarkedBuffer, fileName, userId);
                         generatedImageUrls.push(publicUrl);
                         console.log(`Successfully generated and watermarked 1 image for variation ${i + 1}.`);

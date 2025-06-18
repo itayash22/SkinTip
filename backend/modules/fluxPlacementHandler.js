@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-18_V1.53_FIDELITY_ADJUST_FOR_SKIN_TONE'); // UPDATED VERSION LOG for fidelity adjustment
+console.log('FLUX_HANDLER_VERSION: 2025-06-18_V1.55_FIDELITY_INCREASE_PRESERVE_SKIN'); // UPDATED VERSION LOG for preserving original skin
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -219,10 +219,10 @@ const fluxPlacementHandler = {
         // This prompt explicitly tells Flux to use the reference_image within the masked area.
         const basePrompt = `Place the uploaded tattoo design from the reference image precisely within the masked area on the skin. Integrate it naturally into the skin, with realistic ink dispersion and subtle texture. Blend seamlessly and adjust lighting and shadows for realism. Realistic photo, professional tattoo photography, high detail, not a sticker. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
         
-        // --- FLUX PARAMETER ADJUSTMENT for blending on diverse skin tones ---
-        // Reduced fidelity slightly to give Flux more room to adapt the tattoo texture
-        // to varying skin tones and blend more naturally.
-        const FLUX_FIDELITY = 0.7; // Adjusted from 0.9
+        // --- FLUX PARAMETER ADJUSTMENT to PRESERVE ORIGINAL SKIN IMAGE ---
+        // Increased fidelity to make Flux adhere very closely to the original input_image (skin photo).
+        // This should prevent the original skin from being significantly altered ("arbitrary skin").
+        const FLUX_FIDELITY = 0.9; // Adjusted from 0.6
         const FLUX_GUIDANCE_SCALE = 10.0; // Keep high for prompt adherence
 
         for (let i = 0; i < numVariations; i++) {
@@ -230,9 +230,9 @@ const fluxPlacementHandler = {
 
             const fluxPayload = {
                 prompt: basePrompt,
-                input_image: skinImageBase64ForFlux, // ORIGINAL skin image
-                mask_image: processedMaskBase64,   // The mask drawn by the user
-                reference_image: tattooDesignBase64ForFlux, // The tattoo design itself
+                input_image: skinImageBase64ForFlux, // ORIGINAL skin image (S)
+                mask_image: processedMaskBase64,   // The mask (M)
+                reference_image: tattooDesignBase64ForFlux, // The tattoo design (T)
                 n: 1, // Request 1 variation per call
                 output_format: 'jpeg', // Final output is a realistic composite, typically JPEG
                 fidelity: FLUX_FIDELITY, // Use the adjusted fidelity

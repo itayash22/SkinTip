@@ -226,7 +226,7 @@
 
         /**
          * Resizes an image Data URL to a maximum width/height while maintaining aspect ratio.
-         * Returns a Promise that resolves with the new Data URL (PNG for tattoo designs, JPEG for others).
+         * Returns a Promise that resolves with the new Data URL.
          * @param {string} dataURL The input image data URL.
          * @param {number} maxWidth Max width for the resized image.
          * @param {number} maxHeight Max height for the resized image.
@@ -591,12 +591,12 @@
                 const reader = new FileReader();
                 reader.onload = async (e) => {
                     const originalDataURL = e.target.result;
-                    // Keep 'image/jpeg' for skin photo, as it's the background and doesn't need transparency.
-                    const resizedDataURL = await resizeImage(originalDataURL, 768, 768, 0.8, 'image/jpeg'); // MODIFIED CALL
+                    // Pass 'image/png' for skin photo as well for end-to-end PNG
+                    const resizedDataURL = await resizeImage(originalDataURL, 768, 768, 0.8, 'image/png'); // MODIFIED CALL
                     
                     const resizedFile = await (await fetch(resizedDataURL)).blob();
                     Object.defineProperty(resizedFile, 'name', { value: file.name });
-                    Object.defineProperty(resizedFile, 'type', { value: 'image/jpeg' }); // Force JPEG type for consistency
+                    Object.defineProperty(resizedFile, 'type', { value: 'image/png' }); // Force PNG type for consistency
 
                     STATE.currentImage = resizedFile;
 
@@ -732,7 +732,7 @@
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.href = url;
-                        a.download = `skintip_tattoo_${Date.now()}.jpeg`;
+                        a.download = `skintip_tattoo_${Date.now()}.jpeg`; // Keep as JPEG for download (smaller)
                         document.body.appendChild(a);
                         a.click();
                         document.body.removeChild(a);

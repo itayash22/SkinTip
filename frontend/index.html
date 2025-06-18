@@ -123,6 +123,10 @@
                 <div class="section-header">
                     <h2>Your Tattoo Designs</h2>
                     <p>Here are your AI-generated tattoo previews</p>
+                <div class="loading-animation" style="display: none;">
+                    <div class="spinner"></div>
+                    <p id="generationStatus">Generating...</p>
+                </div>
                 </div>
 
                 <div class="results-grid">
@@ -222,14 +226,15 @@
 
         /**
          * Resizes an image Data URL to a maximum width/height while maintaining aspect ratio.
-         * Returns a Promise that resolves with the new Data URL (JPEG).
+         * Returns a Promise that resolves with the new Data URL (PNG for tattoo designs, JPEG for others).
          * @param {string} dataURL The input image data URL.
          * @param {number} maxWidth Max width for the resized image.
          * @param {number} maxHeight Max height for the resized image.
          * @param {number} quality JPEG compression quality (0-1).
+         * @param {string} outputFormat Desired output format ('image/png' or 'image/jpeg').
          * @returns {Promise<string>} Promise resolving with the resized image Data URL.
          */
-        function resizeImage(dataURL, maxWidth, maxHeight, quality = 0.9) {
+        function resizeImage(dataURL, maxWidth, maxHeight, quality = 0.9, outputFormat = 'image/jpeg') { // Added outputFormat parameter
             return new Promise((resolve) => {
                 const img = new Image();
                 img.onload = () => {
@@ -255,7 +260,8 @@
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, width, height);
 
-                    resolve(canvas.toDataURL('image/jpeg', quality));
+                    // Use the specified outputFormat
+                    resolve(canvas.toDataURL(outputFormat, quality)); // MODIFIED LINE
                 };
                 img.src = dataURL;
             });
@@ -522,7 +528,8 @@
                 const reader = new FileReader();
                 reader.onload = async (e) => {
                     const originalDataURL = e.target.result;
-                    const resizedDataURL = await resizeImage(originalDataURL, 768, 768, 0.9);
+                    // Pass 'image/png' as outputFormat to preserve transparency for tattoo design
+                    const resizedDataURL = await resizeImage(originalDataURL, 768, 768, 0.9, 'image/png'); // MODIFIED CALL
                     STATE.uploadedTattooDesignBase64 = resizedDataURL;
 
                     tattooDesignUploadArea.style.display = 'none';
@@ -584,7 +591,8 @@
                 const reader = new FileReader();
                 reader.onload = async (e) => {
                     const originalDataURL = e.target.result;
-                    const resizedDataURL = await resizeImage(originalDataURL, 768, 768, 0.8);
+                    // Keep 'image/jpeg' for skin photo, as it's the background and doesn't need transparency.
+                    const resizedDataURL = await resizeImage(originalDataURL, 768, 768, 0.8, 'image/jpeg'); // MODIFIED CALL
                     
                     const resizedFile = await (await fetch(resizedDataURL)).blob();
                     Object.defineProperty(resizedFile, 'name', { value: file.name });
@@ -639,8 +647,8 @@
                     const formData = new FormData();
                     formData.append('skinImage', STATE.currentImage);
                     const tattooDesignBlob = await (await fetch(STATE.uploadedTattooDesignBase64)).blob();
-                    Object.defineProperty(tattooDesignBlob, 'name', { value: 'tattoo_design.jpeg' });
-                    Object.defineProperty(tattooDesignBlob, 'type', { value: 'image/jpeg' });
+                    Object.defineProperty(tattooDesignBlob, 'name', { value: 'tattoo_design.png' }); // Ensure PNG name for backend consistency
+                    Object.defineProperty(tattooDesignBlob, 'type', { value: 'image/png' }); // Force PNG type
                     formData.append('tattooDesignImage', tattooDesignBlob);
                     
                     let maskToSend = STATE.currentMask;

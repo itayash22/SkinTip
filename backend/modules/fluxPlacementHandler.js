@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-18_V1.49_PNG_COMPOSITE'); // UPDATED VERSION LOG for transparency
+console.log('FLUX_HANDLER_VERSION: 2025-06-18_V1.50_PROMPT_TEXTURE_ENHANCE'); // UPDATED VERSION LOG for prompt changes
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -276,7 +276,8 @@ const fluxPlacementHandler = {
         // 4. Prepare for multiple Flux API calls
         const generatedImageUrls = [];
         const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey };
-        const basePrompt = `Make the tattoo look naturally placed on the skin, blend seamlessly, adjust lighting and shadows for realism. Realistic photo, professional tattoo photography, high detail. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
+        // PROMPT MODIFICATION FOR BETTER TEXTURE
+        const basePrompt = `Make the tattoo look naturally integrated into the skin, with realistic ink dispersion and subtle texture. Blend seamlessly, adjust lighting and shadows for realism. Realistic photo, professional tattoo photography, high detail, not a sticker. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
         
         const FLUX_FIDELITY = 0.5;
         const FLUX_GUIDANCE_SCALE = 8.0;

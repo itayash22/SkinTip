@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-18_V1.50_PROMPT_TEXTURE_ENHANCE'); // UPDATED VERSION LOG for prompt changes
+console.log('FLUX_HANDLER_VERSION: 2025-06-18_V1.53_FIDELITY_ADJUST_FOR_SKIN_TONE'); // UPDATED VERSION LOG for fidelity adjustment
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -148,150 +148,94 @@ const fluxPlacementHandler = {
     },
 
     /**
-     * Main function to place a tattoo on skin, using the original, single method.
-     * This version does NOT use conditional logic or fallback methods.
+     * Main function to place a tattoo on skin using Flux's inpainting capabilities.
+     * This version sends the original skin image, the mask, and the tattoo design
+     * directly to Flux.
      */
     placeTattooOnSkin: async (skinImageBuffer, tattooDesignImageBase64, maskBase64, userPrompt, userId, numVariations, fluxApiKey) => {
-        console.log('Starting Flux tattoo placement process (SOLE Method - No Fallback)...'); // Log which method is used
+        console.log('Starting Flux tattoo placement process (Direct Mask and Reference Image to Flux)...');
 
-        // 1. Convert tattoo design Base64 to Buffer.
-        // It should already be PNG from frontend, but ensure Sharp handles it as PNG.
-        let tattooDesignBuffer;
-        try {
-            tattooDesignBuffer = Buffer.from(tattooDesignImageBase64, 'base64');
-            // Ensure PNG for alpha support if it somehow got converted to something else or was a WebP
-            tattooDesignBuffer = await sharp(tattooDesignBuffer).png().toBuffer();
-            console.log('Tattoo design image converted to PNG buffer.');
-        } catch (error) {
-            console.error('Error processing tattoo design image base64:', error);
-            throw new Error('Invalid tattoo design image data provided.');
-        }
+        // 1. Tattoo Design (Reference Image) - Ensure it's Base64 for Flux
+        // Frontend already sends it Base64, and should be PNG with transparency
+        let tattooDesignBase64ForFlux = tattooDesignImageBase64; // Use directly from input
 
-        // 2. Prepare Mask Buffer. Frontend mask is white for tattoo area, black elsewhere.
-        const originalMaskBuffer = Buffer.from(maskBase64, 'base64');
-        let maskBuffer;
-        let maskMetadata;
+        // 2. Prepare Mask for Flux - Ensure it's Base64 PNG for `mask_image`
+        // Frontend mask is white for tattoo area, black elsewhere. This is usually what inpainting masks expect.
+        let processedMaskBase64;
         try {
-            maskMetadata = await sharp(originalMaskBuffer).metadata();
-            maskBuffer = await sharp(originalMaskBuffer)
-                .grayscale() // Ensure it's grayscale (1 channel)
-                .raw()       // Get raw pixel data
+            const originalMaskBuffer = Buffer.from(maskBase64, 'base64');
+            const pngMaskBuffer = await sharp(originalMaskBuffer)
+                .greyscale() // Ensure black & white
+                .png()
                 .toBuffer();
-            console.log(`Mask buffer converted to raw grayscale. Dims: ${maskMetadata.width}x${maskMetadata.height}, channels: 1.`);
+            processedMaskBase64 = pngMaskBuffer.toString('base64');
+            console.log('Mask prepared as Base64 PNG for Flux API mask_image.');
         } catch (error) {
-            console.error('Error processing mask for Sharp composition:', error);
-            throw new Error(`Failed to prepare mask for composition: ${error.message}`);
+            console.error('Error processing mask for Flux API:', error);
+            throw new Error(`Failed to prepare mask for Flux API: ${error.message}`);
         }
 
-        // Get dimensions of the base skin image
+        // 3. Prepare Skin Image for Flux - Ensure it's Base64 for `input_image`
+        // Assuming skinImageBuffer is already a suitable format (e.g., JPEG or PNG)
+        const skinImageBase64ForFlux = skinImageBuffer.toString('base64');
+        console.log('Skin image prepared as Base64 for Flux API input_image.');
+
+        // Get dimensions of the base skin image (for validation, still useful)
         const skinMetadata = await sharp(skinImageBuffer).metadata();
         const skinWidth = skinMetadata.width;
         const skinHeight = skinMetadata.height;
         console.log(`DEBUG: Skin Image Dims: ${skinWidth}x${skinHeight}.`);
 
-        // --- Step 2.1: Determine the bounding box of the drawn mask area ---
-        const maskBoundingBox = await getMaskBoundingBox(maskBuffer, maskMetadata.width, maskMetadata.height);
+        // --- Step 2.1: Determine the bounding box of the drawn mask area (still for validation) ---
+        const maskBufferRaw = await sharp(Buffer.from(maskBase64, 'base64')).grayscale().raw().toBuffer();
+        const maskBoundingBox = await getMaskBoundingBox(maskBufferRaw, skinWidth, skinHeight);
         if (maskBoundingBox.isEmpty) {
             throw new Error('Drawn mask area is too small or empty. Please draw a visible area.');
         }
         console.log('DEBUG: Calculated Mask Bounding Box:', maskBoundingBox);
 
-        // --- Step 2.2: Ensure tattoo design has alpha channel for blending ---
-        let tattooDesignWithAlphaBuffer = tattooDesignBuffer;
+        // --- DEBUGGING STEP: UPLOAD AND LOG ORIGINAL SKIN AND MASK ---
         try {
-            const tattooMeta = await sharp(tattooDesignBuffer).metadata();
-            // If it's PNG but doesn't have an explicit alpha channel, add one.
-            // This is primarily defensive, as frontend should output PNG with alpha.
-            if (tattooMeta.format === 'png' && tattooMeta.channels < 4) {
-                 console.log('INFO: Tattoo design PNG does not have explicit alpha channel, adding one.');
-                 tattooDesignWithAlphaBuffer = await sharp(tattooDesignBuffer)
-                     .ensureAlpha()
-                     .toBuffer();
-            } else if (tattooMeta.format === 'jpeg') {
-                // This case should ideally not happen if frontend sends PNG for tattoo design.
-                console.warn('WARNING: Tattoo design image is JPEG. Transparency might be compromised.');
-                tattooDesignWithAlphaBuffer = await sharp(tattooDesignBuffer)
-                    .ensureAlpha()
-                    .toBuffer();
-            } else {
-                console.log('Tattoo design image already has an alpha channel.');
-            }
-        } catch (alphaProcessError) {
-            console.error('ERROR: Failed to ensure alpha channel for tattoo design. Proceeding with original buffer.', alphaProcessError.message);
-            tattooDesignWithAlphaBuffer = tattooDesignBuffer;
+            const debugSkinFileName = `debug_original_skin_${uuidv4()}.jpeg`;
+            const debugMaskFileName = `debug_mask_to_flux_${uuidv4()}.png`;
+            const debugOriginalSkinUrl = await fluxPlacementHandler.uploadToSupabaseStorage(
+                skinImageBuffer, debugSkinFileName, userId, 'debug');
+            const debugMaskUrl = await fluxPlacementHandler.uploadToSupabaseStorage(
+                Buffer.from(processedMaskBase64, 'base64'), debugMaskFileName, userId, 'debug');
+            console.log(`--- DEBUG: ORIGINAL SKIN IMAGE URL (SENT TO FLUX): ${debugOriginalSkinUrl} ---`);
+            console.log(`--- DEBUG: MASK IMAGE URL (SENT TO FLUX): ${debugMaskUrl} ---`);
+            console.log('^ Please verify these inputs to Flux are correct.');
+        } catch (debugUploadError) {
+            console.error('DEBUG ERROR: Failed to upload intermediate skin/mask images:', debugUploadError);
         }
+        // --- END DEBUGGING STEP ---
 
-        // --- Step 2.3: Resize the tattoo design to fit the mask's bounding box and prepare for placement ---
-        let tattooForPlacement;
-        try {
-            tattooForPlacement = await sharp(tattooDesignWithAlphaBuffer)
-                .resize(maskBoundingBox.width, maskBoundingBox.height, {
-                    fit: 'contain',
-                    background: { r: 0, g: 0, b: 0, alpha: 0 } // Ensures transparent padding if 'contain' doesn't fill
-                })
-                .toBuffer();
-            console.log(`Tattoo design resized specifically for mask bounding box: ${maskBoundingBox.width}x${maskBoundingBox.height}.`);
-        } catch (error) {
-            console.error('Error resizing tattoo design for placement:', error);
-            throw new Error('Failed to resize tattoo design for placement within mask area.');
-        }
-
-        // 3. **Manual Composition with Sharp (Full Image Composite)**
-        // The result of this composition, sent to Flux, should now be PNG
-        // to properly carry over the transparency of the tattoo area (if applicable).
-        let compositedImageBuffer;
-        try {
-            compositedImageBuffer = await sharp(skinImageBuffer)
-                .composite([
-                    {
-                        input: tattooForPlacement,
-                        blend: 'over', // 'over' blend mode uses alpha channel
-                        tile: false,
-                        left: maskBoundingBox.minX,
-                        top: maskBoundingBox.minY,
-                        mask: maskBuffer // Apply original full-size mask to control blending area
-                    }
-                ])
-                .png() // CHANGED: Output composite as PNG to preserve alpha channel for Flux input
-                .toBuffer();
-            console.log('Tattoo manually composited onto full skin image (PNG format for Flux input).');
-
-            // --- DEBUGGING STEP: UPLOAD AND LOG INTERMEDIATE IMAGE ---
-            try {
-                const debugFileName = `debug_sharp_full_composite_${uuidv4()}.png`; // Save as PNG for debug
-                const debugPublicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(
-                    compositedImageBuffer, debugFileName, userId, 'debug');
-                console.log(`--- DEBUG: SHARP FULL COMPOSITED IMAGE URL (SENT TO FLUX): ${debugPublicUrl} ---`);
-                console.log('^ Please check this URL in your browser to verify Sharp\'s PNG output.');
-            } catch (debugUploadError) {
-                console.error('DEBUG ERROR: Failed to upload intermediate Sharp composite image:', debugUploadError);
-            }
-            // --- END DEBUGGING STEP ---
-
-        } catch (error) {
-            console.error('Error during manual image composition with positioning:', error);
-            throw new Error(`Failed to composite tattoo onto skin with correct positioning: ${error.message}`);
-        }
 
         // 4. Prepare for multiple Flux API calls
         const generatedImageUrls = [];
         const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey };
-        // PROMPT MODIFICATION FOR BETTER TEXTURE
-        const basePrompt = `Make the tattoo look naturally integrated into the skin, with realistic ink dispersion and subtle texture. Blend seamlessly, adjust lighting and shadows for realism. Realistic photo, professional tattoo photography, high detail, not a sticker. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
         
-        const FLUX_FIDELITY = 0.5;
-        const FLUX_GUIDANCE_SCALE = 8.0;
+        // --- PROMPT MODIFICATION to guide Flux on placement and reference ---
+        // This prompt explicitly tells Flux to use the reference_image within the masked area.
+        const basePrompt = `Place the uploaded tattoo design from the reference image precisely within the masked area on the skin. Integrate it naturally into the skin, with realistic ink dispersion and subtle texture. Blend seamlessly and adjust lighting and shadows for realism. Realistic photo, professional tattoo photography, high detail, not a sticker. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
+        
+        // --- FLUX PARAMETER ADJUSTMENT for blending on diverse skin tones ---
+        // Reduced fidelity slightly to give Flux more room to adapt the tattoo texture
+        // to varying skin tones and blend more naturally.
+        const FLUX_FIDELITY = 0.7; // Adjusted from 0.9
+        const FLUX_GUIDANCE_SCALE = 10.0; // Keep high for prompt adherence
 
         for (let i = 0; i < numVariations; i++) {
             const currentSeed = Date.now() + i; // Vary seed for different results
 
             const fluxPayload = {
                 prompt: basePrompt,
-                input_image: compositedImageBuffer.toString('base64'),
-                mask_image: '', // Flux Kontext Pro with input_image and mask expects opaque mask typically
+                input_image: skinImageBase64ForFlux, // ORIGINAL skin image
+                mask_image: processedMaskBase64,   // The mask drawn by the user
+                reference_image: tattooDesignBase64ForFlux, // The tattoo design itself
                 n: 1, // Request 1 variation per call
-                output_format: 'jpeg', // Keep JPEG for final output as it's a realistic composite
-                fidelity: FLUX_FIDELITY,
+                output_format: 'jpeg', // Final output is a realistic composite, typically JPEG
+                fidelity: FLUX_FIDELITY, // Use the adjusted fidelity
                 guidance_scale: FLUX_GUIDANCE_SCALE,
                 seed: currentSeed
             };

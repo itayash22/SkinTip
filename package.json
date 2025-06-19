@@ -2,11 +2,11 @@
   "name": "skintip-backend",
   "version": "1.0.0",
   "description": "Backend service for SkinTip tattoo placement application.",
-  "main": "backend/server.js", <--- Adjusted main entry point
-  "type": "module",  <-- IMPORTANT: This enables ES module syntax (import/export)
+  "main": "backend/server.js",
+  "type": "module", 
   "scripts": {
-    "start": "node backend/server.js", <--- Adjusted start command
-    "dev": "nodemon backend/server.js"  <--- Adjusted dev command
+    "start": "node backend/server.js", 
+    "dev": "nodemon backend/server.js"  
   },
   "keywords": [
     "nodejs",

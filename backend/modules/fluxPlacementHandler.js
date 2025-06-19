@@ -19,7 +19,7 @@ async function getMaskBoundingBox(maskBuffer, width, height) {
 
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
-            // Ensure safe access to maskBuffer for readUInt8
+            // Ensure safe access to maskBuffer for readUInt8 (original maskBuffer from .raw() is a Node.js Buffer)
             const pixelValue = (maskBuffer && maskBuffer.length > (y * width + x)) ? maskBuffer.readUInt8(y * width + x) : 0;
             if (pixelValue > 0) {
                 foundWhite = true;
@@ -241,7 +241,10 @@ const fluxPlacementHandler = {
         // This is the V1.48 logic. Output composite as PNG.
         let compositedImageBuffer;
         try {
-            compositedImageBuffer = await sharp(skinImageBuffer)
+            // Ensure skinImageBuffer is also handled as PNG if it was not already
+            const skinImageForComposite = await sharp(skinImageBuffer).png().toBuffer(); // Ensure skin image is PNG for composite
+            
+            compositedImageBuffer = await sharp(skinImageForComposite) // Use PNG skin image
                 .composite([
                     {
                         input: tattooForPlacement,
@@ -373,7 +376,7 @@ const fluxPlacementHandler = {
                         generatedImageUrls.push(publicUrl);
                         console.log(`Successfully generated and watermarked 1 image for variation ${i + 1} (PNG).`);
                         currentImageReady = true;
-                        if (numVariations === 1) break;
+                        if (numVariations === 1) break; // Break if only 1 variation expected per task/poll cycle
                     } else {
                         console.warn(`Flux API for Task ${taskId} returned Ready status but no valid image URL found in "sample".`, result.data);
                         throw new Error('Flux API returned no images or malformed output.');
@@ -384,7 +387,7 @@ const fluxPlacementHandler = {
             }
             if (!currentImageReady) {
                 console.warn(`Refinement timeout for variation ${i + 1}: No image was generated within the time limit.`);
-                throw new Error('Image generation timed out. Please try again.');
+                throw new Error('Image generation timed out. Please try again.'); // Explicit timeout error
             }
         } // End of for loop for multiple variations
 

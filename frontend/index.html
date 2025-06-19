@@ -358,52 +358,6 @@
             window.displayArtists(allArtists); // Use window.displayArtists here
         };
 
-        window.displayArtists = function(artists) {
-            const artistsGrid = document.getElementById('artistsGrid');
-            if (artists.length === 0) {
-                artistsGrid.innerHTML = '<div class="empty-state"><p>No artists found matching your criteria</p></div>';
-                return;
-            }
-            artistsGrid.innerHTML = artists.map(artist => {
-                let portfolioImages = '';
-                if (Array.isArray(artist.portfolio)) {
-                    portfolioImages = artist.portfolio.map((img, index) =>
-                        `<img src="${img}" alt="${artist.name} work ${index + 1}"
-                             class="portfolio-image ${index === 0 ? 'active' : ''}"
-                             style="display: ${index === 0 ? 'block' : 'none'}">`
-                    ).join('');
-                } else {
-                    portfolioImages = `<img src="${artist.portfolio}" alt="${artist.name}" class="portfolio-image active" style="display: block">`;
-                }
-                const stylesHTML = artist.styles.map(style =>
-                    `<span class="style-tag">${style}</span>`
-                ).join('');
-                return `
-                    <div class="artist-card">
-                        <div class="portfolio-gallery">
-                            ${portfolioImages}
-                            <button class="gallery-prev" onclick="changePortfolioImage(this, -1)">‹</button>
-                            <button class="gallery-next" onclick="changePortfolioImage(this, 1)">›</button>
-                        </div>
-                        <div class="artist-info">
-                            <h3>${artist.name}</h3>
-                            <p class="artist-location">📍 ${artist.location}</p>
-                            <p class="artist-bio">${artist.bio}</p>
-                            <div class="artist-styles">
-                                ${stylesHTML}
-                            </div>
-                            <div class="artist-footer">
-                                <span class="artist-likes">❤️ ${artist.likes}</span>
-                                <button class="btn btn-primary btn-sm" onclick="contactArtist('${artist.whatsapp}', '${artist.name}')">
-                                    Contact via WhatsApp
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        };
-
         window.filterArtists = function() {
             const locationFilter = document.getElementById('locationFilter');
             const styleFilter = document.getElementById('styleFilter');
@@ -440,7 +394,7 @@
             const continueToSkinPhotoBtn = document.getElementById('continueToSkinPhotoBtn');
 
             const skinPhotoUploadSection = document.getElementById('skinPhotoUploadSection');
-            const skinUploadArea = document.getElementById('skinUploadArea');
+            const skinUploadArea = document = document.getElementById('skinUploadArea'); // Fix: Removed extra '=' here
             const fileInput = document.getElementById('fileInput');
             const imagePreview = document.getElementById('imagePreview');
             const previewImg = document.getElementById('previewImg');
@@ -732,7 +686,7 @@
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.href = url;
-                        a.download = `skintip_tattoo_${Date.now()}.jpeg`; // Keep as JPEG for download (smaller)
+                        a.download = `skintip_tattoo_${Date.now()}.png`; // CHANGED: Download as PNG
                         document.body.appendChild(a);
                         a.click();
                         document.body.removeChild(a);

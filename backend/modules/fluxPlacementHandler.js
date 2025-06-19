@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-19_V1.59_V148_BASE_PNG_OUTPUT'); // UPDATED VERSION LOG for PNG on V1.48 base
+console.log('FLUX_HANDLER_VERSION: 2025-06-19_V1.60_DEBUG_FLUX_POST_RESPONSE'); // UPDATED VERSION LOG for debugging initial Flux POST response
 
 import axios from 'axios';
 import sharp from 'sharp';

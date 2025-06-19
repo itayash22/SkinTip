@@ -1,6 +1,6 @@
 // backend/modules/tokenService.js
 
-const { createClient } = require('@supabase/supabase-js');
+import { createClient } from '@supabase/supabase-js'; // Changed from require to import
 
 // Initialize Supabase client (use your environment variables for security)
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -152,7 +152,22 @@ const tokenService = {
 
         console.log(`User ${userId} added ${amount} tokens. New balance: ${newBalance}`);
         return newBalance;
+    },
+
+    // New function to get user tokens (needed by /api/generate-final-tattoo)
+    getUserTokens: async (userId) => {
+        const { data: user, error } = await supabase
+            .from('users')
+            .select('tokens_remaining')
+            .eq('id', userId)
+            .single();
+
+        if (error || !user) {
+            console.error('Error fetching user tokens:', error);
+            throw new Error('Failed to retrieve user token balance.');
+        }
+        return user.tokens_remaining;
     }
 };
 
-module.exports = tokenService;
+export default tokenService; // Changed from module.exports to export default

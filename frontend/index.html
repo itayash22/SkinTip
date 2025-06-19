@@ -394,7 +394,7 @@
             const continueToSkinPhotoBtn = document.getElementById('continueToSkinPhotoBtn');
 
             const skinPhotoUploadSection = document.getElementById('skinPhotoUploadSection');
-            const skinUploadArea = document.getElementById('skinUploadArea'); // Fix: Removed extra '=' here
+            const skinUploadArea = document.getElementById('skinUploadArea');
             const fileInput = document.getElementById('fileInput');
             const imagePreview = document.getElementById('imagePreview');
             const previewImg = document.getElementById('previewImg');
@@ -437,7 +437,7 @@
                     drawing.clearCanvas();
                 }
                 STATE.uploadedTattooDesignBase64 = null;
-                STATE.currentImage = null;
+                STATE.currentImage = null; // This will now store the skin photo's base64, not a File object
                 STATE.currentMask = null;
                 STATE.generatedImages = [];
 
@@ -483,7 +483,7 @@
                 reader.onload = async (e) => {
                     const originalDataURL = e.target.result;
                     // Pass 'image/png' as outputFormat to preserve transparency for tattoo design
-                    const resizedDataURL = await resizeImage(originalDataURL, 768, 768, 0.9, 'image/png'); // MODIFIED CALL
+                    const resizedDataURL = await resizeImage(originalDataURL, 768, 768, 0.9, 'image/png');
                     STATE.uploadedTattooDesignBase64 = resizedDataURL;
 
                     tattooDesignUploadArea.style.display = 'none';
@@ -522,7 +522,7 @@
                 skinUploadArea.style.display = 'flex';
                 imagePreview.style.display = 'none';
                 fileInput.value = '';
-                STATE.currentImage = null;
+                STATE.currentImage = null; // Clear base64 for skin photo
                 if (window.drawing && drawing.clearCanvas) {
                     drawing.clearCanvas();
                 }
@@ -546,13 +546,10 @@
                 reader.onload = async (e) => {
                     const originalDataURL = e.target.result;
                     // Pass 'image/png' for skin photo as well for end-to-end PNG
-                    const resizedDataURL = await resizeImage(originalDataURL, 768, 768, 0.8, 'image/png'); // MODIFIED CALL
+                    const resizedDataURL = await resizeImage(originalDataURL, 768, 768, 0.8, 'image/png');
                     
-                    const resizedFile = await (await fetch(resizedDataURL)).blob();
-                    Object.defineProperty(resizedFile, 'name', { value: file.name });
-                    Object.defineProperty(resizedFile, 'type', { value: 'image/png' }); // Force PNG type for consistency
-
-                    STATE.currentImage = resizedFile;
+                    // Store the resized base64 data URL directly
+                    STATE.currentImage = resizedDataURL;
 
                     skinUploadArea.style.display = 'none';
                     imagePreview.style.display = 'block';
@@ -589,75 +586,103 @@
                     utils.showError('Please upload your skin photo first.');
                     return;
                 }
-                if (!window.drawing || !drawing.selectedArea) { // Check drawing module and selected area
+                if (!window.drawing || !drawing.getMaskDataURL()) { // Check drawing module and selected area
                     utils.showError('Please mark the tattoo area on your photo before generating.');
                     return;
                 }
-                STATE.currentMask = drawing.selectedArea; // Ensure mask is set
+                STATE.currentMask = drawing.getMaskDataURL(); // Ensure mask is set as base64 URL
 
                 utils.showLoading('Generating your tattoo designs...');
 
                 try {
-                    const formData = new FormData();
-                    formData.append('skinImage', STATE.currentImage);
-                    const tattooDesignBlob = await (await fetch(STATE.uploadedTattooDesignBase64)).blob();
-                    Object.defineProperty(tattooDesignBlob, 'name', { value: 'tattoo_design.png' }); // Ensure PNG name for backend consistency
-                    Object.defineProperty(tattooDesignBlob, 'type', { value: 'image/png' }); // Force PNG type
-                    formData.append('tattooDesignImage', tattooDesignBlob);
-                    
-                    let maskToSend = STATE.currentMask;
-                    if (maskToSend && maskToSend.startsWith('data:')) {
-                        maskToSend = maskToSend.split(',')[1];
-                    }
-                    formData.append('mask', maskToSend);
-                    formData.append('prompt', '');
+                    // --- Constructing JSON body with base64 strings ---
+                    const requestBody = {
+                        tattooDesignImageBase64: STATE.uploadedTattooDesignBase64.split(',')[1], // Send only base64 data
+                        skinPhotoBase64: STATE.currentImage.split(',')[1], // Send only base64 data
+                        maskDataBase64: STATE.currentMask.split(',')[1] // Send only base64 data
+                        // prompt: '' // Your backend doesn't seem to use prompt for this endpoint anymore
+                    };
 
-                    const response = await fetch(`${CONFIG.API_URL}/generate-final-tattoo`, {
+                    console.log('--- Initiating generate-final-tattoo request ---');
+                    const apiUrl = `${CONFIG.API_URL}/generate-final-tattoo`;
+                    console.log('API URL:', apiUrl);
+                    console.log('Request Body Keys (sending as JSON):', Object.keys(requestBody));
+                    console.log('Tattoo Design Base64 Length (approx):', requestBody.tattooDesignImageBase64 ? requestBody.tattooDesignImageBase64.length : 'N/A');
+                    console.log('Skin Photo Base64 Length (approx):', requestBody.skinPhotoBase64 ? requestBody.skinPhotoBase64.length : 'N/A');
+                    console.log('Mask Base64 Length (approx):', requestBody.maskDataBase64 ? requestBody.maskDataBase64.length : 'N/A');
+                    console.log('Full JSON Payload Size (approx):', JSON.stringify(requestBody).length, 'bytes');
+
+
+                    const response = await fetch(apiUrl, {
                         method: 'POST',
                         headers: {
+                            'Content-Type': 'application/json', // Crucial for JSON payload
                             'Authorization': `Bearer ${STATE.token}`
                         },
-                        body: formData
+                        body: JSON.stringify(requestBody) // Send as JSON string
                     });
 
+                    console.log('Fetch response received. Status:', response.status);
+                    const responseText = await response.text(); // Read as text first for debugging
+                    console.log('Raw API Response Text:', responseText);
+
                     if (!response.ok) {
-                        const error = await response.json();
-                        throw new Error(error.error || 'Failed to generate tattoo');
+                        let errorData = { message: `HTTP error! Status: ${response.status}` };
+                        try {
+                            errorData = JSON.parse(responseText); // Try parsing as JSON
+                        } catch (parseError) {
+                            console.warn('Could not parse error response as JSON:', parseError);
+                            errorData.rawText = responseText; // Fallback to raw text if not JSON
+                        }
+                        console.error('API Error Response Data:', errorData);
+                        throw new Error(`Server responded with ${response.status}: ${errorData.error || errorData.message || responseText}`);
                     }
 
-                    const data = await response.json();
-                    console.log('=== API RESPONSE ===');
-                    console.log('Generated image URLs:', data.images);
+                    const data = JSON.parse(responseText); // If response.ok, parse as JSON
+                    console.log('Generation successful! Response data:', data);
 
-                    if (typeof data.tokens_remaining === 'number') {
-                        STATE.userTokens = data.tokens_remaining;
-                    }
-                    utils.updateTokenDisplay();
-
-                    utils.hideLoading();
-
-                    STATE.generatedImages = data.images;
+                    // Update UI with generated images
                     const resultsGrid = document.querySelector('.results-grid');
-                    resultsGrid.innerHTML = STATE.generatedImages.map((imageUrl, index) => `
-                        <div class="result-item">
-                            <img src="${imageUrl}" alt="Generated tattoo ${index + 1}">
-                            <div class="result-actions">
-                                <button class="btn btn-sm btn-outline" onclick="window.open('${imageUrl}', '_blank')">View Full Size</button>
-                            </div>
-                        </div>
-                    `).join('');
+                    resultsGrid.innerHTML = ''; // Clear previous images
+                    if (data.generatedImageUrls && Array.isArray(data.generatedImageUrls)) {
+                        STATE.generatedImages = data.generatedImageUrls;
+                        data.generatedImageUrls.forEach((url, index) => {
+                            const resultItem = document.createElement('div');
+                            resultItem.classList.add('result-item');
+                            resultItem.innerHTML = `
+                                <img src="${url}" alt="Generated tattoo ${index + 1}">
+                                <div class="result-actions">
+                                    <button class="btn btn-sm btn-outline" onclick="window.open('${url}', '_blank')">View Full Size</button>
+                                </div>
+                            `;
+                            resultsGrid.appendChild(resultItem);
+                        });
+                    } else {
+                        console.warn('No generatedImageUrls array found in API response:', data);
+                        utils.showError('Tattoo generation succeeded, but no images were returned. Please check backend logs.');
+                    }
+
+                    // Update token display
+                    if (data.tokensRemaining !== undefined) {
+                        STATE.userTokens = data.tokensRemaining;
+                        utils.updateTokenDisplay();
+                        console.log('Updated tokens remaining:', STATE.userTokens);
+                    } else {
+                        console.warn('Tokens remaining not received in response.');
+                    }
 
                     resultsSection.style.display = 'block';
                     artistsSection.style.display = 'block';
-                    resultsSection.scrollIntoView({behavior: 'smooth'}); // Scroll to results section
+                    resultsSection.scrollIntoView({behavior: 'smooth'});
                     socialShareDiv.style.display = 'block';
-                    window.loadDemoArtistsWithFilter(); // Call global loadDemoArtistsWithFilter
+                    window.loadDemoArtistsWithFilter();
                     
                 } catch (error) {
                     console.error('Generation error:', error);
                     utils.hideLoading();
-                    // MODIFIED LINE: Pass the error message directly without prepending "Tattoo generation failed: "
                     utils.showError(error.message); 
+                } finally {
+                    utils.hideLoading();
                 }
             });
 
@@ -712,8 +737,8 @@
             // The filter event listeners for artists:
             const locationFilter = document.getElementById('locationFilter');
             const styleFilter = document.getElementById('styleFilter');
-            locationFilter?.addEventListener('input', window.filterArtists); // Use window.filterArtists here
-            styleFilter?.addEventListener('change', window.filterArtists); // Use window.filterArtists here
+            locationFilter?.addEventListener('input', window.filterArtists);
+            styleFilter?.addEventListener('change', window.filterArtists);
 
             console.log('✅ SkinTip ready!');
         });

@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-19_V1.60_DEBUG_FLUX_POST_RESPONSE'); // UPDATED VERSION LOG for debugging initial Flux POST response
+console.log('FLUX_HANDLER_VERSION: 2025-06-19_V1.61_DEBUG_FLUX_POST_RESPONSE_EARLY_LOG'); // UPDATED VERSION LOG: Guaranteed log for initial Flux POST
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -310,13 +310,18 @@ const fluxPlacementHandler = {
                         timeout: 90000
                     }
                 );
+                // CRITICAL NEW LOG: Log the response data immediately here
+                console.log('DEBUG: Initial Flux POST response data:', JSON.stringify(fluxResponse.data, null, 2)); // <<-- NEWLY ADDED LOG
+
             } catch (error) {
                 console.error(`Flux API call for variation ${i + 1} failed:`, error.response?.data || error.message);
                 throw new Error(`Flux API generation error: ${error.response?.data?.detail || error.message}`);
             }
 
             const taskId = fluxResponse.data.id;
-            if (!taskId) { throw new Error('Flux API did not return a task ID.'); }
+            if (!taskId) { 
+                throw new Error('Flux API did not return a task ID or returned an invalid one.'); // Enhanced error message
+            }
 
             // Poll for results for THIS specific task ID
             let attempts = 0;

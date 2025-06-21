@@ -116,19 +116,31 @@ export const placeTattooOnSkin = async (skinImageBuffer, tattooDesignBuffer, mas
             throw new Error("FLUX_API_KEY environment variable is not set. Cannot proceed with Flux API call.");
         }
 
-        const initialFluxResponse = await axios.post(
-            'https://api.us1.bfl.ai/v1/generate_tattoo', // <-- Verify this exact endpoint for POST
-            {
-                input_image_url: imageUrl,
-            },
-            {
-                headers: {
-                    'x-key': process.env.FLUX_API_KEY,
-                    'Content-Type': 'application/json',
+        let initialFluxResponse;
+        try {
+            initialFluxResponse = await axios.post(
+                'https://api.us1.bfl.ai/v1/generate_tattoo', // <-- Verify this exact endpoint for POST
+                {
+                    input_image_url: imageUrl,
                 },
-                timeout: 30000,
+                {
+                    headers: {
+                        'x-key': process.env.FLUX_API_KEY,
+                        'Content-Type': 'application/json',
+                    },
+                    timeout: 30000,
+                }
+            );
+        } catch (error) {
+            if (axios.isAxiosError(error)) {
+                // Log more details about the Axios error response
+                const status = error.response?.status;
+                const responseData = error.response?.data;
+                console.error(`Axios error during initial Flux POST. Status: ${status}. Data: ${JSON.stringify(responseData)}. Error message: ${error.message}`);
+                throw new Error(`Flux API initial call failed: ${status} - ${responseData?.message || JSON.stringify(responseData) || error.message}`);
             }
-        );
+            throw error; // Re-throw non-Axios errors
+        }
 
         const fluxTaskId = initialFluxResponse.data.id;
         const pollingUrl = initialFluxResponse.data.polling_url;

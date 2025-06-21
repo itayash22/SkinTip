@@ -291,6 +291,29 @@ window.displayArtists = function(artists) {
   });
 };
 
+        <script>
+// Global function to render artist cards in the grid
+window.displayArtists = function(artists) {
+  const grid = document.getElementById('artistsGrid');
+  if (!grid) return;
+  grid.innerHTML = '';  // clear previous entries
+
+  artists.forEach(artist => {
+    const card = document.createElement('div');
+    card.className = 'artist-card';
+    card.innerHTML = `
+      <h3>${artist.name}</h3>
+      <p>${artist.location}</p>
+      <p>Styles: ${artist.styles.join(', ')}</p>
+      <button onclick="contactArtist('${artist.whatsapp}', '${artist.name}')">
+        Contact via WhatsApp
+      </button>
+    `;
+    grid.appendChild(card);
+  });
+};
+</script>
+
         let allArtists = []; // Declare in a scope accessible by filterArtists and displayArtists
 
         // Function definitions for contactArtist, changePortfolioImage, loadDemoArtistsWithFilter,

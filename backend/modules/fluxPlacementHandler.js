@@ -194,7 +194,7 @@ if (status !== 'IN_QUEUE' || !fluxTaskId || !pollingUrl || !responseUrl) {
                 const fluxStatus = pollResponse.data.status;
                 console.log(`Flux Poll Status (Attempt ${currentAttempt}): ${fluxStatus}`);
 
-                if (fluxStatus === 'completed') {
+                if (fluxStatus.toLowerCase() === 'completed') {
                     result = pollResponse.data.result;
                     console.log("Flux task completed successfully. Result:", result);
                     // You might need to add watermarking here if Flux doesn't do it

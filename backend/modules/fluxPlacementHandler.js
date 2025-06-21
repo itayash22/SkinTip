@@ -3,15 +3,14 @@
 import axios from 'axios';
 import sharp from 'sharp';
 import { createClient } from '@supabase/supabase-js';
-import { v4 as uuidv4 } from 'uuid'; // Using uuid package for robust UUID generation
+import { v4 as uuidv4 } from 'uuid';
 
-// Initialize Supabase Client
-// These environment variables MUST be set in your Render environment.
-// e.g., SUPABASE_URL=https://your-project-id.supabase.co
-// e.g., SUPABASE_ANON_KEY=your-anon-public-key
+// Initialize Supabase Client for backend operations
+// IMPORTANT: Use SUPABASE_SERVICE_KEY here for full RLS bypass on the backend.
+// This key should NEVER be exposed to the frontend.
 const supabaseClient = createClient(
     process.env.SUPABASE_URL,
-    process.env.SUPABASE_ANON_KEY
+    process.env.SUPABASE_SERVICE_KEY // Changed to SUPABASE_SERVICE_KEY
 );
 
 // Helper function for delays (to avoid busy waiting)
@@ -169,6 +168,7 @@ export const placeTattooOnSkin = async (skinImageBuffer, tattooDesignBuffer, mas
                 if (fluxStatus === 'completed') {
                     result = pollResponse.data.result;
                     console.log("Flux task completed successfully. Result:", result);
+                    // You might need to add watermarking here if Flux doesn't do it
                     return result;
                 } else if (fluxStatus === 'failed' || fluxStatus === 'error') {
                     console.error("Flux task failed or encountered an error:", pollResponse.data.details || 'No details provided.');

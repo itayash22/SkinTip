@@ -129,7 +129,7 @@ export const placeTattooOnSkin = async (skinImageBuffer, tattooDesignBuffer, mas
         try {
             // Updated Flux API endpoint based on Fal.ai documentation for Kontext models
             initialFluxResponse = await axios.post(
-                'https://api.fal.ai/models/fal-ai/flux-pro/kontext/generate', // <--- UPDATED ENDPOINT
+                'https://fal.ai/models/fal-ai/flux-pro/kontext/generate', // <--- UPDATED ENDPOINT
                 {
                     input_image_url: imageUrl,
                     // You might need to add a 'prompt' or 'instruction' here for Flux Kontext

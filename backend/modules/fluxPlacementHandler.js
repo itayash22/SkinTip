@@ -155,14 +155,19 @@ export const placeTattooOnSkin = async (skinImageBuffer, tattooDesignBuffer, mas
             throw error; // Re-throw non-Axios errors
         }
 
-        const fluxTaskId = initialFluxResponse.data.id;
-        const pollingUrl = initialFluxResponse.data.polling_url;
+        const {
+  request_id: fluxTaskId,
+  status_url: pollingUrl,
+  response_url: responseUrl,
+  status
+} = initialFluxResponse.data;
 
-        console.log("DEBUG: Initial Flux POST response data:", initialFluxResponse.data);
-
-        if (!fluxTaskId || !pollingUrl) {
-            throw new Error("Flux API did not return a valid task ID or polling URL in its initial response.");
-        }
+if (status !== 'IN_QUEUE' || !fluxTaskId || !pollingUrl || !responseUrl) {
+  console.error("Full initial response:", initialFluxResponse.data);
+  throw new Error(
+    "Flux queue API didn’t return the expected request_id/status_url/response_url."
+  );
+}
 
         // --- Step 4: Poll Flux API for results with retry logic and exact URL ---
         const MAX_POLLING_ATTEMPTS = 90; // Increased attempts

@@ -186,10 +186,8 @@ if (status !== 'IN_QUEUE' || !fluxTaskId || !pollingUrl || !responseUrl) {
 
             try {
                 const pollResponse = await axios.get(pollingUrl, {
-                    headers: {
-                        'x-key': process.env.FLUX_API_KEY,
-                    },
-                    timeout: 25000, // Increased polling timeout
+                headers: { 'Authorization': `Key ${process.env.FLUX_API_KEY}` },
+                timeout: 25000,
                 });
 
                 const fluxStatus = pollResponse.data.status;

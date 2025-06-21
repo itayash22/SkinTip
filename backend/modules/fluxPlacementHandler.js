@@ -61,6 +61,24 @@ export const placeTattooOnSkin = async (skinImageBuffer, tattooDesignBuffer, mas
             console.log("Tattoo design image already has an alpha channel.");
         }
 
+        let resizedTattooDesignBuffer;
+        try {
+            // Resize tattoo design specifically for the mask bounding box dimensions
+            resizedTattooDesignBuffer = await sharp(processedTattooDesignBuffer)
+                .resize(maskBoundingBox.width, maskBoundingBox.height, {
+                    fit: sharp.fit.inside,
+                    withoutEnlargement: true,
+                    kernel: sharp.kernel.lanczos3
+                })
+                .png()
+                .toBuffer();
+            console.log(`Tattoo design resized specifically for mask bounding box: ${maskBoundingBox.width}x${maskBoundingBox.height}.`);
+        } catch (sharpError) {
+            console.error("Error during Sharp tattoo design resizing:", sharpError);
+            throw new Error(`Failed to resize tattoo design image with Sharp: ${sharpError.message}`);
+        }
+
+
         // Manually composite tattoo onto the full skin image
         // NOTE: If Flux Kontext expects original image + mask + tattoo for true inpainting,
         // this compositing step might need to change, and the mask/tattoo sent separately.
@@ -134,7 +152,7 @@ export const placeTattooOnSkin = async (skinImageBuffer, tattooDesignBuffer, mas
                 console.error(`Axios error during initial Flux POST. Status: ${status}. Data: ${JSON.stringify(responseData)}. Error message: ${error.message}`);
                 throw new Error(`Flux API initial call failed: ${status} - ${responseData?.message || JSON.stringify(responseData) || error.message}`);
             }
-            throw error;
+            throw error; // Re-throw non-Axios errors
         }
 
         const fluxTaskId = initialFluxResponse.data.id;

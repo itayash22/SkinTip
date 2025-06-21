@@ -269,6 +269,28 @@
 
 
         // --- Artist Loading and Filtering Functions (MOVED TO GLOBAL SCOPE) ---
+        // Put this at top-level, before loadDemoArtistsWithFilter/filterArtists
+window.displayArtists = function(artists) {
+  const grid = document.getElementById('artistsGrid');
+  grid.innerHTML = ''; // clear previous
+
+  artists.forEach(artist => {
+    // You can flesh this out however you like; here’s a minimal card:
+    const card = document.createElement('div');
+    card.className = 'artist-card';
+
+    card.innerHTML = `
+      <h3>${artist.name}</h3>
+      <p>${artist.location}</p>
+      <p>Styles: ${artist.styles.join(', ')}</p>
+      <button onclick="contactArtist('${artist.whatsapp}', '${artist.name}')">
+        Contact via WhatsApp
+      </button>
+    `;
+    grid.appendChild(card);
+  });
+};
+
         let allArtists = []; // Declare in a scope accessible by filterArtists and displayArtists
 
         // Function definitions for contactArtist, changePortfolioImage, loadDemoArtistsWithFilter,

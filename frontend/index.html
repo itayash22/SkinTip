@@ -1,125 +1,193 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SkinTip - AI Tattoo Visualization</title>
-    <link rel="stylesheet" href="css/styles.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SkinTip - AI Tattoo Visualization</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <nav class="navbar">
-        <div class="container">
-            <div class="nav-brand">
-                <h1>SkinTip</h1>
-                <span class="tagline">Try b4 you Dye</span>
-            </div>
-            <div class="nav-menu">
-                <span id="userInfo" class="user-info"></span>
-                <button id="logoutBtn" class="btn btn-outline" style="display:none;">Logout</button>
-            </div>
-        </div>
-    </nav>
-
-    <main class="main-content">
-        <div class="container">
-            <!-- sections omitted for brevity -->
-        </div>
-    </main>
-
-    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
-        <div class="loading-content">
-            <div class="spinner"></div>
-            <p id="loadingText">Generating your tattoo designs...</p>
-        </div>
+  <nav class="navbar">
+    <div class="container">
+      <div class="nav-brand">
+        <h1>SkinTip</h1>
+        <span class="tagline">Try b4 you Dye</span>
+      </div>
+      <div class="nav-menu">
+        <span id="userInfo" class="user-info"></span>
+        <button id="logoutBtn" class="btn btn-outline" style="display:none;">Logout</button>
+      </div>
     </div>
-    
-    <footer class="footer">
-        <!-- footer content omitted -->
-    </footer>
+  </nav>
 
-    <!-- External scripts -->
-    <script>console.log('Loading config.js...');</script>
-    <script src="js/config.js"></script>
-    <script>console.log('Loading auth.js...');</script>
-    <script src="js/auth.js"></script>
-    <script>console.log('Loading drawing.js...');</script>
-    <script src="js/drawing.js"></script>
+  <main class="main-content">
+    <div class="container">
+      <!-- Tattoo Design Upload Section -->
+      <section id="tattooDesignUploadSection" class="section">
+        <div class="section-header">
+          <h2>Upload Your Tattoo Design</h2>
+          <p>Choose the tattoo image you want to visualize</p>
+        </div>
+        <div class="upload-area" id="tattooDesignUploadArea">
+          <input type="file" id="tattooDesignFileInput" accept="image/jpeg,image/png,image/webp" hidden>
+          <div class="upload-placeholder">
+            <!-- icon + text omitted for brevity -->
+            <p>Click to upload or drag and drop</p>
+            <span>PNG or JPG with transparent background preferred (max. 5MB)</span>
+          </div>
+        </div>
+        <div id="tattooDesignPreview" class="image-preview" style="display: none;">
+          <img id="tattooDesignPreviewImg" src="" alt="Tattoo Design Preview">
+          <button id="changeTattooDesignBtn" class="btn btn-outline btn-sm">Change Design</button>
+        </div>
+        <div class="external-idea-guidance">
+          <div class="prompt-tip-box">
+            <p class="prompt-tip-header">💡 Pro Tip for AI Generators:</p>
+            <p class="prompt-tip-content">
+              Ask for a sketch on a **transparent background**, **NOT** a tattoo on skin. <br>
+              For example: <br>
+              "legendary king snake sketch black and white. no background. .png file"
+            </p>
+          </div>
+        </div>
+        <button id="continueToSkinPhotoBtn" class="btn btn-primary" style="margin:2rem auto;display:none;">Continue to Skin Photo</button>
+      </section>
 
-    <!-- Main Inline Script -->
-    <script>
-        console.log('Main inline script starting...');
+      <!-- Skin Photo Upload Section -->
+      <section id="skinPhotoUploadSection" class="section" style="display: none;">
+        <div class="section-header">
+          <h2>Upload Your Photo</h2>
+          <p>Choose a photo where you want the tattoo</p>
+        </div>
+        <div class="upload-area" id="skinUploadArea">
+          <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp" hidden>
+          <div class="upload-placeholder">
+            <!-- icon + text omitted -->
+            <p>Click to upload or drag and drop</p>
+            <span>PNG, JPG or WebP (max. 5MB)</span>
+          </div>
+        </div>
+        <div id="imagePreview" class="image-preview" style="display: none;">
+          <img id="previewImg" src="" alt="Skin Photo Preview">
+          <button id="changeImageBtn" class="btn btn-outline btn-sm">Change Image</button>
+        </div>
+      </section>
 
-        // ... resizeImage function omitted for brevity ...
+      <!-- Drawing Section -->
+      <section id="drawingSection" class="section" style="display: none;">
+        <div class="section-header">
+          <h2>Mark Tattoo Area</h2>
+          <p>Draw on the area where you want your tattoo</p>
+        </div>
+        <div class="drawing-container">
+          <canvas id="drawingCanvas"></canvas>
+          <div class="drawing-tools">
+            <button id="clearCanvas" class="btn btn-outline btn-sm">Clear Selection</button>
+            <span style="font-size:0.875rem;color:#6b7280;">Draw around the area where you want your tattoo</span>
+          </div>
+        </div>
+        <button id="continueBtn" class="btn btn-primary" style="margin:2rem auto;display:block;">Generate Tattoo on Skin</button>
+      </section>
 
-        // --- Artist Loading and Filtering Functions (GLOBAL SCOPE) ---
-        window.displayArtists = function(artists) {
-            const grid = document.getElementById('artistsGrid');
-            if (!grid) return;
-            grid.innerHTML = '';  // clear previous entries
-            artists.forEach(artist => {
-                const card = document.createElement('div');
-                card.className = 'artist-card';
-                card.innerHTML = `
-                    <h3>${artist.name}</h3>
-                    <p>${artist.location}</p>
-                    <p>Styles: ${artist.styles.join(', ')}</p>
-                    <button onclick="contactArtist('${artist.whatsapp}', '${artist.name}')">
-                        Contact via WhatsApp
-                    </button>
-                `;
-                grid.appendChild(card);
-            });
+      <!-- Results & Artists Sections omitted for brevity -->
+      <!-- ... -->
+    </div>
+  </main>
+
+  <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+    <div class="loading-content">
+      <div class="spinner"></div>
+      <p id="loadingText">Generating your tattoo designs...</p>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <div class="container">
+      <!-- footer content -->
+    </div>
+  </footer>
+
+  <!-- External scripts -->
+  <script>console.log('Loading config.js...');</script>
+  <script src="js/config.js"></script>
+  <script>console.log('Loading auth.js...');</script>
+  <script src="js/auth.js"></script>
+  <script>console.log('Loading drawing.js...');</script>
+  <script src="js/drawing.js"></script>
+
+  <!-- Single inline script block -->
+  <script>
+    console.log('Main inline script starting…');
+
+    // --- Image resizing helper ---
+    function resizeImage(dataURL, maxW, maxH, quality = 0.9, outputFormat = 'image/jpeg') {
+      return new Promise(resolve => {
+        const img = new Image();
+        img.onload = () => {
+          let w = img.width, h = img.height;
+          if (w > h && w > maxW) { h *= maxW / w; w = maxW; }
+          else if (h > maxH) { w *= maxH / h; h = maxH; }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL(outputFormat, quality));
         };
+        img.src = dataURL;
+      });
+    }
 
-        let allArtists = [];
+    // --- Global artist/WhatsApp helper functions ---
+    window.displayArtists = function(artists) {
+      const grid = document.getElementById('artistsGrid');
+      if (!grid) return;
+      grid.innerHTML = '';
+      artists.forEach(a => {
+        const card = document.createElement('div');
+        card.className = 'artist-card';
+        card.innerHTML = `
+          <h3>${a.name}</h3>
+          <p>${a.location}</p>
+          <p>Styles: ${a.styles.join(', ')}</p>
+          <button onclick="contactArtist('${a.whatsapp}','${a.name}')">
+            Contact via WhatsApp
+          </button>
+        `;
+        grid.appendChild(card);
+      });
+    };
 
-        window.contactArtist = function(whatsapp, name) {
-            const message = `Hi ${name}, I'm interested in getting a tattoo!`;
-            window.open(`https://wa.me/${whatsapp}?text=${encodeURIComponent(message)}`, '_blank');
-        };
+    window.contactArtist = function(whatsapp, name) {
+      const msg = `Hi ${name}, I'm interested in getting a tattoo!`;
+      window.open(`https://wa.me/${whatsapp}?text=${encodeURIComponent(msg)}`, '_blank');
+    };
 
-        window.loadDemoArtistsWithFilter = function() {
-            allArtists = [ /* artist objects omitted for brevity */ ];
-            window.displayArtists(allArtists);
-        };
+    window.loadDemoArtistsWithFilter = function() {
+      window.allArtists = [
+        // … your demo artists array …
+      ];
+      window.displayArtists(window.allArtists);
+    };
 
-        window.filterArtists = function() {
-            const loc = document.getElementById('locationFilter').value;
-            const style = document.getElementById('styleFilter').value;
-            const filtered = allArtists.filter(a => (!loc || a.location === loc) && (!style || a.styles.includes(style)));
-            window.displayArtists(filtered);
-        };
+    window.filterArtists = function() {
+      const loc = document.getElementById('locationFilter')?.value || '';
+      const style = document.getElementById('styleFilter')?.value || '';
+      const filtered = window.allArtists.filter(a =>
+        (!loc || a.location === loc) && (!style || a.styles.includes(style))
+      );
+      window.displayArtists(filtered);
+    };
 
-        document.addEventListener('DOMContentLoaded', () => {
-            console.log('🎨 SkinTip initializing (DOMContentLoaded)!');
-            // auth.init(), UI refs, event listeners, etc.
+    // --- DOMContentLoaded: main UI logic & event wiring ---
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('🎨 SkinTip initializing (DOMContentLoaded)!');
+      // your auth.init(), STATE setup, UI refs, resetUI(), event listeners...
+      // (copy in your existing document-ready code here)
+    });
 
-            // On successful generation:
-            const data = {};
-            const resultsGrid = document.querySelector('.results-grid');
-            resultsGrid.innerHTML = '';
-            if (data.generatedImageUrls) {
-                data.generatedImageUrls.forEach((url, i) => {
-                    const item = document.createElement('div');
-                    item.className = 'result-item';
-                    item.innerHTML = `
-                        <img src="${url}" alt="Generated tattoo ${i+1}">
-                        <div class="result-actions">
-                            <button class="btn btn-sm btn-outline" onclick="window.open('${url}', '_blank')">View Full Size</button>
-                        </div>
-                    `;
-                    resultsGrid.appendChild(item);
-                });
-            }
-
-            // Show artists section
-            window.loadDemoArtistsWithFilter();
-        });
-
-        console.log('Main inline script finished.');
-    </script>
+    console.log('Main inline script finished.');
+  </script>
 </body>
 </html>

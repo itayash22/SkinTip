@@ -1,12 +1,125 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>SkinTip - Redirecting...</title>
-    <meta http-equiv="refresh" content="0; url=./frontend/index.html">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SkinTip - AI Tattoo Visualization</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <p>Redirecting to SkinTip...</p>
-    <a href="./frontend/index.html">Click here if not redirected</a>
+    <nav class="navbar">
+        <div class="container">
+            <div class="nav-brand">
+                <h1>SkinTip</h1>
+                <span class="tagline">Try b4 you Dye</span>
+            </div>
+            <div class="nav-menu">
+                <span id="userInfo" class="user-info"></span>
+                <button id="logoutBtn" class="btn btn-outline" style="display:none;">Logout</button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="container">
+            <!-- sections omitted for brevity -->
+        </div>
+    </main>
+
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <p id="loadingText">Generating your tattoo designs...</p>
+        </div>
+    </div>
+    
+    <footer class="footer">
+        <!-- footer content omitted -->
+    </footer>
+
+    <!-- External scripts -->
+    <script>console.log('Loading config.js...');</script>
+    <script src="js/config.js"></script>
+    <script>console.log('Loading auth.js...');</script>
+    <script src="js/auth.js"></script>
+    <script>console.log('Loading drawing.js...');</script>
+    <script src="js/drawing.js"></script>
+
+    <!-- Main Inline Script -->
+    <script>
+        console.log('Main inline script starting...');
+
+        // ... resizeImage function omitted for brevity ...
+
+        // --- Artist Loading and Filtering Functions (GLOBAL SCOPE) ---
+        window.displayArtists = function(artists) {
+            const grid = document.getElementById('artistsGrid');
+            if (!grid) return;
+            grid.innerHTML = '';  // clear previous entries
+            artists.forEach(artist => {
+                const card = document.createElement('div');
+                card.className = 'artist-card';
+                card.innerHTML = `
+                    <h3>${artist.name}</h3>
+                    <p>${artist.location}</p>
+                    <p>Styles: ${artist.styles.join(', ')}</p>
+                    <button onclick="contactArtist('${artist.whatsapp}', '${artist.name}')">
+                        Contact via WhatsApp
+                    </button>
+                `;
+                grid.appendChild(card);
+            });
+        };
+
+        let allArtists = [];
+
+        window.contactArtist = function(whatsapp, name) {
+            const message = `Hi ${name}, I'm interested in getting a tattoo!`;
+            window.open(`https://wa.me/${whatsapp}?text=${encodeURIComponent(message)}`, '_blank');
+        };
+
+        window.loadDemoArtistsWithFilter = function() {
+            allArtists = [ /* artist objects omitted for brevity */ ];
+            window.displayArtists(allArtists);
+        };
+
+        window.filterArtists = function() {
+            const loc = document.getElementById('locationFilter').value;
+            const style = document.getElementById('styleFilter').value;
+            const filtered = allArtists.filter(a => (!loc || a.location === loc) && (!style || a.styles.includes(style)));
+            window.displayArtists(filtered);
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('🎨 SkinTip initializing (DOMContentLoaded)!');
+            // auth.init(), UI refs, event listeners, etc.
+
+            // On successful generation:
+            const data = {};
+            const resultsGrid = document.querySelector('.results-grid');
+            resultsGrid.innerHTML = '';
+            if (data.generatedImageUrls) {
+                data.generatedImageUrls.forEach((url, i) => {
+                    const item = document.createElement('div');
+                    item.className = 'result-item';
+                    item.innerHTML = `
+                        <img src="${url}" alt="Generated tattoo ${i+1}">
+                        <div class="result-actions">
+                            <button class="btn btn-sm btn-outline" onclick="window.open('${url}', '_blank')">View Full Size</button>
+                        </div>
+                    `;
+                    resultsGrid.appendChild(item);
+                });
+            }
+
+            // Show artists section
+            window.loadDemoArtistsWithFilter();
+        });
+
+        console.log('Main inline script finished.');
+    </script>
 </body>
 </html>

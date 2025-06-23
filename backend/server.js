@@ -364,14 +364,18 @@ app.post('/api/generate-final-tattoo',
                 return res.status(500).json({ error: 'Failed to read image dimensions for validation.' });
             }
 
-            const generatedImageUrls = await fluxKontextHandler.placeTattooOnSkin(
+            // --- CRITICAL FIX HERE: ARGUMENT ORDER ---
+const numVariations = 3; // Define the number of variations clearly
+// The 'prompt: userPromptText' from req.body is no longer passed to fluxKontextHandler.placeTattooOnSkin
+const generatedImageUrls = await fluxKontextHandler.placeTattooOnSkin(
     skinImageBuffer,
     tattooDesignImageBase64,
     mask,
-    userId, // Correct: Now userId is the 4th argument
-    3,      // Correct: Now 3 (numVariations) is the 5th argument
-    process.env.FLUX_API_KEY // Correct: Now fluxApiKey is the 6th argument
+    userId,          // Corresponds to 'userId' in fluxPlacementHandler.js
+    numVariations,   // Corresponds to 'numVariations' in fluxPlacementHandler.js
+    process.env.FLUX_API_KEY // Corresponds to 'fluxApiKey' in fluxPlacementHandler.js
 );
+// --- END CRITICAL FIX ---
 
             const newTokens = await tokenService.deductTokens(userId, 'FLUX_PLACEMENT', tokensRequired, `Tattoo placement for user ${userId}`);
             console.log('Tokens deducted successfully. New balance:', newTokens);

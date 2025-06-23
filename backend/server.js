@@ -339,7 +339,7 @@ app.post('/api/generate-final-tattoo',
 
             const skinImageBuffer = skinImageFile.buffer;
             const tattooDesignImageBase64 = tattooDesignImageFile.buffer.toString('base64');
-
+            
             if (!isValidBase64(tattooDesignImageBase64) || !isValidBase64(mask)) {
                 console.error('Server: Invalid Base64 data detected for tattoo design or mask. Returning 400.');
                 return res.status(400).json({ error: 'Invalid image data detected during processing.' });
@@ -365,22 +365,16 @@ app.post('/api/generate-final-tattoo',
             }
 
             // --- CRITICAL FIX HERE: ARGUMENT ORDER ---
-const numVariations = 3; // Define the number of variations clearly
-// The 'prompt: userPromptText' from req.body is no longer passed to fluxKontextHandler.placeTattooOnSkin
-// Define the number of variations clearly here, matching the Flux API call
-const numVariations = 3;
-
-// Call placeTattooOnSkin matching its 6-argument signature:
-// (skinImageBuffer, tattooDesignImageBase64, maskBase64, userId, numVariations, fluxApiKey)
-const generatedImageUrls = await fluxKontextHandler.placeTattooOnSkin(
-    skinImageBuffer,
-    tattooDesignImageBase64,
-    mask,
-    userId,                   // 4th argument: The authenticated user's ID (req.user.id)
-    numVariations,            // 5th argument: The desired number of variations (e.g., 3)
-    process.env.FLUX_API_KEY  // 6th argument: Your Flux API Key
-);
-// --- END CRITICAL FIX ---
+            // The 'prompt: userPromptText' from req.body is no longer passed to fluxKontextHandler.placeTattooOnSkin
+            const generatedImageUrls = await fluxKontextHandler.placeTattooOnSkin(
+                skinImageBuffer,
+                tattooDesignImageBase64,
+                mask,
+                userId,          // Corresponds to 'userId' in fluxPlacementHandler.js
+                3,               // Corresponds to 'numVariations' in fluxPlacementHandler.js
+                process.env.FLUX_API_KEY // Corresponds to 'fluxApiKey' in fluxPlacementHandler.js
+            );
+            // --- END CRITICAL FIX ---
 
             const newTokens = await tokenService.deductTokens(userId, 'FLUX_PLACEMENT', tokensRequired, `Tattoo placement for user ${userId}`);
             console.log('Tokens deducted successfully. New balance:', newTokens);

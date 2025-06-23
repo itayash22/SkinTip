@@ -1,6 +1,37 @@
 // backend/server.js
 // This file was last updated on 2025-06-14 (EOD) to fix ES Module import errors.
+// backend/server.js
+// This file was last updated on 2025-06-14 (EOD) to fix ES Module import errors.
 
+// ADD THESE DEBUGGING LINES AT THE VERY TOP
+console.log('DEBUG: Current working directory:', process.cwd());
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+console.log('DEBUG: Directory of server.js:', __dirname);
+
+// Try to explicitly resolve 'helmet' to see what path Node.js computes
+try {
+    const helmetPath = await import.meta.resolve('helmet'); // Await is only available in ESM top-level
+    console.log('DEBUG: Resolved helmet path (if successful):', helmetPath);
+} catch (e) {
+    console.error('DEBUG: Failed to resolve helmet using import.meta.resolve:', e.message);
+}
+
+
+import 'dotenv/config'; // Use 'dotenv/config' for top-level loading with ESM
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet'; // <-- This is the line that fails
+import rateLimit from 'express-rate-limit';
+import multer from 'multer';
+import { createClient } from '@supabase/supabase-js';
+import bcryptjs from 'bcryptjs'; // Corrected import for bcryptjs
+import jwt from 'jsonwebtoken';
+import sizeOf from 'image-size'; // image-size default export might be different, but typically it's named 'imageSize' or used as a function
+
+// ... rest of your code
 import 'dotenv/config'; // Use 'dotenv/config' for top-level loading with ESM
 import express from 'express';
 import cors from 'cors';

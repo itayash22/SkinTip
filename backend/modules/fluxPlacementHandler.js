@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-23_V1.38_FLUX_PARAMS_REVISION'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-23_V1.38_FINAL_ALL_FIXES'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -285,10 +285,10 @@ const fluxPlacementHandler = {
                 mask_image: maskBase64,
                 n: 1,
                 output_format: 'png',
-                // RE-INTRODUCED AS THEY WERE WORKING PREVIOUSLY:
+                // Re-introduced as they were working previously:
                 fidelity: 0.6,
                 guidance_scale: 8.0,
-                // NEW PARAMETERS from Flux API bot:
+                // New parameters from Flux API bot:
                 prompt_upsampling: true,
                 safety_tolerance: 'low', // As requested, set to 'low' for less strict filtering
                 seed: currentSeed
@@ -399,6 +399,6 @@ const fluxPlacementHandler = {
 
         return generatedImageUrls;
     }
-}; // This closing brace belongs to the fluxPlacementHandler object.
+};
 
-export default fluxPlacementHandler; // This is the export statement.
+export default fluxPlacementHandler;

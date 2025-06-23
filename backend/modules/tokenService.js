@@ -1,12 +1,12 @@
 // backend/modules/tokenService.js
 
-const { createClient } = require('@supabase/supabase-js');
+import { createClient } = from '@supabase/supabase-js'; // Changed to ESM import
 
 // Initialize Supabase client (use your environment variables for security)
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY; // Use a service role key for backend operations for security!
-                                                      // This key has full bypass RLS access.
-                                                      // MAKE SURE TO SET THIS IN YOUR RENDER ENVIRONMENT VARIABLES!
+                                                    // This key has full bypass RLS access.
+                                                    // MAKE SURE TO SET THIS IN YOUR RENDER ENVIRONMENT VARIABLES!
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -155,4 +155,4 @@ const tokenService = {
     }
 };
 
-module.exports = tokenService;
+export default tokenService; // Changed from module.exports to ES Module default export

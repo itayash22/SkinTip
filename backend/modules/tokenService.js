@@ -1,6 +1,6 @@
 // backend/modules/tokenService.js
 
-import { createClient } = from '@supabase/supabase-js'; // Changed to ESM import
+import { createClient } from '@supabase/supabase-js'; // Removed the '=' sign here!
 
 // Initialize Supabase client (use your environment variables for security)
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -155,4 +155,4 @@ const tokenService = {
     }
 };
 
-export default tokenService; // Changed from module.exports to ES Module default export
+export default tokenService;

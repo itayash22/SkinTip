@@ -179,7 +179,7 @@ const drawing = {
             if (distance < 30) { // If closed (threshold of 30 pixels in original image resolution)
                 drawing.currentPathCoords = [...drawing.currentPath]; // Save the coordinates of the closed path
                 drawing.updateMask(); // Generate the mask image on the hidden canvas
-                drawing.selectedArea = drawing.maskCanvas.toDataURL('image/png'); // Store the mask as Base64 for API
+                drawing.selectedArea = drawing.maskCanvas.toDataURL('image/png'); // Store the mask as Base64 for API (ensure PNG!)
 
                 // Show continue button (now "Generate Tattoo on Skin")
                 if (continueBtn) continueBtn.style.display = 'block';

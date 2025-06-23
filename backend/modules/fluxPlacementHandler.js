@@ -1,16 +1,20 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-23_V1.28_CONDITIONAL_BG_HANDLING'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-23_V1.31_FULL_PNG_CHAIN'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
 import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
+import FormData from 'form-data'; // Import FormData for Node.js environments
 
 // Initialize Supabase Storage client
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY; // Use the service role key for backend access
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generated-tattoos'; // Configure this bucket in Render
+
+// New: Get Remove.bg API Key
+const REMOVE_BG_API_KEY = process.env.REMOVE_BG_API_KEY; // Make sure to set this in Render environment variables!
 
 // HELPER FUNCTION: To find the bounding box of the white area in a raw grayscale mask buffer
 async function getMaskBoundingBox(maskBuffer, width, height) {
@@ -56,26 +60,49 @@ async function getMaskBoundingBox(maskBuffer, width, height) {
 const fluxPlacementHandler = {
 
     /**
-     * Inverts the colors of a Base64 encoded PNG mask image.
+     * Calls Remove.bg API to remove background from an image buffer.
+     * Returns a buffer of the image with background removed (always PNG).
      */
-    invertMask: async (maskBase64) => {
-        const buffer = Buffer.from(maskBase64, 'base64');
+    removeImageBackground: async (imageBuffer) => {
+        if (!REMOVE_BG_API_KEY) {
+            console.warn('REMOVE_BG_API_KEY is not set. Skipping background removal and returning original image as PNG.');
+            return await sharp(imageBuffer).png().toBuffer(); // Ensure it's PNG even if no removal
+        }
+
         try {
-            const invertedBuffer = await sharp(buffer)
-                .ensureAlpha()
-                .negate({ alpha: false })
-                .png()
-                .toBuffer();
-            return invertedBuffer.toString('base64');
+            console.log('Calling Remove.bg API for background removal...');
+            const formData = new FormData();
+            // remove.bg can take various input formats, best to send as original or simple buffer
+            formData.append('image_file', new Blob([imageBuffer], { type: 'image/jpeg' }), 'image.jpg'); // Guess input type, remove.bg handles it
+            formData.append('size', 'auto');
+            formData.append('format', 'png'); // Request PNG output from remove.bg
+
+            const response = await axios.post('https://api.remove.bg/v1.0/removebg', formData, {
+                headers: {
+                    'X-Api-Key': REMOVE_BG_API_KEY,
+                    ...formData.getHeaders() // Important for FormData
+                },
+                responseType: 'arraybuffer' // To get the image data as a buffer
+            });
+
+            if (response.status === 200) {
+                console.log('Background removed successfully by Remove.bg.');
+                return Buffer.from(response.data); // Returns PNG buffer from remove.bg
+            } else {
+                console.error('Remove.bg API error:', response.status, response.statusText, response.data.toString());
+                throw new Error(`Remove.bg API failed with status ${response.status}`);
+            }
         } catch (error) {
-            console.error('Error inverting mask:', error);
-            throw new Error('Failed to invert mask image for Flux API. Make sure mask is a valid PNG.');
+            console.error('Error calling Remove.bg API:', error.response?.data?.toString() || error.message);
+            // If remove.bg fails, proceed with the original image but ensure it's a PNG
+            console.warn('Background removal failed. Proceeding with original tattoo design (may have background).');
+            return await sharp(imageBuffer).png().toBuffer();
         }
     },
 
     /**
      * Applies a watermark to an image buffer and returns the watermarked image as a buffer.
-     * Output format depends on the input image, so ensure it supports transparency if needed.
+     * Always outputs PNG to preserve transparency.
      */
     applyWatermark: async (imageBuffer) => {
         try {
@@ -96,31 +123,26 @@ const fluxPlacementHandler = {
             const left = Math.max(0, imageWidth - svgWidth - padding);
             const top = Math.max(0, imageHeight - svgHeight - padding);
 
-            const watermarkedSharp = sharp(imageBuffer)
+            // Force output to PNG to always preserve transparency
+            return await sharp(imageBuffer)
                 .composite([{
                     input: svgBuffer,
                     top: top,
                     left: left,
                     blend: 'over'
-                }]);
-
-            // Determine output format based on whether the original image had alpha
-            if (metadata.hasAlpha) {
-                return await watermarkedSharp.png().toBuffer(); // Preserve transparency
-            } else {
-                return await watermarkedSharp.jpeg({ quality: 90 }).toBuffer(); // Default to JPEG if no alpha
-            }
+                }])
+                .png() // Always output as PNG
+                .toBuffer();
 
         } catch (error) {
             console.error('Error applying watermark (caught):', error);
-            return imageBuffer;
+            return imageBuffer; // Return original if error
         }
     },
 
     /**
      * Uploads an image buffer to Supabase Storage and returns its public URL.
      */
-    // Adjusted to accept contentType for flexibility
     uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '', contentType = 'image/jpeg') => {
         const filePath = `${userId}/${folder ? folder + '/' : ''}${fileName}`;
         const { data, error } = await supabase.storage
@@ -157,20 +179,14 @@ const fluxPlacementHandler = {
         console.log('Starting Flux tattoo placement process...');
 
         // 1. Convert tattoo design Base64 to Buffer.
-        let tattooDesignBuffer;
-        let tattooMeta; // Declare tattooMeta here for broader scope
-        try {
-            tattooDesignBuffer = Buffer.from(tattooDesignImageBase64, 'base64');
-            tattooMeta = await sharp(tattooDesignBuffer).metadata(); // Get metadata early
-            console.log(`Tattoo design original format: ${tattooMeta.format}, channels: ${tattooMeta.channels}, hasAlpha: ${tattooMeta.hasAlpha}`);
+        let tattooDesignOriginalBuffer = Buffer.from(tattooDesignImageBase64, 'base64');
+        let tattooMeta = await sharp(tattooDesignOriginalBuffer).metadata();
+        console.log(`Original tattoo design format (before background removal): ${tattooMeta.format}, channels: ${tattooMeta.channels}, hasAlpha: ${tattooMeta.hasAlpha}`);
 
-            // Ensure it's a PNG for consistent internal processing, even if input was JPG
-            tattooDesignBuffer = await sharp(tattooDesignBuffer).png().toBuffer();
-            console.log('Tattoo design image converted to PNG buffer for internal processing.');
-        } catch (error) {
-            console.error('Error processing tattoo design image base64:', error);
-            throw new Error('Invalid tattoo design image data provided.');
-        }
+        // --- Step 2.2: Perform Background Removal using Remove.bg API (always outputs PNG with alpha) ---
+        let tattooDesignPngWithRemovedBackground = await fluxPlacementHandler.removeImageBackground(tattooDesignOriginalBuffer);
+
+        // This buffer is now guaranteed to be a PNG with or without its original background, and with alpha channel.
 
         // 2. Prepare Mask Buffer. Frontend mask is white for tattoo area, black elsewhere.
         const originalMaskBuffer = Buffer.from(maskBase64, 'base64');
@@ -198,73 +214,10 @@ const fluxPlacementHandler = {
             throw new Error('Drawn mask area is too small or empty. Please draw a visible area.');
         }
 
-        // --- Step 2.2: Conditional Transparency Handling for Tattoo Design ---
-        let tattooDesignForComposition = tattooDesignBuffer; // This is now always a PNG buffer
-        try {
-            // Check original metadata for true alpha status, before any Sharp ops that add alpha
-            if (tattooMeta.hasAlpha && tattooMeta.channels === 4) {
-                 console.log('Tattoo design already has an explicit alpha channel. Preserving transparency.');
-                 // No need for ensureAlpha() as it's already PNG with alpha.
-                 // We simply use the already processed tattooDesignBuffer.
-            } else {
-                console.warn('Tattoo design does NOT have inherent transparency (e.g., JPG or opaque PNG). Attempting background removal heuristic.');
-
-                // Get original pixel data to sample background color
-                const { data: originalPixels, info: originalInfo } = await sharp(Buffer.from(tattooDesignImageBase64, 'base64'))
-                    .raw()
-                    .toBuffer({ resolveWithObject: true });
-
-                const pixelSize = originalInfo.channels;
-                const topLeftPixel = [];
-                for (let c = 0; c < Math.min(pixelSize, 3); c++) { // Only check RGB for color detection
-                    topLeftPixel.push(originalPixels[c]);
-                }
-
-                console.log('Top-left pixel of original tattoo design for background heuristic:', topLeftPixel);
-
-                let isLikelyBlackBackground = false;
-                let isLikelyWhiteBackground = false;
-
-                if (pixelSize >= 3) { // Check RGB values
-                    if (topLeftPixel[0] < 10 && topLeftPixel[1] < 10 && topLeftPixel[2] < 10) {
-                        isLikelyBlackBackground = true;
-                    }
-                    if (topLeftPixel[0] > 245 && topLeftPixel[1] > 245 && topLeftPixel[2] > 245) {
-                        isLikelyWhiteBackground = true;
-                    }
-                } else if (pixelSize === 1) { // Grayscale
-                    if (topLeftPixel[0] < 10) {
-                        isLikelyBlackBackground = true;
-                    }
-                    if (topLeftPixel[0] > 245) {
-                        isLikelyWhiteBackground = true;
-                    }
-                }
-
-
-                if (isLikelyBlackBackground || isLikelyWhiteBackground) {
-                    console.log(`Detected a likely ${isLikelyBlackBackground ? 'black' : 'white'} background. Attempting to key it out.`);
-                    tattooDesignForComposition = await sharp(tattooDesignBuffer) // Use the already PNG-converted buffer
-                        .removeAlpha() // Remove any temporary alpha added by .png() if it was JPG initially
-                        .toColourspace('srgb') // Ensure sRGB color space for consistent comparison
-                        .ensureAlpha(isLikelyBlackBackground ? { background: { r: 0, g: 0, b: 0, alpha: 0 } } : { background: { r: 255, g: 255, b: 255, alpha: 0 } }) // Key out black or white with 0 alpha
-                        .toBuffer();
-                    console.log('Solid background removal applied using color keying.');
-                } else {
-                    console.warn('No common solid background (black/white) detected or background is not uniform. Tattoo will retain opaque background.');
-                    tattooDesignForComposition = await sharp(tattooDesignBuffer).ensureAlpha().toBuffer(); // Just ensure alpha without removing background
-                }
-            }
-        } catch (bgRemovalError) {
-            console.error('ERROR: Failed during conditional background removal processing. Proceeding with original opaque PNG buffer.', bgRemovalError.message);
-            tattooDesignForComposition = await sharp(tattooDesignBuffer).ensureAlpha().toBuffer(); // Fallback: just ensure alpha, keep opaque background
-        }
-        // --- END Step 2.2 ---
-
         // --- Step 2.3: Resize the tattoo design to fit the mask's bounding box and prepare for placement ---
         let tattooForPlacement;
         try {
-            tattooForPlacement = await sharp(tattooDesignForComposition) // Use the conditionally processed buffer
+            tattooForPlacement = await sharp(tattooDesignPngWithRemovedBackground) // Use the background-removed PNG buffer
                 .resize(maskBoundingBox.width, maskBoundingBox.height, {
                     fit: 'contain',
                     background: { r: 0, g: 0, b: 0, alpha: 0 } // Ensures transparent background if tattoo is smaller than bounding box
@@ -290,19 +243,19 @@ const fluxPlacementHandler = {
                         mask: maskBuffer // Apply the drawn mask here
                     }
                 ])
-                .png() // <--- OUTPUT AS PNG TO PRESERVE FINAL TRANSPARENCY!
+                .png() // Output as PNG to preserve transparency for subsequent steps/display!
                 .toBuffer();
             console.log('Tattoo manually composited onto skin image with correct sizing, positioning, and clipping. Output format: PNG.');
 
             // --- DEBUGGING STEP: UPLOAD AND LOG INTERMEDIATE IMAGE ---
             try {
-                const debugFileName = `debug_sharp_composite_${uuidv4()}.png`; // Changed file extension
+                const debugFileName = `debug_sharp_composite_${uuidv4()}.png`;
                 const debugPublicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(
                     compositedImageBuffer,
                     debugFileName,
                     userId,
                     'debug',
-                    'image/png' // Changed content type for debugging output
+                    'image/png' // Content type for debug output
                 );
                 console.log(`--- DEBUG: SHARP COMPOSITED IMAGE URL: ${debugPublicUrl} ---`);
                 console.log('^ Please check this URL in your browser to verify Sharp\'s output.');
@@ -327,11 +280,11 @@ const fluxPlacementHandler = {
 
             const fluxPayload = {
                 prompt: basePrompt,
-                // Pass the *composited* image (now a PNG with potentially transparent background) to Flux
+                // Pass the *composited* image (now a PNG with transparent background) to Flux
                 input_image: compositedImageBuffer.toString('base64'),
                 mask_image: '', // Flux API uses the mask for inpainting, but here we provide a full background image
                 n: 1, // Request 1 variation per call
-                output_format: 'jpeg', // Flux API might still prefer JPEG as output for final result
+                output_format: 'png', // <--- CRITICAL CHANGE: Request PNG output from Flux!
                 fidelity: 0.5, // Adjusted fidelity for more blending
                 guidance_scale: 8.0, // Adjusted guidance_scale
                 seed: currentSeed
@@ -356,7 +309,7 @@ const fluxPlacementHandler = {
                 console.log(`DEBUG: Initial Flux POST response data for variation ${i+1}:`, JSON.stringify(fluxResponse.data, null, 2));
 
             } catch (error) {
-                console.error(`Flux API call for variation ${i + 1} failed:`, error.response?.data || error.message);
+                console.error(`Flux API call for variation ${i + 1} failed:`, error.response?.data?.toString() || error.message);
                 console.warn(`Skipping variation ${i + 1} due to API call failure.`);
                 continue;
             }
@@ -412,9 +365,10 @@ const fluxPlacementHandler = {
                             continue;
                         }
 
+                        // Watermark it (applyWatermark now ensures PNG output)
                         const watermarkedBuffer = await fluxPlacementHandler.applyWatermark(imageBuffer);
-                        const fileName = `tattoo-${uuidv4()}.jpeg`; // File extension still JPEG for final result from Flux
-                        const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarkedBuffer, fileName, userId, '', 'image/jpeg'); // Flux outputs JPEG, so save as JPEG
+                        const fileName = `tattoo-${uuidv4()}.png`; // File extension is now PNG
+                        const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarkedBuffer, fileName, userId, '', 'image/png'); // Content type is now PNG
                         generatedImageUrls.push(publicUrl);
                         console.log(`Successfully generated and watermarked 1 image for variation ${i + 1}.`);
                         currentImageReady = true;

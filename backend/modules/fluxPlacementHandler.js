@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-14_V1.24_SIMPLIFIED_BG_ALPHA_HANDLING'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-14_V1.24_SIMPLIFIED_BG_ALPHA_HANDLING - DEBUGGING FLUX RESPONSE'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -85,8 +85,8 @@ const fluxPlacementHandler = {
         try {
             const watermarkText = 'SkinTip.AI';
             const watermarkSvg = `<svg width="200" height="30" viewBox="0 0 200 30" xmlns="http://www.w3.org/2000/svg">
-                                    <text x="10" y="25" font-family="Arial, sans-serif" font-size="16" fill="#FFFFFF" fill-opacity="0.5">${watermarkText}</text>
-                                  </svg>`;
+                                <text x="10" y="25" font-family="Arial, sans-serif" font-size="16" fill="#FFFFFF" fill-opacity="0.5">${watermarkText}</text>
+                                </svg>`;
             const svgBuffer = Buffer.from(watermarkSvg);
 
             const metadata = await sharp(imageBuffer).metadata();
@@ -121,7 +121,7 @@ const fluxPlacementHandler = {
      * Uploads an image buffer to Supabase Storage and returns its public URL.
      */
     uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '') => {
-        const filePath = `${userId}/${folder ? folder + '/' : ''}${fileName}`;
+        const filePath = `<span class="math-inline">\{userId\}/</span>{folder ? folder + '/' : ''}${fileName}`;
         const { data, error } = await supabase.storage
             .from(SUPABASE_STORAGE_BUCKET)
             .upload(filePath, imageBuffer, {
@@ -176,7 +176,7 @@ const fluxPlacementHandler = {
                 .grayscale() // Ensure it's grayscale (1 channel)
                 .raw()       // Get raw pixel data
                 .toBuffer();
-            console.log(`Mask buffer converted to raw grayscale. Dims: ${maskMetadata.width}x${maskMetadata.height}, channels: 1.`);
+            console.log(`Mask buffer converted to raw grayscale. Dims: <span class="math-inline">\{maskMetadata\.width\}x</span>{maskMetadata.height}, channels: 1.`);
         } catch (error) {
             console.error('Error processing mask for Sharp composition:', error);
             throw new Error(`Failed to prepare mask for composition: ${error.message}`);
@@ -186,7 +186,7 @@ const fluxPlacementHandler = {
         const skinMetadata = await sharp(skinImageBuffer).metadata();
         const skinWidth = skinMetadata.width;
         const skinHeight = skinMetadata.height;
-        console.log(`DEBUG: Skin Image Dims: ${skinWidth}x${skinHeight}`);
+        console.log(`DEBUG: Skin Image Dims: <span class="math-inline">\{skinWidth\}x</span>{skinHeight}`);
 
         // --- Step 2.1: Determine the bounding box of the drawn mask area ---
         const maskBoundingBox = await getMaskBoundingBox(maskBuffer, maskMetadata.width, maskMetadata.height);
@@ -203,14 +203,14 @@ const fluxPlacementHandler = {
         let tattooDesignWithAlphaBuffer = tattooDesignBuffer; // Start with the initial tattoo buffer (already PNG)
         try {
             const tattooMeta = await sharp(tattooDesignBuffer).metadata();
-            
+
             // If the image is a JPG (always opaque) or a PNG without an explicit alpha channel,
             // we simply ensure it has an alpha channel, but we don't try to key out a background color.
             if (tattooMeta.format === 'jpeg' || (tattooMeta.format === 'png' && tattooMeta.channels < 4)) {
                 console.warn('INFO: Tattoo design image does not have an explicit alpha channel or is JPEG. Ensuring alpha but skipping complex background removal heuristic.');
                 // Simply ensure an alpha channel is present. This will not make an opaque background transparent.
                 tattooDesignWithAlphaBuffer = await sharp(tattooDesignBuffer)
-                    .ensureAlpha() 
+                    .ensureAlpha()
                     .toBuffer();
                 console.log('Tattoo design image now has an alpha channel, if it did not before.');
 
@@ -232,7 +232,7 @@ const fluxPlacementHandler = {
                     background: { r: 0, g: 0, b: 0, alpha: 0 }
                 })
                 .toBuffer();
-            console.log(`Tattoo design resized specifically for mask bounding box: ${maskBoundingBox.width}x${maskBoundingBox.height}.`);
+            console.log(`Tattoo design resized specifically for mask bounding box: <span class="math-inline">\{maskBoundingBox\.width\}x</span>{maskBoundingBox.height}.`);
         } catch (error) {
             console.error('Error resizing tattoo design for placement:', error);
             throw new Error('Failed to resize tattoo design for placement within mask area.');
@@ -249,7 +249,7 @@ const fluxPlacementHandler = {
                         tile: false,
                         left: maskBoundingBox.minX,
                         top: maskBoundingBox.minY,
-                        mask: maskBuffer 
+                        mask: maskBuffer
                     }
                 ])
                 .jpeg({ quality: 90 })
@@ -312,6 +312,10 @@ const fluxPlacementHandler = {
                         timeout: 90000
                     }
                 );
+                // ADD THIS LOGGING:
+                console.log(`DEBUG: Initial Flux POST response status for variation ${i+1}: ${fluxResponse.status}`);
+                console.log(`DEBUG: Initial Flux POST response data for variation ${i+1}:`, JSON.stringify(fluxResponse.data, null, 2));
+
             } catch (error) {
                 console.error(`Flux API call for variation ${i + 1} failed:`, error.response?.data || error.message);
                 console.warn(`Skipping variation ${i + 1} due to API call failure.`);
@@ -344,7 +348,7 @@ const fluxPlacementHandler = {
 
                 if (result.data.status === 'Content Moderated') {
                     const moderationReason = result.data.details && result.data.details['Moderation Reasons'] ?
-                                             result.data.details['Moderation Reasons'].join(', ') : 'Unknown reason';
+                                            result.data.details['Moderation Reasons'].join(', ') : 'Unknown reason';
                     console.error(`Flux API Polling terminated for Task ${taskId}: Content Moderated. Reason: ${moderationReason}`);
                     console.warn(`Skipping variation ${i + 1} due to content moderation.`);
                     currentImageReady = true;

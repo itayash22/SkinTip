@@ -1,11 +1,11 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-23_V1.33_CLEANED'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-23_V1.31_FULL_PNG_CHAIN'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
 import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
-import FormData from 'form-data'; // Important for Node.js environments when sending FormData with axios
+import FormData from 'form-data'; // Import FormData for Node.js environments
 
 // Initialize Supabase Storage client
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -13,7 +13,7 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY; // Use the servic
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generated-tattoos'; // Configure this bucket in Render
 
-// Get Remove.bg API Key
+// New: Get Remove.bg API Key
 const REMOVE_BG_API_KEY = process.env.REMOVE_BG_API_KEY; // Make sure to set this in Render environment variables!
 
 // HELPER FUNCTION: To find the bounding box of the white area in a raw grayscale mask buffer
@@ -72,7 +72,8 @@ const fluxPlacementHandler = {
         try {
             console.log('Calling Remove.bg API for background removal...');
             const formData = new FormData();
-            formData.append('image_file', new Blob([imageBuffer], { type: 'image/png' }), 'tattoo_design.png'); // Send as PNG
+            // remove.bg can take various input formats, best to send as original or simple buffer
+            formData.append('image_file', new Blob([imageBuffer], { type: 'image/jpeg' }), 'image.jpg'); // Guess input type, remove.bg handles it
             formData.append('size', 'auto');
             formData.append('format', 'png'); // Request PNG output from remove.bg
 
@@ -88,33 +89,14 @@ const fluxPlacementHandler = {
                 console.log('Background removed successfully by Remove.bg.');
                 return Buffer.from(response.data); // Returns PNG buffer from remove.bg
             } else {
-                const errorResponseData = response.data.toString();
-                console.error('Remove.bg API error:', response.status, response.statusText, errorResponseData);
-                throw new Error(`Remove.bg API failed with status ${response.status}: ${errorResponseData.substring(0, 100)}`);
+                console.error('Remove.bg API error:', response.status, response.statusText, response.data.toString());
+                throw new Error(`Remove.bg API failed with status ${response.status}`);
             }
         } catch (error) {
             console.error('Error calling Remove.bg API:', error.response?.data?.toString() || error.message);
             // If remove.bg fails, proceed with the original image but ensure it's a PNG
             console.warn('Background removal failed. Proceeding with original tattoo design (may have background).');
             return await sharp(imageBuffer).png().toBuffer();
-        }
-    },
-
-    /**
-     * Inverts the colors of a Base64 encoded PNG mask image.
-     */
-    invertMask: async (maskBase64) => {
-        const buffer = Buffer.from(maskBase64, 'base64');
-        try {
-            const invertedBuffer = await sharp(buffer)
-                .ensureAlpha()
-                .negate({ alpha: false })
-                .png()
-                .toBuffer();
-            return invertedBuffer.toString('base64');
-        } catch (error) {
-            console.error('Error inverting mask:', error);
-            throw new Error('Failed to invert mask image for Flux API. Make sure mask is a valid PNG.');
         }
     },
 
@@ -193,17 +175,18 @@ const fluxPlacementHandler = {
      * Handles all image preprocessing (resizing, mask inversion, watermarking, storage).
      * Now makes multiple Flux API calls to get multiple variations.
      */
-    placeTattooOnSkin: async (skinImageBuffer, tattooDesignImageBase64, maskBase64, userId, numVariations, fluxApiKey) => { // Removed userPrompt
+    placeTattooOnSkin: async (skinImageBuffer, tattooDesignImageBase64, maskBase64, userPrompt, userId, numVariations, fluxApiKey) => {
         console.log('Starting Flux tattoo placement process...');
 
         // 1. Convert tattoo design Base64 to Buffer.
         let tattooDesignOriginalBuffer = Buffer.from(tattooDesignImageBase64, 'base64');
         let tattooMeta = await sharp(tattooDesignOriginalBuffer).metadata();
-        console.log(`Original tattoo design input meta: format=${tattooMeta.format}, channels=${tattooMeta.channels}, hasAlpha=${tattooMeta.hasAlpha}`);
+        console.log(`Original tattoo design format (before background removal): ${tattooMeta.format}, channels: ${tattooMeta.channels}, hasAlpha: ${tattooMeta.hasAlpha}`);
 
         // --- Step 2.2: Perform Background Removal using Remove.bg API (always outputs PNG with alpha) ---
         let tattooDesignPngWithRemovedBackground = await fluxPlacementHandler.removeImageBackground(tattooDesignOriginalBuffer);
 
+        // This buffer is now guaranteed to be a PNG with or without its original background, and with alpha channel.
 
         // 2. Prepare Mask Buffer. Frontend mask is white for tattoo area, black elsewhere.
         const originalMaskBuffer = Buffer.from(maskBase64, 'base64');
@@ -224,7 +207,6 @@ const fluxPlacementHandler = {
         const skinMetadata = await sharp(skinImageBuffer).metadata();
         const skinWidth = skinMetadata.width;
         const skinHeight = skinMetadata.height;
-        console.log(`Skin image meta: format=${skinMetadata.format}, channels=${skinMetadata.channels}, hasAlpha=${skinMetadata.hasAlpha}`);
 
         // --- Step 2.1: Determine the bounding box of the drawn mask area ---
         const maskBoundingBox = await getMaskBoundingBox(maskBuffer, maskMetadata.width, maskMetadata.height);
@@ -289,8 +271,7 @@ const fluxPlacementHandler = {
 
         // 4. Prepare for multiple Flux API calls
         const generatedImageUrls = [];
-        // Simplified basePrompt: remove userPrompt reference as it's currently not used
-        const basePrompt = `Make the tattoo look naturally placed on the skin, blend seamlessly, adjust lighting and shadows for realism. Realistic photo, professional tattoo photography, high detail.`;
+        const basePrompt = `Make the tattoo look naturally placed on the skin, blend seamlessly, adjust lighting and shadows for realism. Realistic photo, professional tattoo photography, high detail. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
 
         console.log(`Making ${numVariations} calls to Flux API...`);
 
@@ -299,11 +280,11 @@ const fluxPlacementHandler = {
 
             const fluxPayload = {
                 prompt: basePrompt,
-                // Pass the *composited* image (now a PNG with potentially transparent background from tattoo on skin) to Flux
+                // Pass the *composited* image (now a PNG with transparent background) to Flux
                 input_image: compositedImageBuffer.toString('base64'),
                 mask_image: '', // Flux API uses the mask for inpainting, but here we provide a full background image
                 n: 1, // Request 1 variation per call
-                output_format: 'png', // CRITICAL CHANGE: Request PNG output from Flux!
+                output_format: 'png', // <--- CRITICAL CHANGE: Request PNG output from Flux!
                 fidelity: 0.5, // Adjusted fidelity for more blending
                 guidance_scale: 8.0, // Adjusted guidance_scale
                 seed: currentSeed
@@ -406,12 +387,12 @@ const fluxPlacementHandler = {
             }
         } // End of for loop for multiple variations
 
-        if (generatedImageUrls.length === 0) {
-            throw new Error('Flux API: No images were generated across all attempts. Please try again or with a different design.');
-        }
+        if (generatedImageUrls.length === 0) {
+            throw new Error('Flux API: No images were generated across all attempts. Please try again or with a different design.');
+        }
 
-        return generatedImageUrls;
-    }
+        return generatedImageUrls;
+    }
 };
 
 export default fluxPlacementHandler;

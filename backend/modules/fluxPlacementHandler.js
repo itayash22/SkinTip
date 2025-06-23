@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-14_V1.24_SIMPLIFIED_BG_ALPHA_HANDLING - DEBUGGING FLUX RESPONSE'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-23_V1.25_FIXED_SUPABASE_PATH_AND_FLUX_POLLING_URL'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -35,7 +35,7 @@ async function getMaskBoundingBox(maskBuffer, width, height) {
         return { minX: 0, minY: 0, maxX: 0, maxY: 0, width: 0, height: 0, isEmpty: true };
     }
 
-    const padding = 0; // Keeping padding at 0 for now for exact fit
+    const padding = 0; // Keeping padding at 0 for exact fit
     minX = Math.max(0, minX - padding);
     minY = Math.max(0, minY - padding);
     maxX = Math.min(width, maxX + padding);
@@ -61,16 +61,11 @@ const fluxPlacementHandler = {
     invertMask: async (maskBase64) => {
         const buffer = Buffer.from(maskBase64, 'base64');
         try {
-            console.log('Mask Invert DEBUG: Attempting inversion...');
             const invertedBuffer = await sharp(buffer)
                 .ensureAlpha()
                 .negate({ alpha: false })
                 .png()
                 .toBuffer();
-            console.log('Mask successfully inverted.');
-            const outputMaskMetadata = await sharp(invertedBuffer).metadata();
-            console.log('Mask Invert DEBUG: Output inverted mask format:', outputMaskMetadata.format, 'channels:', outputMaskMetadata.channels);
-            console.log('Mask Invert DEBUG: Output inverted mask first 20 bytes (hex):', invertedBuffer.toString('hex', 0, 20));
             return invertedBuffer.toString('base64');
         } catch (error) {
             console.error('Error inverting mask:', error);
@@ -85,8 +80,8 @@ const fluxPlacementHandler = {
         try {
             const watermarkText = 'SkinTip.AI';
             const watermarkSvg = `<svg width="200" height="30" viewBox="0 0 200 30" xmlns="http://www.w3.org/2000/svg">
-                                <text x="10" y="25" font-family="Arial, sans-serif" font-size="16" fill="#FFFFFF" fill-opacity="0.5">${watermarkText}</text>
-                                </svg>`;
+                                    <text x="10" y="25" font-family="Arial, sans-serif" font-size="16" fill="#FFFFFF" fill-opacity="0.5">${watermarkText}</text>
+                                    </svg>`;
             const svgBuffer = Buffer.from(watermarkSvg);
 
             const metadata = await sharp(imageBuffer).metadata();
@@ -121,7 +116,8 @@ const fluxPlacementHandler = {
      * Uploads an image buffer to Supabase Storage and returns its public URL.
      */
     uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '') => {
-        const filePath = `<span class="math-inline">\{userId\}/</span>{folder ? folder + '/' : ''}${fileName}`;
+        // FIX: Correct string interpolation for filePath
+        const filePath = `${userId}/${folder ? folder + '/' : ''}${fileName}`;
         const { data, error } = await supabase.storage
             .from(SUPABASE_STORAGE_BUCKET)
             .upload(filePath, imageBuffer, {
@@ -176,7 +172,7 @@ const fluxPlacementHandler = {
                 .grayscale() // Ensure it's grayscale (1 channel)
                 .raw()       // Get raw pixel data
                 .toBuffer();
-            console.log(`Mask buffer converted to raw grayscale. Dims: <span class="math-inline">\{maskMetadata\.width\}x</span>{maskMetadata.height}, channels: 1.`);
+            console.log(`Mask buffer converted to raw grayscale. Dims: ${maskMetadata.width}x${maskMetadata.height}, channels: 1.`);
         } catch (error) {
             console.error('Error processing mask for Sharp composition:', error);
             throw new Error(`Failed to prepare mask for composition: ${error.message}`);
@@ -186,29 +182,22 @@ const fluxPlacementHandler = {
         const skinMetadata = await sharp(skinImageBuffer).metadata();
         const skinWidth = skinMetadata.width;
         const skinHeight = skinMetadata.height;
-        console.log(`DEBUG: Skin Image Dims: <span class="math-inline">\{skinWidth\}x</span>{skinHeight}`);
+        // Removed DEBUG: Skin Image Dims console.log
 
         // --- Step 2.1: Determine the bounding box of the drawn mask area ---
         const maskBoundingBox = await getMaskBoundingBox(maskBuffer, maskMetadata.width, maskMetadata.height);
         if (maskBoundingBox.isEmpty) {
             throw new Error('Drawn mask area is too small or empty. Please draw a visible area.');
         }
-        console.log('DEBUG: Calculated Mask Bounding Box:', maskBoundingBox);
+        // Removed DEBUG: Calculated Mask Bounding Box console.log
 
         // --- Step 2.2: Simplified background transparency handling ---
-        // This heuristic ensures the tattoo design has an alpha channel.
-        // It will NOT attempt to automatically remove solid backgrounds (like white or black squares)
-        // because previous complex heuristics led to unintended cropping.
-        // For best results, users MUST upload PNGs with a truly transparent background.
-        let tattooDesignWithAlphaBuffer = tattooDesignBuffer; // Start with the initial tattoo buffer (already PNG)
+        let tattooDesignWithAlphaBuffer = tattooDesignBuffer;
         try {
             const tattooMeta = await sharp(tattooDesignBuffer).metadata();
 
-            // If the image is a JPG (always opaque) or a PNG without an explicit alpha channel,
-            // we simply ensure it has an alpha channel, but we don't try to key out a background color.
             if (tattooMeta.format === 'jpeg' || (tattooMeta.format === 'png' && tattooMeta.channels < 4)) {
                 console.warn('INFO: Tattoo design image does not have an explicit alpha channel or is JPEG. Ensuring alpha but skipping complex background removal heuristic.');
-                // Simply ensure an alpha channel is present. This will not make an opaque background transparent.
                 tattooDesignWithAlphaBuffer = await sharp(tattooDesignBuffer)
                     .ensureAlpha()
                     .toBuffer();
@@ -219,9 +208,8 @@ const fluxPlacementHandler = {
             }
         } catch (alphaProcessError) {
             console.error('ERROR: Failed to ensure alpha channel for tattoo design. Proceeding with original buffer.', alphaProcessError.message);
-            tattooDesignWithAlphaBuffer = tattooDesignBuffer; // Fallback if error occurs
+            tattooDesignWithAlphaBuffer = tattooDesignBuffer;
         }
-        // --- END Step 2.2 ---
 
         // --- Step 2.3: Resize the tattoo design to fit the mask's bounding box and prepare for placement ---
         let tattooForPlacement;
@@ -232,7 +220,7 @@ const fluxPlacementHandler = {
                     background: { r: 0, g: 0, b: 0, alpha: 0 }
                 })
                 .toBuffer();
-            console.log(`Tattoo design resized specifically for mask bounding box: <span class="math-inline">\{maskBoundingBox\.width\}x</span>{maskBoundingBox.height}.`);
+            console.log(`Tattoo design resized specifically for mask bounding box: ${maskBoundingBox.width}x${maskBoundingBox.height}.`);
         } catch (error) {
             console.error('Error resizing tattoo design for placement:', error);
             throw new Error('Failed to resize tattoo design for placement within mask area.');
@@ -312,7 +300,6 @@ const fluxPlacementHandler = {
                         timeout: 90000
                     }
                 );
-                // ADD THIS LOGGING:
                 console.log(`DEBUG: Initial Flux POST response status for variation ${i+1}: ${fluxResponse.status}`);
                 console.log(`DEBUG: Initial Flux POST response data for variation ${i+1}:`, JSON.stringify(fluxResponse.data, null, 2));
 
@@ -323,13 +310,14 @@ const fluxPlacementHandler = {
             }
 
             const taskId = fluxResponse.data.id;
-            if (!taskId) {
-                console.error(`Flux API for variation ${i + 1} did not return a task ID:`, fluxResponse.data);
-                console.warn(`Skipping variation ${i + 1} due to missing task ID.`);
+            const pollingUrl = fluxResponse.data.polling_url; // GET THE POLLING URL HERE
+            if (!taskId || !pollingUrl) { // Check for both taskId and pollingUrl
+                console.error(`Flux API for variation ${i + 1} did not return a task ID or polling URL:`, fluxResponse.data);
+                console.warn(`Skipping variation ${i + 1} due to missing task ID or polling URL.`);
                 continue;
             }
 
-            // Poll for results for THIS specific task ID
+            // Poll for results for THIS specific task ID and URL
             let attempts = 0;
             let currentImageReady = false;
             while (attempts < 60 && !currentImageReady) {
@@ -337,7 +325,7 @@ const fluxPlacementHandler = {
                 await new Promise(resolve => setTimeout(resolve, 2000));
 
                 const result = await axios.get(
-                    `https://api.bfl.ai/v1/get_result?id=${taskId}`,
+                    pollingUrl, // USE THE POLLING URL FROM THE RESPONSE
                     {
                         headers: { 'x-key': fluxApiKey },
                         timeout: 10000

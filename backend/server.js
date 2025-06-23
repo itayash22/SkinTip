@@ -365,14 +365,13 @@ app.post('/api/generate-final-tattoo',
             }
 
             const generatedImageUrls = await fluxKontextHandler.placeTattooOnSkin(
-                skinImageBuffer,
-                tattooDesignImageBase64,
-                mask,
-                userPromptText,
-                userId,
-                3,
-                process.env.FLUX_API_KEY
-            );
+    skinImageBuffer,
+    tattooDesignImageBase64,
+    mask,
+    userId, // Correct: Now userId is the 4th argument
+    3,      // Correct: Now 3 (numVariations) is the 5th argument
+    process.env.FLUX_API_KEY // Correct: Now fluxApiKey is the 6th argument
+);
 
             const newTokens = await tokenService.deductTokens(userId, 'FLUX_PLACEMENT', tokensRequired, `Tattoo placement for user ${userId}`);
             console.log('Tokens deducted successfully. New balance:', newTokens);

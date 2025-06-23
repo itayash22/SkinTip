@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-23_V1.37_ALL_FIXES_INCLUDED'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-23_V1.38_FLUX_PARAMS_REVISION'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -182,11 +182,11 @@ const fluxPlacementHandler = {
         // 1. Convert tattoo design Base64 to Buffer.
         let tattooDesignOriginalBuffer = Buffer.from(tattooDesignImageBase64, 'base64');
         let tattooMeta = await sharp(tattooDesignOriginalBuffer).metadata();
-        // Removed DEBUG: Original tattoo design input meta console.log
+        console.log(`Original tattoo design input meta: format=${tattooMeta.format}, channels=${tattooMeta.channels}, hasAlpha=${tattooMeta.hasAlpha}`);
 
         // --- Step 2.2: Perform Background Removal using Remove.bg API (always outputs PNG with alpha) ---
         let tattooDesignPngWithRemovedBackground = await fluxPlacementHandler.removeImageBackground(tattooDesignOriginalBuffer);
-        // Removed DEBUG: Post removeBg/fallback PNG meta console.log
+
 
         // 2. Prepare Mask Buffer. Frontend mask is white for tattoo area, black elsewhere.
         const originalMaskBuffer = Buffer.from(maskBase64, 'base64');
@@ -207,7 +207,8 @@ const fluxPlacementHandler = {
         const skinMetadata = await sharp(skinImageBuffer).metadata();
         const skinWidth = skinMetadata.width;
         const skinHeight = skinMetadata.height;
-        // Removed DEBUG: Skin image meta console.log
+        console.log(`Skin image meta: format=${skinMetadata.format}, channels=${skinMetadata.channels}, hasAlpha=${skinMetadata.hasAlpha}`);
+
 
         // --- Step 2.1: Determine the bounding box of the drawn mask area ---
         const maskBoundingBox = await getMaskBoundingBox(maskBuffer, maskMetadata.width, maskMetadata.height);
@@ -225,7 +226,6 @@ const fluxPlacementHandler = {
                 })
                 .toBuffer();
             console.log(`Tattoo design resized specifically for mask bounding box: ${maskBoundingBox.width}x${maskBoundingBox.height}.`);
-            // Removed DEBUG: Tattoo for placement meta console.log
         } catch (error) {
             console.error('Error resizing tattoo design for placement:', error);
             throw new Error('Failed to resize tattoo design for placement within mask area.');
@@ -248,8 +248,6 @@ const fluxPlacementHandler = {
                 .png() // Output as PNG to preserve transparency for subsequent steps/display!
                 .toBuffer();
             console.log('Tattoo manually composited onto skin image with correct sizing, positioning, and clipping. Output format: PNG.');
-
-            // Removed DEBUG: Composited image (Sharp output) meta console.log
 
             // --- DEBUGGING STEP: UPLOAD AND LOG INTERMEDIATE IMAGE ---
             try {
@@ -287,7 +285,11 @@ const fluxPlacementHandler = {
                 mask_image: maskBase64,
                 n: 1,
                 output_format: 'png',
-                prompt_upsampling: true, // As per Flux API bot info
+                // RE-INTRODUCED AS THEY WERE WORKING PREVIOUSLY:
+                fidelity: 0.6,
+                guidance_scale: 8.0,
+                // NEW PARAMETERS from Flux API bot:
+                prompt_upsampling: true,
                 safety_tolerance: 'low', // As requested, set to 'low' for less strict filtering
                 seed: currentSeed
             };
@@ -311,7 +313,9 @@ const fluxPlacementHandler = {
                 console.log(`DEBUG: Initial Flux POST response data for variation ${i+1}:`, JSON.stringify(fluxResponse.data, null, 2));
 
             } catch (error) {
-                console.error(`Flux API call for variation ${i + 1} failed:`, error.response?.data?.toString() || error.message);
+                // ADDED IMPROVED ERROR LOGGING HERE
+                const errorDetail = error.response?.data ? JSON.stringify(error.response.data) : error.message;
+                console.error(`Flux API call for variation ${i + 1} failed:`, errorDetail);
                 console.warn(`Skipping variation ${i + 1} due to API call failure.`);
                 continue;
             }
@@ -339,7 +343,7 @@ const fluxPlacementHandler = {
                     }
                 );
 
-                // Removed DEBUG: Flux Polling Result Data console.log
+                console.log(`Flux Polling Result Data for Task ${taskId} (Attempt ${attempts}):`, JSON.stringify(result.data, null, 2));
 
                 if (result.data.status === 'Content Moderated') {
                     const moderationReason = result.data.details && result.data.details['Moderation Reasons'] ?
@@ -395,6 +399,6 @@ const fluxPlacementHandler = {
 
         return generatedImageUrls;
     }
-}
+}; // This closing brace belongs to the fluxPlacementHandler object.
 
-export default fluxPlacementHandler;
+export default fluxPlacementHandler; // This is the export statement.

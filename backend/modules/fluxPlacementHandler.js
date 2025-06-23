@@ -285,7 +285,7 @@ const fluxPlacementHandler = {
                 mask_image: maskBase64, // Flux API uses the mask for inpainting, but here we provide a full background image
                 n: 1, // Request 1 variation per call
                 output_format: 'png', // <--- CRITICAL CHANGE: Request PNG output from Flux!
-                fidelity: 0.5, // Adjusted fidelity for more blending
+                fidelity: 0.4, // Adjusted fidelity for more blending
                 guidance_scale: 8.0, // Adjusted guidance_scale
                 seed: currentSeed
             };

@@ -391,6 +391,6 @@ const fluxPlacementHandler = {
 
         return generatedImageUrls;
     }
-};
+}
 
 export default fluxPlacementHandler;

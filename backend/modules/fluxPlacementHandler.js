@@ -144,7 +144,7 @@ const fluxPlacementHandler = {
      * Uploads an image buffer to Supabase Storage and returns its public URL.
      */
     uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '', contentType = 'image/jpeg') => {
-        const filePath = `${userId}/${folder ? folder + '/' : ''}${fileName}`;
+       const filePath = folder ? `${userId}/${folder}/${fileName}` : `${userId}/${fileName}`;
         const { data, error } = await supabase.storage
             .from(SUPABASE_STORAGE_BUCKET)
             .upload(filePath, imageBuffer, {

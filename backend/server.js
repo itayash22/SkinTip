@@ -367,13 +367,18 @@ app.post('/api/generate-final-tattoo',
             // --- CRITICAL FIX HERE: ARGUMENT ORDER ---
 const numVariations = 3; // Define the number of variations clearly
 // The 'prompt: userPromptText' from req.body is no longer passed to fluxKontextHandler.placeTattooOnSkin
+// Define the number of variations clearly here, matching the Flux API call
+const numVariations = 3;
+
+// Call placeTattooOnSkin matching its 6-argument signature:
+// (skinImageBuffer, tattooDesignImageBase64, maskBase64, userId, numVariations, fluxApiKey)
 const generatedImageUrls = await fluxKontextHandler.placeTattooOnSkin(
     skinImageBuffer,
     tattooDesignImageBase64,
     mask,
-    userId,          // Corresponds to 'userId' in fluxPlacementHandler.js
-    numVariations,   // Corresponds to 'numVariations' in fluxPlacementHandler.js
-    process.env.FLUX_API_KEY // Corresponds to 'fluxApiKey' in fluxPlacementHandler.js
+    userId,                   // 4th argument: The authenticated user's ID (req.user.id)
+    numVariations,            // 5th argument: The desired number of variations (e.g., 3)
+    process.env.FLUX_API_KEY  // 6th argument: Your Flux API Key
 );
 // --- END CRITICAL FIX ---
 

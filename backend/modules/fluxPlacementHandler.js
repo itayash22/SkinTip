@@ -1,242 +1,400 @@
 // backend/modules/fluxPlacementHandler.js
+console.log('FLUX_HANDLER_VERSION: 2025-06-23_V1.37_ALL_FIXES_INCLUDED'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
 import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
+import FormData from 'form-data'; // Important for Node.js environments when sending FormData with axios
 
-// Initialize Supabase Client for backend operations
-// IMPORTANT: Use SUPABASE_SERVICE_KEY here for full RLS bypass on the backend.
-// This key should NEVER be exposed to the frontend.
-const supabaseClient = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_KEY // Changed to SUPABASE_SERVICE_KEY
-);
+// Initialize Supabase Storage client
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY; // Use the service role key for backend access
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generated-tattoos'; // Configure this bucket in Render
 
-// Helper function for delays (to avoid busy waiting)
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+// Get Remove.bg API Key
+const REMOVE_BG_API_KEY = process.env.REMOVE_BG_API_KEY; // Make sure to set this in Render environment variables!
 
-export const placeTattooOnSkin = async (skinImageBuffer, tattooDesignBuffer, maskBuffer) => {
-    try {
-        console.log("Starting Flux tattoo placement process (V1.48 Base with PNG End-to-End)...");
+// HELPER FUNCTION: To find the bounding box of the white area in a raw grayscale mask buffer
+async function getMaskBoundingBox(maskBuffer, width, height) {
+    let minX = width, minY = height, maxX = 0, maxY = 0;
+    let foundWhite = false;
 
-        // --- Step 1: Pre-process images for Flux input ---
-        const skinImageMetadata = await sharp(skinImageBuffer).metadata();
-        const tattooDesignMetadata = await sharp(tattooDesignBuffer).metadata();
-        const maskMetadata = await sharp(maskBuffer).metadata();
-
-        console.log(`Skin Image Dims: ${skinImageMetadata.width}x${skinImageMetadata.height}`);
-        console.log(`Tattoo Design Dims: ${tattooDesignMetadata.width}x${tattooDesignMetadata.height}`);
-        console.log(`Mask Dims: ${maskMetadata.width}x${maskMetadata.height}`);
-
-        // --- IMPORTANT: Mask Bounding Box Calculation ---
-        // This is a CRITICAL PLACEHOLDER. You MUST implement the actual logic
-        // to calculate the minX, minY, maxX, maxY, width, and height
-        // from your `maskBuffer`. The values below are hardcoded from your logs
-        // and WILL NOT work for different masks.
-        // For now, using your log values:
-        const maskBoundingBox = {
-            minX: 354,
-            minY: 296,
-            maxX: 603,
-            maxY: 576,
-            width: 250,
-            height: 281,
-            isEmpty: false
-        };
-        console.log("DEBUG: Calculated Mask Bounding Box:", maskBoundingBox);
-
-        if (maskBoundingBox.isEmpty) {
-            throw new Error("Mask bounding box is empty. No area for tattoo placement.");
-        }
-
-        // Ensure tattoo design has an alpha channel for proper compositing.
-        let processedTattooDesignBuffer = tattooDesignBuffer;
-        if (tattooDesignMetadata.channels < 4) {
-            console.log("Tattoo design image does not have an alpha channel. Adding one.");
-            processedTattooDesignBuffer = await sharp(tattooDesignBuffer)
-                .ensureAlpha()
-                .toBuffer();
-        } else {
-            console.log("Tattoo design image already has an alpha channel.");
-        }
-
-        let resizedTattooDesignBuffer;
-        try {
-            // Resize tattoo design specifically for the mask bounding box dimensions
-            resizedTattooDesignBuffer = await sharp(processedTattooDesignBuffer)
-                .resize(maskBoundingBox.width, maskBoundingBox.height, {
-                    fit: sharp.fit.inside,
-                    withoutEnlargement: true,
-                    kernel: sharp.kernel.lanczos3
-                })
-                .png()
-                .toBuffer();
-            console.log(`Tattoo design resized specifically for mask bounding box: ${maskBoundingBox.width}x${maskBoundingBox.height}.`);
-        } catch (sharpError) {
-            console.error("Error during Sharp tattoo design resizing:", sharpError);
-            throw new Error(`Failed to resize tattoo design image with Sharp: ${sharpError.message}`);
-        }
-
-
-        // Manually composite tattoo onto the full skin image
-        // NOTE: If Flux Kontext expects original image + mask + tattoo for true inpainting,
-        // this compositing step might need to change, and the mask/tattoo sent separately.
-        const fullCompositeImageBuffer = await sharp(skinImageBuffer)
-            .composite([{
-                input: resizedTattooDesignBuffer,
-                left: maskBoundingBox.minX,
-                top: maskBoundingBox.minY,
-                blend: 'over'
-            }])
-            .png()
-            .toBuffer();
-        console.log("Tattoo manually composited onto full skin image (PNG format for Flux input).");
-
-
-        // --- Step 2: Upload composited image to Supabase and get URL for Flux ---
-        const fileName = `debug_sharp_full_composite_${uuidv4()}.png`;
-        const { data: uploadData, error: uploadError } = await supabaseClient
-            .storage
-            .from('generated-tattoos')
-            .upload(`debug/${fileName}`, fullCompositeImageBuffer, {
-                contentType: 'image/png',
-                upsert: true,
-            });
-
-        if (uploadError) {
-            console.error("Supabase upload error:", uploadError);
-            throw new Error(`Failed to upload image to Supabase: ${uploadError.message}`);
-        }
-
-        const { data: publicUrlData } = supabaseClient
-            .storage
-            .from('generated-tattoos')
-            .getPublicUrl(uploadData.path);
-        const imageUrl = publicUrlData.publicUrl;
-
-        console.log(`Image uploaded to Supabase: ${imageUrl}`);
-        console.log(`--- DEBUG: SHARP FULL COMPOSITED IMAGE URL (SENT TO FLUX AS PNG): ${imageUrl} ---`);
-        console.log("^ Please check this URL in your browser to verify Sharp's PNG output.");
-
-
-        // --- Step 3: Call Flux API to initiate tattoo placement ---
-        if (!process.env.FLUX_API_KEY) {
-            throw new Error("FLUX_API_KEY environment variable is not set. Cannot proceed with Flux API call.");
-        }
-
-        let initialFluxResponse;
-        try {
-            // Updated Flux API endpoint based on Fal.ai documentation for Kontext models
-            initialFluxResponse = await axios.post(
-                'https://queue.fal.run/fal-ai/flux-pro/kontext', // <--- UPDATED ENDPOINT
-                {
-                    input_image_url: imageUrl,
-                    // You might need to add a 'prompt' or 'instruction' here for Flux Kontext
-                    // e.g., 'prompt': 'place the tattoo on the marked area naturally'
-                    // And potentially a separate 'mask_image_url' if the model expects it for inpainting.
-                    // The 'maskBoundingBox' is currently only used for Sharp compositing.
-                },
-                {
-                    headers: {
-                        'Authorization': `Key ${process.env.FLUX_API_KEY}`,
-      'Content-Type': 'application/json'
-                    },
-                    timeout: 60000, // Increased timeout for potentially longer AI generation
-                }
-            );
-        } catch (error) {
-            if (axios.isAxiosError(error)) {
-                const status = error.response?.status;
-                const responseData = error.response?.data;
-                console.error(`Axios error during initial Flux POST. Status: ${status}. Data: ${JSON.stringify(responseData)}. Error message: ${error.message}`);
-                throw new Error(`Flux API initial call failed: ${status} - ${responseData?.message || JSON.stringify(responseData) || error.message}`);
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const pixelValue = maskBuffer[y * width + x];
+            if (pixelValue > 0) { // Assuming mask is grayscale where 0 is black and >0 is white/drawn area
+                foundWhite = true;
+                minX = Math.min(minX, x);
+                minY = Math.min(minY, y);
+                maxX = Math.max(maxX, x);
+                maxY = Math.max(maxY, y);
             }
-            throw error; // Re-throw non-Axios errors
         }
+    }
 
-        const {
-  request_id: fluxTaskId,
-  status_url: pollingUrl,
-  response_url: responseUrl,
-  status
-} = initialFluxResponse.data;
+    if (!foundWhite) {
+        console.warn('WARNING: No white pixels found in mask. Bounding box is empty.');
+        return { minX: 0, minY: 0, maxX: 0, maxY: 0, width: 0, height: 0, isEmpty: true };
+    }
 
-if (status !== 'IN_QUEUE' || !fluxTaskId || !pollingUrl || !responseUrl) {
-  console.error("Full initial response:", initialFluxResponse.data);
-  throw new Error(
-    "Flux queue API didn’t return the expected request_id/status_url/response_url."
-  );
+    const padding = 0; // Keeping padding at 0 for now for exact fit
+    minX = Math.max(0, minX - padding);
+    minY = Math.max(0, minY - padding);
+    maxX = Math.min(width, maxX + padding);
+    maxY = Math.min(height, maxY + padding);
+
+    return {
+        minX: minX,
+        minY: minY,
+        maxX: maxX,
+        maxY: maxY,
+        width: maxX - minX + 1,
+        height: maxY - minY + 1,
+        isEmpty: false
+    };
 }
 
-        // --- Step 4: Poll Flux API for results with retry logic and exact URL ---
-        const MAX_POLLING_ATTEMPTS = 90; // Increased attempts
-        const POLLING_INTERVAL_MS = 3000; // Increased interval
-        const MAX_POLLING_INTERVAL_MS = 15000; // Increased max interval
-        const TOTAL_POLLING_TIMEOUT_MS = 8 * 60 * 1000; // Increased total timeout
-        const pollingStartTime = Date.now();
-        let currentAttempt = 0;
-        let result = null;
 
-        while (currentAttempt < MAX_POLLING_ATTEMPTS && (Date.now() - pollingStartTime) < TOTAL_POLLING_TIMEOUT_MS) {
-            currentAttempt++;
-            const currentDelay = Math.min(POLLING_INTERVAL_MS * Math.pow(1.5, currentAttempt - 1), MAX_POLLING_INTERVAL_MS);
-            console.log(`Polling Flux API. Attempt ${currentAttempt}/${MAX_POLLING_ATTEMPTS}. Next poll in ${currentDelay / 1000}s.`);
-            await delay(currentDelay);
+const fluxPlacementHandler = {
 
+    /**
+     * Calls Remove.bg API to remove background from an image buffer.
+     * Returns a buffer of the image with background removed (always PNG).
+     */
+    removeImageBackground: async (imageBuffer) => {
+        if (!REMOVE_BG_API_KEY) {
+            console.warn('REMOVE_BG_API_KEY is not set. Skipping background removal and returning original image as PNG.');
+            return await sharp(imageBuffer).png().toBuffer(); // Ensure it's PNG even if no removal
+        }
+
+        try {
+            console.log('Calling Remove.bg API for background removal...');
+            const formData = new FormData();
+            formData.append('image_file', new Blob([imageBuffer], { type: 'image/png' }), 'tattoo_design.png'); // Send as PNG
+            formData.append('size', 'auto');
+            formData.append('format', 'png'); // Request PNG output from remove.bg
+
+            const response = await axios.post('https://api.remove.bg/v1.0/removebg', formData, {
+                headers: {
+                    'X-Api-Key': REMOVE_BG_API_KEY,
+                    ...formData.getHeaders() // Important for FormData
+                },
+                responseType: 'arraybuffer' // To get the image data as a buffer
+            });
+
+            if (response.status === 200) {
+                console.log('Background removed successfully by Remove.bg.');
+                return Buffer.from(response.data); // Returns PNG buffer from remove.bg
+            } else {
+                const errorResponseData = response.data.toString();
+                console.error('Remove.bg API error:', response.status, response.statusText, errorResponseData);
+                throw new Error(`Remove.bg API failed with status ${response.status}: ${errorResponseData.substring(0, 100)}`);
+            }
+        } catch (error) {
+            console.error('Error calling Remove.bg API:', error.response?.data?.toString() || error.message);
+            // If remove.bg fails, proceed with the original image but ensure it's a PNG
+            console.warn('Background removal failed. Proceeding with original tattoo design (may have background).');
+            return await sharp(imageBuffer).png().toBuffer();
+        }
+    },
+
+    /**
+     * Applies a watermark to an image buffer and returns the watermarked image as a buffer.
+     * Always outputs PNG to preserve transparency.
+     */
+    applyWatermark: async (imageBuffer) => {
+        try {
+            const watermarkText = 'SkinTip.AI';
+            const watermarkSvg = `<svg width="200" height="30" viewBox="0 0 200 30" xmlns="http://www.w3.org/2000/svg">
+                                    <text x="10" y="25" font-family="Arial, sans-serif" font-size="16" fill="#FFFFFF" fill-opacity="0.5">${watermarkText}</text>
+                                    </svg>`;
+            const svgBuffer = Buffer.from(watermarkSvg);
+
+            const metadata = await sharp(imageBuffer).metadata();
+            const imageWidth = metadata.width;
+            const imageHeight = metadata.height;
+
+            const svgWidth = 200;
+            const svgHeight = 30;
+            const padding = 15;
+
+            const left = Math.max(0, imageWidth - svgWidth - padding);
+            const top = Math.max(0, imageHeight - svgHeight - padding);
+
+            // Force output to PNG to always preserve transparency
+            return await sharp(imageBuffer)
+                .composite([{
+                    input: svgBuffer,
+                    top: top,
+                    left: left,
+                    blend: 'over'
+                }])
+                .png() // Always output as PNG
+                .toBuffer();
+
+        } catch (error) {
+            console.error('Error applying watermark (caught):', error);
+            return imageBuffer; // Return original if error
+        }
+    },
+
+    /**
+     * Uploads an image buffer to Supabase Storage and returns its public URL.
+     */
+    uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '', contentType = 'image/jpeg') => {
+        // Fix: Ensure correct path construction without double slashes
+        const filePath = folder ? `${userId}/${folder}/${fileName}` : `${userId}/${fileName}`;
+        const { data, error } = await supabase.storage
+            .from(SUPABASE_STORAGE_BUCKET)
+            .upload(filePath, imageBuffer, {
+                contentType: contentType, // Use provided content type
+                upsert: false
+            });
+
+        if (error) {
+            console.error('Supabase upload error:', error);
+            throw new Error(`Failed to upload image to storage: ${error.message}`);
+        }
+
+        const { data: publicUrlData } = supabase.storage
+            .from(SUPABASE_STORAGE_BUCKET)
+            .getPublicUrl(filePath);
+
+        if (!publicUrlData || !publicUrlData.publicUrl) {
+            console.error('Supabase getPublicUrl error: No public URL returned', publicUrlData);
+            throw new Error('Failed to get public URL for uploaded image.');
+        }
+
+        console.log('Image uploaded to Supabase:', publicUrlData.publicUrl);
+        return publicUrlData.publicUrl;
+    },
+
+    /**
+     * Calls the Flux Kontext API to place a tattoo design onto a skin image.
+     * Handles all image preprocessing (resizing, mask inversion, watermarking, storage).
+     * Now makes multiple Flux API calls to get multiple variations.
+     */
+    placeTattooOnSkin: async (skinImageBuffer, tattooDesignImageBase64, maskBase64, userId, numVariations, fluxApiKey) => { // userPrompt removed from signature
+        console.log('Starting Flux tattoo placement process...');
+
+        // 1. Convert tattoo design Base64 to Buffer.
+        let tattooDesignOriginalBuffer = Buffer.from(tattooDesignImageBase64, 'base64');
+        let tattooMeta = await sharp(tattooDesignOriginalBuffer).metadata();
+        // Removed DEBUG: Original tattoo design input meta console.log
+
+        // --- Step 2.2: Perform Background Removal using Remove.bg API (always outputs PNG with alpha) ---
+        let tattooDesignPngWithRemovedBackground = await fluxPlacementHandler.removeImageBackground(tattooDesignOriginalBuffer);
+        // Removed DEBUG: Post removeBg/fallback PNG meta console.log
+
+        // 2. Prepare Mask Buffer. Frontend mask is white for tattoo area, black elsewhere.
+        const originalMaskBuffer = Buffer.from(maskBase64, 'base64');
+        let maskBuffer;
+        let maskMetadata;
+        try {
+            maskMetadata = await sharp(originalMaskBuffer).metadata();
+            maskBuffer = await sharp(originalMaskBuffer)
+                .grayscale() // Ensure it's grayscale (1 channel)
+                .raw()       // Get raw pixel data
+                .toBuffer();
+            console.log(`Mask buffer converted to raw grayscale. Dims: ${maskMetadata.width}x${maskMetadata.height}, channels: 1.`);
+        } catch (error) {
+            console.error('Error processing mask for Sharp composition:', error);
+            throw new Error(`Failed to prepare mask for composition: ${error.message}`);
+        }
+
+        const skinMetadata = await sharp(skinImageBuffer).metadata();
+        const skinWidth = skinMetadata.width;
+        const skinHeight = skinMetadata.height;
+        // Removed DEBUG: Skin image meta console.log
+
+        // --- Step 2.1: Determine the bounding box of the drawn mask area ---
+        const maskBoundingBox = await getMaskBoundingBox(maskBuffer, maskMetadata.width, maskMetadata.height);
+        if (maskBoundingBox.isEmpty) {
+            throw new Error('Drawn mask area is too small or empty. Please draw a visible area.');
+        }
+
+        // --- Step 2.3: Resize the tattoo design to fit the mask's bounding box and prepare for placement ---
+        let tattooForPlacement;
+        try {
+            tattooForPlacement = await sharp(tattooDesignPngWithRemovedBackground) // Use the background-removed PNG buffer
+                .resize(maskBoundingBox.width, maskBoundingBox.height, {
+                    fit: 'contain',
+                    background: { r: 0, g: 0, b: 0, alpha: 0 } // Ensures transparent background if tattoo is smaller than bounding box
+                })
+                .toBuffer();
+            console.log(`Tattoo design resized specifically for mask bounding box: ${maskBoundingBox.width}x${maskBoundingBox.height}.`);
+            // Removed DEBUG: Tattoo for placement meta console.log
+        } catch (error) {
+            console.error('Error resizing tattoo design for placement:', error);
+            throw new Error('Failed to resize tattoo design for placement within mask area.');
+        }
+
+        // 3. **Manual Composition with Sharp (Hybrid Approach Step 1)**
+        let compositedImageBuffer;
+        try {
+            compositedImageBuffer = await sharp(skinImageBuffer)
+                .composite([
+                    {
+                        input: tattooForPlacement,
+                        blend: 'over',
+                        tile: false,
+                        left: maskBoundingBox.minX,
+                        top: maskBoundingBox.minY,
+                        mask: maskBuffer // Apply the drawn mask here
+                    }
+                ])
+                .png() // Output as PNG to preserve transparency for subsequent steps/display!
+                .toBuffer();
+            console.log('Tattoo manually composited onto skin image with correct sizing, positioning, and clipping. Output format: PNG.');
+
+            // Removed DEBUG: Composited image (Sharp output) meta console.log
+
+            // --- DEBUGGING STEP: UPLOAD AND LOG INTERMEDIATE IMAGE ---
             try {
-                const pollResponse = await axios.get(pollingUrl, {
-    headers: {
-        'Authorization': `Key ${process.env.FLUX_API_KEY}`
-    }
-});
+                const debugFileName = `debug_sharp_composite_${uuidv4()}.png`;
+                const debugPublicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(
+                    compositedImageBuffer,
+                    debugFileName,
+                    userId,
+                    'debug',
+                    'image/png' // Content type for debug output
+                );
+                console.log(`--- DEBUG: SHARP COMPOSITED IMAGE URL: ${debugPublicUrl} ---`);
+            } catch (debugUploadError) {
+                console.error('DEBUG ERROR: Failed to upload intermediate Sharp composite image:', debugUploadError);
+            }
+            // --- END DEBUGGING STEP ---
 
-                const fluxStatus = pollResponse.data.status;
-                console.log(`Flux Poll Status (Attempt ${currentAttempt}): ${fluxStatus}`);
+        } catch (error) {
+            console.error('Error during manual image composition (Phase 1) with positioning:', error);
+            throw new Error(`Failed to composite tattoo onto skin with correct positioning: ${error.message}`);
+        }
 
-                if (fluxStatus.toLowerCase() === 'completed') {
-                    result = pollResponse.data.result;
-                    console.log("Flux task completed successfully. Result:", result);
-                    // You might need to add watermarking here if Flux doesn't do it
-                    return result;
-                } else if (fluxStatus === 'failed' || fluxStatus === 'error') {
-                    console.error("Flux task failed or encountered an error:", pollResponse.data.details || 'No details provided.');
-                    throw new Error(`Flux task failed: ${fluxStatus} - ${pollResponse.data.details || 'Check Flux logs for more info.'}`);
-                }
+        // 4. Prepare for multiple Flux API calls
+        const generatedImageUrls = [];
+        const basePrompt = `Make the tattoo look naturally placed on the skin, blend seamlessly, adjust lighting and shadows for realism. Realistic photo, professional tattoo photography, high detail.`; // UserPrompt removed
 
-            } catch (pollError) {
-                if (axios.isAxiosError(pollError)) {
-                    if (pollError.response) {
-                        console.error(`Axios error during Flux polling (Status: ${pollError.response.status}, Data: ${JSON.stringify(pollError.response.data)}): ${pollError.message}`);
-                        if (pollError.response.status === 404 && pollError.response.data?.status === 'Task not found') {
-                            console.warn("Flux reported 'Task not found' during polling. This is unexpected for an active task ID, but continuing retry.");
-                        } else if (pollError.response.status === 401 || pollError.response.status === 403) {
-                            console.error("Authentication/Authorization error with Flux API. Check your x-key environment variable.");
-                            throw new Error("Flux API authentication/authorization failed. Please verify your FLUX_API_KEY.");
-                        } else if (pollError.response.status >= 500) {
-                            console.warn("Flux server error (5xx) during polling. Retrying...");
+        console.log(`Making ${numVariations} calls to Flux API...`);
+
+        for (let i = 0; i < numVariations; i++) {
+            const currentSeed = Date.now() + i; // Vary seed for different results
+
+            const fluxPayload = {
+                prompt: basePrompt,
+                input_image: compositedImageBuffer.toString('base64'),
+                mask_image: maskBase64,
+                n: 1,
+                output_format: 'png',
+                prompt_upsampling: true, // As per Flux API bot info
+                safety_tolerance: 'low', // As requested, set to 'low' for less strict filtering
+                seed: currentSeed
+            };
+
+            const fluxHeaders = {
+                'Content-Type': 'application/json',
+                'x-key': fluxApiKey
+            };
+
+            let fluxResponse;
+            try {
+                fluxResponse = await axios.post(
+                    'https://api.bfl.ai/v1/flux-kontext-pro',
+                    fluxPayload,
+                    {
+                        headers: fluxHeaders,
+                        timeout: 90000
+                    }
+                );
+                console.log(`DEBUG: Initial Flux POST response status for variation ${i+1}: ${fluxResponse.status}`);
+                console.log(`DEBUG: Initial Flux POST response data for variation ${i+1}:`, JSON.stringify(fluxResponse.data, null, 2));
+
+            } catch (error) {
+                console.error(`Flux API call for variation ${i + 1} failed:`, error.response?.data?.toString() || error.message);
+                console.warn(`Skipping variation ${i + 1} due to API call failure.`);
+                continue;
+            }
+
+            const taskId = fluxResponse.data.id;
+            const pollingUrl = fluxResponse.data.polling_url;
+            if (!taskId || !pollingUrl) {
+                console.error(`Flux API for variation ${i + 1} did not return a task ID or polling URL:`, fluxResponse.data);
+                console.warn(`Skipping variation ${i + 1} due to missing task ID or polling URL.`);
+                continue;
+            }
+
+            // Poll for results for THIS specific task ID and URL
+            let attempts = 0;
+            let currentImageReady = false;
+            while (attempts < 60 && !currentImageReady) {
+                attempts++;
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                const result = await axios.get(
+                    pollingUrl,
+                    {
+                        headers: { 'x-key': fluxApiKey },
+                        timeout: 10000
+                    }
+                );
+
+                // Removed DEBUG: Flux Polling Result Data console.log
+
+                if (result.data.status === 'Content Moderated') {
+                    const moderationReason = result.data.details && result.data.details['Moderation Reasons'] ?
+                                            result.data.details['Moderation Reasons'].join(', ') : 'Unknown reason';
+                    console.error(`Flux API Polling terminated for Task ${taskId}: Content Moderated. Reason: ${moderationReason}`);
+                    console.warn(`Skipping variation ${i + 1} due to content moderation.`);
+                    currentImageReady = true;
+                } else if (result.data.status === 'Error') {
+                    console.error(`Flux API Polling Error for Task ${taskId}:`, result.data);
+                    console.warn(`Skipping variation ${i + 1} due to Flux API error during polling.`);
+                    currentImageReady = true;
+                } else if (result.data.status === 'Ready') {
+                    const imageUrlFromFlux = result.data.result && result.data.result.sample;
+
+                    if (imageUrlFromFlux) {
+                        let imageBuffer;
+                        try {
+                            const imageResponse = await axios.get(imageUrlFromFlux, { responseType: 'arraybuffer' });
+                            imageBuffer = Buffer.from(imageResponse.data);
+                            console.log(`Successfully downloaded image from Flux URL for Task ${taskId}: ${imageUrlFromFlux.substring(0, 50)}...`);
+                        } catch (downloadError) {
+                            console.error(`Error downloading image from Flux URL for Task ${taskId}:`, imageUrlFromFlux, downloadError.message);
+                            console.warn(`Skipping variation ${i + 1} due to download error.`);
+                            currentImageReady = true;
+                            continue;
                         }
-                    } else if (pollError.request) {
-                        console.warn(`Flux polling request timed out or network error (Attempt ${currentAttempt}). Retrying...`);
+
+                        // Watermark it (applyWatermark now ensures PNG output)
+                        const watermarkedBuffer = await fluxPlacementHandler.applyWatermark(imageBuffer);
+                        const fileName = `tattoo-${uuidv4()}.png`; // File extension is now PNG
+                        const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarkedBuffer, fileName, userId, '', 'image/png'); // Content type is now PNG
+                        generatedImageUrls.push(publicUrl);
+                        console.log(`Successfully generated and watermarked 1 image for variation ${i + 1}.`);
+                        currentImageReady = true;
                     } else {
-                        console.error("Error setting up Flux polling request:", pollError.message);
-                        throw pollError;
+                        console.warn(`Flux API for Task ${taskId} returned Ready status but no valid image URL found in "sample".`, result.data);
+                        console.warn(`Skipping variation ${i + 1} due to malformed Flux output.`);
+                        currentImageReady = true;
                     }
                 } else {
-                    console.error("Non-Axios error during Flux polling:", pollError);
-                    throw pollError;
+                    console.log(`Polling attempt ${attempts}: ${result.data.status} for Task ${taskId}.`);
                 }
             }
+
+            if (!currentImageReady) {
+                console.warn(`Refinement timeout for variation ${i + 1}: No image was generated within the time limit.`);
+            }
+        } // End of for loop for multiple variations
+
+        if (generatedImageUrls.length === 0) {
+            throw new Error('Flux API: No images were generated across all attempts. Please try again or with a different design.');
         }
 
-        if ((Date.now() - pollingStartTime) >= TOTAL_POLLING_TIMEOUT_MS) {
-            throw new Error(`Flux task did not complete within the total polling timeout of ${TOTAL_POLLING_TIMEOUT_MS / 60000} minutes.`);
-        } else {
-            throw new Error("Flux task did not complete within the maximum polling attempts.");
-        }
-
-    } catch (error) {
-        console.error("Error in placeTattooOnSkin function:", error);
-        throw error;
+        return generatedImageUrls;
     }
-};
+}
+
+export default fluxPlacementHandler;

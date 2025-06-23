@@ -1,12 +1,10 @@
 // backend/server.js
 // This file was last updated on 2025-06-14 (EOD) to fix ES Module import errors.
-// backend/server.js
-// This file was last updated on 2025-06-14 (EOD) to fix ES Module import errors.
 
-// ADD THESE DEBUGGING LINES AT THE VERY TOP
-console.log('DEBUG: Current working directory:', process.cwd());
+// ADD THESE DEBUGGING LINES AT THE VERY TOP (TEMPORARY - REMOVE LATER)
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+console.log('DEBUG: Current working directory:', process.cwd());
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 console.log('DEBUG: Directory of server.js:', __dirname);
@@ -20,18 +18,7 @@ try {
 }
 
 
-import 'dotenv/config'; // Use 'dotenv/config' for top-level loading with ESM
-import express from 'express';
-import cors from 'cors';
-import helmet from 'helmet'; // <-- This is the line that fails
-import rateLimit from 'express-rate-limit';
-import multer from 'multer';
-import { createClient } from '@supabase/supabase-js';
-import bcryptjs from 'bcryptjs'; // Corrected import for bcryptjs
-import jwt from 'jsonwebtoken';
-import sizeOf from 'image-size'; // image-size default export might be different, but typically it's named 'imageSize' or used as a function
-
-// ... rest of your code
+// --- START OF ACTUAL IMPORTS (SHOULD ONLY APPEAR ONCE) ---
 import 'dotenv/config'; // Use 'dotenv/config' for top-level loading with ESM
 import express from 'express';
 import cors from 'cors';
@@ -46,6 +33,7 @@ import sizeOf from 'image-size'; // image-size default export might be different
 // Import our new modularized services
 import tokenService from './modules/tokenService.js'; // Added .js extension
 import fluxKontextHandler from './modules/fluxPlacementHandler.js'; // Added .js extension
+// --- END OF ACTUAL IMPORTS ---
 
 // Function to generate a dynamic timestamp for deployment tracking
 const getDeploymentTimestamp = () => new Date().toISOString();
@@ -318,7 +306,7 @@ app.post('/api/admin/debug-add-tokens', authenticateToken, async (req, res) => {
         }
 
         console.log(`DEBUG: Successfully added ${amountToAdd} tokens directly for user ${userId}. New balance: ${newTokensRemaining}`);
-        
+
         res.json({
             message: `Successfully added ${amountToAdd} tokens directly. New balance: ${newTokensRemaining}.`,
             tokens_remaining: newTokensRemaining
@@ -368,7 +356,7 @@ app.post('/api/generate-final-tattoo',
 
             const skinImageBuffer = skinImageFile.buffer;
             const tattooDesignImageBase64 = tattooDesignImageFile.buffer.toString('base64');
-            
+
             if (!isValidBase64(tattooDesignImageBase64) || !isValidBase64(mask)) {
                 console.error('Server: Invalid Base64 data detected for tattoo design or mask. Returning 400.');
                 return res.status(400).json({ error: 'Invalid image data detected during processing.' });

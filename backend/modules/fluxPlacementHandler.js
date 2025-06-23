@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-23_V1.25_FIXED_SUPABASE_PATH_AND_FLUX_POLLING_URL'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-23_V1.26_ATTEMPT_BG_REMOVAL'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -20,7 +20,7 @@ async function getMaskBoundingBox(maskBuffer, width, height) {
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
             const pixelValue = maskBuffer[y * width + x];
-            if (pixelValue > 0) {
+            if (pixelValue > 0) { // Assuming mask is grayscale where 0 is black and >0 is white/drawn area
                 foundWhite = true;
                 minX = Math.min(minX, x);
                 minY = Math.min(minY, y);
@@ -35,7 +35,7 @@ async function getMaskBoundingBox(maskBuffer, width, height) {
         return { minX: 0, minY: 0, maxX: 0, maxY: 0, width: 0, height: 0, isEmpty: true };
     }
 
-    const padding = 0; // Keeping padding at 0 for exact fit
+    const padding = 0; // Keeping padding at 0 for now for exact fit
     minX = Math.max(0, minX - padding);
     minY = Math.max(0, minY - padding);
     maxX = Math.min(width, maxX + padding);
@@ -116,7 +116,6 @@ const fluxPlacementHandler = {
      * Uploads an image buffer to Supabase Storage and returns its public URL.
      */
     uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '') => {
-        // FIX: Correct string interpolation for filePath
         const filePath = `${userId}/${folder ? folder + '/' : ''}${fileName}`;
         const { data, error } = await supabase.storage
             .from(SUPABASE_STORAGE_BUCKET)
@@ -155,7 +154,8 @@ const fluxPlacementHandler = {
         let tattooDesignBuffer;
         try {
             tattooDesignBuffer = Buffer.from(tattooDesignImageBase64, 'base64');
-            tattooDesignBuffer = await sharp(tattooDesignBuffer).png().toBuffer(); // Ensure PNG for alpha support
+            // Ensure PNG for alpha support if not already, and potentially prepare for transparency keying
+            tattooDesignBuffer = await sharp(tattooDesignBuffer).png().toBuffer();
             console.log('Tattoo design image converted to PNG buffer.');
         } catch (error) {
             console.error('Error processing tattoo design image base64:', error);
@@ -178,38 +178,88 @@ const fluxPlacementHandler = {
             throw new Error(`Failed to prepare mask for composition: ${error.message}`);
         }
 
-        // Get dimensions of the base skin image
         const skinMetadata = await sharp(skinImageBuffer).metadata();
         const skinWidth = skinMetadata.width;
         const skinHeight = skinMetadata.height;
-        // Removed DEBUG: Skin Image Dims console.log
 
         // --- Step 2.1: Determine the bounding box of the drawn mask area ---
         const maskBoundingBox = await getMaskBoundingBox(maskBuffer, maskMetadata.width, maskMetadata.height);
         if (maskBoundingBox.isEmpty) {
             throw new Error('Drawn mask area is too small or empty. Please draw a visible area.');
         }
-        // Removed DEBUG: Calculated Mask Bounding Box console.log
 
-        // --- Step 2.2: Simplified background transparency handling ---
+        // --- Step 2.2: Attempt to remove common solid backgrounds (black/white) from tattoo design ---
         let tattooDesignWithAlphaBuffer = tattooDesignBuffer;
         try {
             const tattooMeta = await sharp(tattooDesignBuffer).metadata();
+            console.log(`Tattoo design original format: ${tattooMeta.format}, channels: ${tattooMeta.channels}`);
 
+            // First, ensure image has an alpha channel if it's currently opaque (like JPEG or PNG without alpha)
             if (tattooMeta.format === 'jpeg' || (tattooMeta.format === 'png' && tattooMeta.channels < 4)) {
-                console.warn('INFO: Tattoo design image does not have an explicit alpha channel or is JPEG. Ensuring alpha but skipping complex background removal heuristic.');
-                tattooDesignWithAlphaBuffer = await sharp(tattooDesignBuffer)
-                    .ensureAlpha()
-                    .toBuffer();
-                console.log('Tattoo design image now has an alpha channel, if it did not before.');
+                console.log('Attempting to ensure alpha and detect common solid backgrounds for transparency...');
+
+                // Read pixel data to determine background color heuristic (e.g., top-left pixel)
+                const { data, info } = await sharp(tattooDesignBuffer)
+                    .raw()
+                    .toBuffer({ resolveWithObject: true });
+
+                const pixelSize = info.channels;
+                const topLeftPixel = [];
+                for (let c = 0; c < pixelSize; c++) {
+                    topLeftPixel.push(data[c]);
+                }
+
+                console.log('Top-left pixel of tattoo design:', topLeftPixel);
+
+                let isLikelyBlackBackground = false;
+                let isLikelyWhiteBackground = false;
+
+                if (pixelSize >= 3) { // Check RGB values
+                    // Heuristic for black (near 0,0,0)
+                    if (topLeftPixel[0] < 10 && topLeftPixel[1] < 10 && topLeftPixel[2] < 10) {
+                        isLikelyBlackBackground = true;
+                    }
+                    // Heuristic for white (near 255,255,255)
+                    if (topLeftPixel[0] > 245 && topLeftPixel[1] > 245 && topLeftPixel[2] > 245) {
+                        isLikelyWhiteBackground = true;
+                    }
+                } else if (pixelSize === 1) { // Grayscale
+                    if (topLeftPixel[0] < 10) {
+                        isLikelyBlackBackground = true;
+                    }
+                    if (topLeftPixel[0] > 245) {
+                        isLikelyWhiteBackground = true;
+                    }
+                }
+
+
+                if (isLikelyBlackBackground || isLikelyWhiteBackground) {
+                    console.log(`Detected a likely ${isLikelyBlackBackground ? 'black' : 'white'} background. Attempting to key it out.`);
+                    // Create an alpha channel where the detected background color is transparent
+                    tattooDesignWithAlphaBuffer = await sharp(tattooDesignBuffer)
+                        .modulate({
+                            brightness: 1, // Keep brightness as is
+                            saturation: 1, // Keep saturation as is
+                            hue: 0 // Keep hue as is
+                        })
+                        .removeAlpha() // Remove existing alpha if any
+                        .toColourspace('srgb') // Ensure sRGB color space for consistent comparison
+                        .ensureAlpha(isLikelyBlackBackground ? { background: { r: 0, g: 0, b: 0, alpha: 0 } } : { background: { r: 255, g: 255, b: 255, alpha: 0 } }) // Key out black or white with 0 alpha
+                        .toBuffer();
+                    console.log('Solid background removal applied.');
+                } else {
+                    console.warn('No common solid background detected or background is not uniform. Ensuring alpha without keying.');
+                    tattooDesignWithAlphaBuffer = await sharp(tattooDesignBuffer).ensureAlpha().toBuffer();
+                }
 
             } else {
-                console.log('Tattoo design image already has an alpha channel. No background removal heuristic applied.');
+                console.log('Tattoo design image already has an explicit alpha channel. No background removal heuristic applied.');
             }
-        } catch (alphaProcessError) {
-            console.error('ERROR: Failed to ensure alpha channel for tattoo design. Proceeding with original buffer.', alphaProcessError.message);
-            tattooDesignWithAlphaBuffer = tattooDesignBuffer;
+        } catch (bgRemovalError) {
+            console.error('ERROR: Failed to attempt background removal. Proceeding with original buffer.', bgRemovalError.message);
+            tattooDesignWithAlphaBuffer = tattooDesignBuffer; // Fallback if error occurs
         }
+        // --- END Step 2.2 ---
 
         // --- Step 2.3: Resize the tattoo design to fit the mask's bounding box and prepare for placement ---
         let tattooForPlacement;
@@ -217,7 +267,7 @@ const fluxPlacementHandler = {
             tattooForPlacement = await sharp(tattooDesignWithAlphaBuffer)
                 .resize(maskBoundingBox.width, maskBoundingBox.height, {
                     fit: 'contain',
-                    background: { r: 0, g: 0, b: 0, alpha: 0 }
+                    background: { r: 0, g: 0, b: 0, alpha: 0 } // Ensures transparent background if tattoo is smaller than bounding box
                 })
                 .toBuffer();
             console.log(`Tattoo design resized specifically for mask bounding box: ${maskBoundingBox.width}x${maskBoundingBox.height}.`);
@@ -237,10 +287,10 @@ const fluxPlacementHandler = {
                         tile: false,
                         left: maskBoundingBox.minX,
                         top: maskBoundingBox.minY,
-                        mask: maskBuffer
+                        mask: maskBuffer // Apply the drawn mask here
                     }
                 ])
-                .jpeg({ quality: 90 })
+                .jpeg({ quality: 90 }) // Output as JPEG
                 .toBuffer();
             console.log('Tattoo manually composited onto skin image with correct sizing, positioning, and clipping.');
 

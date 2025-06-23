@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "",
   "main": "backend/server.js",
-  "type": "module",  <-- This is the crucial line you need to add!
+  "type": "module",
   "scripts": {
     "start": "node backend/server.js",
     "dev": "nodemon backend/server.js"

@@ -25,7 +25,6 @@
 
   <main class="main-content">
     <div class="container">
-      <!-- Tattoo Design Upload -->
       <section id="tattooDesignUploadSection" class="section">
         <div class="section-header">
           <h2>Upload Your Tattoo Design</h2>
@@ -35,7 +34,8 @@
           <input type="file" id="tattooDesignFileInput"
                  accept="image/jpeg,image/png,image/webp" hidden>
           <div class="upload-placeholder">
-            <!-- SVG icon + instructions -->
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-image"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+            <p>Drag & drop your tattoo design here, or click to browse</p>
           </div>
         </div>
         <div id="tattooDesignPreview" class="image-preview" style="display:none;">
@@ -49,7 +49,6 @@
         </button>
       </section>
 
-      <!-- Skin Photo Upload -->
       <section id="skinPhotoUploadSection" class="section" style="display:none;">
         <div class="section-header">
           <h2>Upload Your Photo</h2>
@@ -59,7 +58,8 @@
           <input type="file" id="fileInput"
                  accept="image/jpeg,image/png,image/webp" hidden>
           <div class="upload-placeholder">
-            <!-- SVG icon + instructions -->
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-image"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+            <p>Drag & drop your skin photo here, or click to browse</p>
           </div>
         </div>
         <div id="imagePreview" class="image-preview" style="display:none;">
@@ -68,7 +68,6 @@
         </div>
       </section>
 
-      <!-- Drawing Section -->
       <section id="drawingSection" class="section" style="display:none;">
         <div class="section-header">
           <h2>Mark Tattoo Area</h2>
@@ -86,7 +85,45 @@
         </button>
       </section>
 
-      <!-- Results and Artists sections omitted for brevity… -->
+      <section id="resultsSection" class="section" style="display:none;">
+        <div class="section-header">
+          <h2>Your Tattoo Previews</h2>
+          <p>Download and share your new look!</p>
+        </div>
+        <div id="generatedImages" class="image-grid">
+          </div>
+        <button id="regenerateBtn" class="btn btn-outline" style="margin-top: 1rem;">Generate New Variations (15 Tokens)</button>
+        <button id="backToUploadsBtn" class="btn btn-secondary" style="margin-top: 1rem;">Start Over</button>
+      </section>
+
+      <section id="artistsSection" class="section" style="display:none;">
+        <div class="section-header">
+          <h2>Find a Tattoo Artist</h2>
+          <p>Connect with talented artists near you!</p>
+          <div class="artist-filter">
+            <input type="text" id="artistSearch" placeholder="Search by name, style, or location">
+            <button class="btn btn-secondary" onclick="filterArtists()">Apply Filter</button>
+          </div>
+        </div>
+        <div id="artistsGrid" class="artist-grid">
+          </div>
+      </section>
+
+      <section id="authSection" class="section auth-section">
+        <div class="section-header">
+          <h2>Welcome to SkinTip!</h2>
+          <p id="authMessage">Login or register to get started.</p>
+        </div>
+        <div class="auth-form">
+          <input type="email" id="email" placeholder="Email" required>
+          <input type="password" id="password" placeholder="Password" required>
+          <input type="text" id="username" placeholder="Username (for registration)" style="display:none;">
+          <button id="loginBtn" class="btn btn-primary">Login</button>
+          <button id="registerBtn" class="btn btn-secondary">Register</button>
+          <p id="toggleAuthMode" class="toggle-auth">New user? Register here.</p>
+          <div id="authError" class="error-message" style="display:none;"></div>
+        </div>
+      </section>
     </div>
   </main>
 
@@ -98,24 +135,30 @@
   </div>
 
   <footer class="footer">
-    <!-- footer content -->
+    <div class="container">
+      <p>&copy; 2025 SkinTip. All rights reserved.</p>
+      <p>Made with ❤️ by @itayash22</p>
+    </div>
   </footer>
 
-  <!-- external scripts -->
   <script src="js/config.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/drawing.js"></script>
 
-  <!-- main inline logic -->
   <script>
+    // Global variables for image data
+    let tattooDesignImageBase64 = null;
+    let skinPhotoBase64 = null;
+    let maskDataBase64 = null; // This will be generated by drawing.js
+
     // helper to resize images…
     function resizeImage(dataURL, maxW, maxH, quality=0.9, fmt='image/jpeg') {
       return new Promise(res => {
         const img = new Image();
         img.onload = () => {
           let [w,h] = [img.width, img.height];
-          if (w>h && w>maxW) { h *= maxW/w; w = maxW; }
-          if (h>=w && h>maxH) { w *= maxH/h; h = maxH; }
+          if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+          if (h > maxH) { w = Math.round(w * maxH / h); h = maxH; }
           const c = document.createElement('canvas');
           c.width=w; c.height=h;
           c.getContext('2d').drawImage(img,0,0,w,h);
@@ -130,6 +173,10 @@
       const grid = document.getElementById('artistsGrid');
       if (!grid) return;
       grid.innerHTML = '';
+      if (artists.length === 0) {
+          grid.innerHTML = '<p>No artists found matching your criteria.</p>';
+          return;
+      }
       artists.forEach(a => {
         const card = document.createElement('div');
         card.className = 'artist-card';
@@ -137,7 +184,7 @@
           <h3>${a.name}</h3>
           <p>${a.location}</p>
           <p>Styles: ${a.styles.join(', ')}</p>
-          <button onclick="contactArtist('${a.whatsapp}','${a.name}')">
+          <button class="btn btn-outline btn-sm" onclick="contactArtist('${a.whatsapp}','${a.name}')">
             Contact via WhatsApp
           </button>
         `;
@@ -146,29 +193,248 @@
     };
 
     // other global helpers…
-    window.contactArtist = (wh, name) => { /* … */ };
-    window.loadDemoArtistsWithFilter = () => { /* … */ };
-    window.filterArtists = () => { /* … */ };
+    window.contactArtist = (whatsappNumber, artistName) => {
+      const message = encodeURIComponent(`Hi ${artistName}, I saw your profile on SkinTip and am interested in your work!`);
+      window.open(`https://wa.me/${whatsappNumber}?text=${message}`, '_blank');
+    };
+
+    window.loadDemoArtistsWithFilter = (filter = '') => {
+        const demoArtists = [
+            { name: 'Ink Master Alex', location: 'New York, USA', styles: ['Traditional', 'Blackwork'], whatsapp: '+1234567890' },
+            { name: 'Sakura Tattoo', location: 'Tokyo, Japan', styles: ['Irezumi', 'Watercolor'], whatsapp: '+81987654321' },
+            { name: 'Nordic Skin', location: 'Oslo, Norway', styles: ['Viking', 'Geometric'], whatsapp: '+471122334455' },
+            { name: 'Abstract Artistry', location: 'Berlin, Germany', styles: ['Abstract', 'Dotwork'], whatsapp: '+496789012345' },
+            { name: 'Classic Ink', location: 'London, UK', styles: ['Traditional', 'Realism'], whatsapp: '+442012345678' }
+        ];
+
+        const lowerCaseFilter = filter.toLowerCase();
+        const filtered = demoArtists.filter(artist =>
+            artist.name.toLowerCase().includes(lowerCaseFilter) ||
+            artist.location.toLowerCase().includes(lowerCaseFilter) ||
+            artist.styles.some(style => style.toLowerCase().includes(lowerCaseFilter))
+        );
+        window.displayArtists(filtered);
+    };
+
+    window.filterArtists = () => {
+        const searchInput = document.getElementById('artistSearch');
+        window.loadDemoArtistsWithFilter(searchInput.value);
+    };
+
+    // UI state management functions
+    function showSection(sectionId) {
+      document.querySelectorAll('.section').forEach(section => {
+        section.style.display = 'none';
+      });
+      document.getElementById(sectionId).style.display = 'block';
+    }
+
+    function showLoadingOverlay(text = 'Generating your tattoo designs…') {
+        document.getElementById('loadingText').textContent = text;
+        document.getElementById('loadingOverlay').style.display = 'flex';
+    }
+
+    function hideLoadingOverlay() {
+        document.getElementById('loadingOverlay').style.display = 'none';
+    }
 
     document.addEventListener('DOMContentLoaded', () => {
-      // wire up the upload areas
-      const tdInput = document.getElementById('tattooDesignFileInput');
-      document.getElementById('tattooDesignUploadArea')
-              .addEventListener('click', () => tdInput.click());
-      tdInput.addEventListener('change', async e => {
+      // Elements
+      const tattooDesignUploadSection = document.getElementById('tattooDesignUploadSection');
+      const tattooDesignUploadArea = document.getElementById('tattooDesignUploadArea');
+      const tattooDesignFileInput = document.getElementById('tattooDesignFileInput');
+      const tattooDesignPreview = document.getElementById('tattooDesignPreview');
+      const tattooDesignPreviewImg = document.getElementById('tattooDesignPreviewImg');
+      const changeTattooDesignBtn = document.getElementById('changeTattooDesignBtn');
+      const continueToSkinPhotoBtn = document.getElementById('continueToSkinPhotoBtn');
+
+      const skinPhotoUploadSection = document.getElementById('skinPhotoUploadSection');
+      const skinUploadArea = document.getElementById('skinUploadArea');
+      const fileInput = document.getElementById('fileInput'); // Skin photo input
+      const imagePreview = document.getElementById('imagePreview');
+      const previewImg = document.getElementById('previewImg'); // Skin photo preview
+      const changeImageBtn = document.getElementById('changeImageBtn');
+
+      const drawingSection = document.getElementById('drawingSection');
+      const drawingCanvas = document.getElementById('drawingCanvas');
+      const continueBtn = document.getElementById('continueBtn');
+      const clearCanvasBtn = document.getElementById('clearCanvas');
+
+      const resultsSection = document.getElementById('resultsSection');
+      const generatedImagesGrid = document.getElementById('generatedImages');
+      const regenerateBtn = document.getElementById('regenerateBtn');
+      const backToUploadsBtn = document.getElementById('backToUploadsBtn');
+
+      const artistsSection = document.getElementById('artistsSection');
+
+      // Initial state: show auth section if not logged in, otherwise tattoo design upload
+      const token = localStorage.getItem('jwtToken');
+      if (!token) {
+          showSection('authSection');
+      } else {
+          showSection('tattooDesignUploadSection');
+          window.checkAuthStatus(); // Update user info in navbar
+      }
+
+      // --- Tattoo Design Upload Logic ---
+      tattooDesignUploadArea.addEventListener('click', () => tattooDesignFileInput.click());
+      changeTattooDesignBtn.addEventListener('click', () => tattooDesignFileInput.click());
+
+      tattooDesignFileInput.addEventListener('change', async (e) => {
         if (!e.target.files.length) return;
-        // process upload…
+        const file = e.target.files[0];
+        const reader = new FileReader();
+
+        reader.onload = async (event) => {
+          const originalDataURL = event.target.result;
+          // Resize the tattoo design (adjust max dimensions as needed)
+          tattooDesignImageBase64 = await resizeImage(originalDataURL, 1024, 1024, 0.9, 'image/png'); // Ensure PNG with alpha for tattoos
+          tattooDesignPreviewImg.src = tattooDesignImageBase64;
+
+          tattooDesignUploadArea.style.display = 'none';
+          tattooDesignPreview.style.display = 'block';
+          continueToSkinPhotoBtn.style.display = 'block';
+        };
+        reader.readAsDataURL(file);
       });
 
-      const skinInput = document.getElementById('fileInput');
-      document.getElementById('skinUploadArea')
-              .addEventListener('click', () => skinInput.click());
-      skinInput.addEventListener('change', async e => {
-        if (!e.target.files.length) return;
-        // process upload…
+      continueToSkinPhotoBtn.addEventListener('click', () => {
+          showSection('skinPhotoUploadSection');
       });
 
-      // rest of your form logic goes here…
+
+      // --- Skin Photo Upload Logic ---
+      skinUploadArea.addEventListener('click', () => fileInput.click());
+      changeImageBtn.addEventListener('click', () => fileInput.click());
+
+      fileInput.addEventListener('change', async (e) => {
+        if (!e.target.files.length) return;
+        const file = e.target.files[0];
+        const reader = new FileReader();
+
+        reader.onload = async (event) => {
+          const originalDataURL = event.target.result;
+          // Resize the skin photo (adjust max dimensions as needed, keep aspect ratio)
+          skinPhotoBase64 = await resizeImage(originalDataURL, 1280, 1280, 0.8, 'image/jpeg'); // JPEG for skin photo
+          previewImg.src = skinPhotoBase64;
+
+          skinUploadArea.style.display = 'none';
+          imagePreview.style.display = 'block';
+          showSection('drawingSection');
+          // Initialize drawing canvas with the skin photo
+          initializeDrawingCanvas(drawingCanvas, skinPhotoBase64);
+        };
+        reader.readAsDataURL(file);
+      });
+
+      // --- Drawing and Generation Logic ---
+      clearCanvasBtn.addEventListener('click', () => {
+          clearDrawing(); // Function from drawing.js
+      });
+
+      continueBtn.addEventListener('click', async () => {
+          if (!tattooDesignImageBase64 || !skinPhotoBase64) {
+              alert('Please upload both tattoo design and skin photo.');
+              return;
+          }
+
+          maskDataBase64 = getMaskDataURL(); // Function from drawing.js
+          if (!maskDataBase64 || maskDataBase64 === drawingCanvas.toDataURL()) {
+              alert('Please mark the tattoo area on your skin photo.');
+              return;
+          }
+
+          showLoadingOverlay();
+
+          try {
+              const response = await fetch(`${window.API_BASE_URL}/api/generate-final-tattoo`, {
+                  method: 'POST',
+                  headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${localStorage.getItem('jwtToken')}`
+                  },
+                  body: JSON.stringify({
+                      tattooDesignImageBase64: tattooDesignImageBase64.split(',')[1], // Remove data URL prefix
+                      skinPhotoBase64: skinPhotoBase64.split(',')[1],
+                      maskDataBase64: maskDataBase64.split(',')[1]
+                  })
+              });
+
+              if (response.status === 402) {
+                  alert('Insufficient tokens. Please purchase more tokens.');
+                  hideLoadingOverlay();
+                  showSection('authSection'); // Or a dedicated token purchase section
+                  return;
+              }
+
+              if (!response.ok) {
+                  const errorData = await response.json();
+                  throw new Error(errorData.error || 'Failed to generate tattoo.');
+              }
+
+              const data = await response.json();
+              console.log('Generated image URLs:', data.generatedImageUrls);
+              window.updateUserTokensDisplay(data.tokensRemaining);
+
+              generatedImagesGrid.innerHTML = '';
+              data.generatedImageUrls.forEach(url => {
+                  const imgContainer = document.createElement('div');
+                  imgContainer.className = 'generated-image-container';
+                  const img = document.createElement('img');
+                  img.src = url;
+                  img.alt = 'Generated Tattoo';
+                  const downloadBtn = document.createElement('a');
+                  downloadBtn.href = url;
+                  downloadBtn.download = `skintip_tattoo_${Date.now()}.png`;
+                  downloadBtn.className = 'btn btn-sm btn-download';
+                  downloadBtn.textContent = 'Download';
+
+                  imgContainer.appendChild(img);
+                  imgContainer.appendChild(downloadBtn);
+                  generatedImagesGrid.appendChild(imgContainer);
+              });
+
+              showSection('resultsSection');
+          } catch (error) {
+              console.error('Error during tattoo generation:', error);
+              alert('Error generating tattoo: ' + error.message);
+          } finally {
+              hideLoadingOverlay();
+          }
+      });
+
+      regenerateBtn.addEventListener('click', () => {
+          // Re-trigger the generation process if needed
+          continueBtn.click();
+      });
+
+      backToUploadsBtn.addEventListener('click', () => {
+          // Reset UI and show first upload section
+          tattooDesignImageBase64 = null;
+          skinPhotoBase64 = null;
+          maskDataBase64 = null;
+          tattooDesignPreviewImg.src = '';
+          previewImg.src = '';
+          tattooDesignUploadArea.style.display = 'block';
+          tattooDesignPreview.style.display = 'none';
+          continueToSkinPhotoBtn.style.display = 'none';
+          skinUploadArea.style.display = 'block';
+          imagePreview.style.display = 'none';
+          clearDrawing(); // Clear canvas
+          generatedImagesGrid.innerHTML = ''; // Clear results
+          showSection('tattooDesignUploadSection');
+      });
+
+      // --- Artist Section Logic ---
+      // Initially load all artists
+      window.loadDemoArtistsWithFilter(); // Make sure this is called when the artist section becomes visible or on page load
+
+      // If you want a button to switch to artists section:
+      // document.getElementById('viewArtistsBtn').addEventListener('click', () => {
+      //    showSection('artistsSection');
+      //    window.loadDemoArtistsWithFilter(); // Load artists when navigating to section
+      // });
+
       console.log('✅ SkinTip ready!');
     });
   </script>

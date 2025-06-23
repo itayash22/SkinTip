@@ -175,7 +175,7 @@ const fluxPlacementHandler = {
      * Handles all image preprocessing (resizing, mask inversion, watermarking, storage).
      * Now makes multiple Flux API calls to get multiple variations.
      */
-    placeTattooOnSkin: async (skinImageBuffer, tattooDesignImageBase64, maskBase64, userPrompt, userId, numVariations, fluxApiKey) => {
+    placeTattooOnSkin: async (skinImageBuffer, tattooDesignImageBase64, maskBase64, userId, numVariations, fluxApiKey) => { {
         console.log('Starting Flux tattoo placement process...');
 
         // 1. Convert tattoo design Base64 to Buffer.
@@ -257,7 +257,7 @@ const fluxPlacementHandler = {
                     'debug',
                     'image/png' // Content type for debug output
                 );
-                console.log(`--- DEBUG: SHARP COMPOSITED IMAGE URL: ${debugPublicUrl} ---`);
+                
                 console.log('^ Please check this URL in your browser to verify Sharp\'s output.');
             } catch (debugUploadError) {
                 console.error('DEBUG ERROR: Failed to upload intermediate Sharp composite image:', debugUploadError);
@@ -271,7 +271,7 @@ const fluxPlacementHandler = {
 
         // 4. Prepare for multiple Flux API calls
         const generatedImageUrls = [];
-        const basePrompt = `Make the tattoo look naturally placed on the skin, blend seamlessly, adjust lighting and shadows for realism. Realistic photo, professional tattoo photography, high detail. ${userPrompt ? 'Additional instructions: ' + userPrompt : ''}`;
+        const basePrompt = `Make the tattoo look naturally placed on the skin, blend seamlessly, adjust lighting and shadows for realism. Realistic photo, professional tattoo photography, high detail.'}`;
 
         console.log(`Making ${numVariations} calls to Flux API...`);
 
@@ -279,16 +279,15 @@ const fluxPlacementHandler = {
             const currentSeed = Date.now() + i; // Vary seed for different results
 
             const fluxPayload = {
-                prompt: basePrompt,
-                // Pass the *composited* image (now a PNG with transparent background) to Flux
-                input_image: compositedImageBuffer.toString('base64'),
-                mask_image: maskBase64, // Flux API uses the mask for inpainting, but here we provide a full background image
-                n: 1, // Request 1 variation per call
-                output_format: 'png', // <--- CRITICAL CHANGE: Request PNG output from Flux!
-                fidelity: 0.6, // Adjusted fidelity for more blending
-                guidance_scale: 8.0, // Adjusted guidance_scale
-                seed: currentSeed
-            };
+    prompt: basePrompt,
+    input_image: compositedImageBuffer.toString('base64'),
+    mask_image: maskBase64,
+    n: 1,
+    output_format: 'png',
+    prompt_upsampling: true, // As per Flux API bot info
+    safety_tolerance: 'low', // As requested, set to 'low' for less strict filtering
+    seed: currentSeed
+};
 
             const fluxHeaders = {
                 'Content-Type': 'application/json',
@@ -305,8 +304,7 @@ const fluxPlacementHandler = {
                         timeout: 90000
                     }
                 );
-                console.log(`DEBUG: Initial Flux POST response status for variation ${i+1}: ${fluxResponse.status}`);
-                console.log(`DEBUG: Initial Flux POST response data for variation ${i+1}:`, JSON.stringify(fluxResponse.data, null, 2));
+                
 
             } catch (error) {
                 console.error(`Flux API call for variation ${i + 1} failed:`, error.response?.data?.toString() || error.message);

@@ -1,35 +1,6 @@
 // backend/server.js
 // This file was last updated on 2025-06-14 (EOD) to fix ES Module import errors.
 
-// --- START OF DEBUGGING LINES (TEMPORARY - REMOVE LATER) ---
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-import { createRequire } from 'module';
-
-console.log('DEBUG: Current working directory:', process.cwd());
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-console.log('DEBUG: Directory of server.js:', __dirname);
-
-// Try to explicitly resolve 'helmet' using ESM resolver
-try {
-    const helmetPath = await import.meta.resolve('helmet'); // Await is only available in ESM top-level
-    console.log('DEBUG: ESM Resolved helmet path:', helmetPath);
-} catch (e) {
-    console.error('DEBUG: ESM Failed to resolve helmet:', e.message);
-}
-
-// Try to explicitly resolve 'helmet' using CommonJS resolver (for comparison)
-const require = createRequire(import.meta.url);
-try {
-    const cjsHelmetPath = require.resolve('helmet');
-    console.log('DEBUG: CommonJS Resolved helmet path:', cjsHelmetPath);
-} catch (e) {
-    console.error('DEBUG: CommonJS Failed to resolve helmet:', e.message);
-}
-// --- END OF DEBUGGING LINES ---
-
-
 // --- START OF ACTUAL IMPORTS (SHOULD ONLY APPEAR ONCE) ---
 import 'dotenv/config'; // Use 'dotenv/config' for top-level loading with ESM
 import express from 'express';

@@ -267,14 +267,103 @@
 
       const artistsSection = document.getElementById('artistsSection');
 
+      // Authentication Elements
+      const authSection = document.getElementById('authSection');
+      const emailInput = document.getElementById('email');
+      const passwordInput = document.getElementById('password');
+      const usernameInput = document.getElementById('username');
+      const loginBtn = document.getElementById('loginBtn');
+      const registerBtn = document.getElementById('registerBtn');
+      const toggleAuthModeLink = document.getElementById('toggleAuthMode');
+      const authMessage = document.getElementById('authMessage');
+      const authErrorDiv = document.getElementById('authError');
+      const logoutBtn = document.getElementById('logoutBtn'); // Logout button in navbar
+
+      let isRegisterMode = false; // To toggle between login and register forms
+
+      // Function to update UI after successful authentication
+      window.handleAuthSuccess = (user, token) => {
+          localStorage.setItem('jwtToken', token);
+          localStorage.setItem('userEmail', user.email);
+          localStorage.setItem('userName', user.username);
+          window.updateUserTokensDisplay(user.tokens_remaining);
+          showSection('tattooDesignUploadSection'); // Go to the first step of the app
+          logoutBtn.style.display = 'block'; // Show logout button
+          authErrorDiv.style.display = 'none'; // Hide any previous errors
+      };
+
+      // Function to display authentication errors
+      window.displayAuthError = (message) => {
+          authErrorDiv.textContent = message;
+          authErrorDiv.style.display = 'block';
+      };
+
+      // Function to clear auth errors
+      window.clearAuthError = () => {
+          authErrorDiv.style.display = 'none';
+          authErrorDiv.textContent = '';
+      };
+
+
       // Initial state: show auth section if not logged in, otherwise tattoo design upload
       const token = localStorage.getItem('jwtToken');
       if (!token) {
           showSection('authSection');
+          window.clearAuthError(); // Clear error on fresh load
       } else {
           showSection('tattooDesignUploadSection');
-          window.checkAuthStatus(); // Update user info in navbar
+          window.checkAuthStatus(); // Update user info in navbar and ensure token is valid
+          logoutBtn.style.display = 'block';
       }
+
+      // --- Authentication Logic ---
+      toggleAuthModeLink.addEventListener('click', () => {
+          isRegisterMode = !isRegisterMode;
+          if (isRegisterMode) {
+              authMessage.textContent = 'Register for a new account.';
+              usernameInput.style.display = 'block';
+              loginBtn.style.display = 'none';
+              registerBtn.style.display = 'block';
+              toggleAuthModeLink.textContent = 'Already have an account? Login here.';
+          } else {
+              authMessage.textContent = 'Login or register to get started.';
+              usernameInput.style.display = 'none';
+              loginBtn.style.display = 'block';
+              registerBtn.style.display = 'none';
+              toggleAuthModeLink.textContent = 'New user? Register here.';
+          }
+          window.clearAuthError();
+      });
+
+      loginBtn.addEventListener('click', async () => {
+          const email = emailInput.value;
+          const password = passwordInput.value;
+          window.clearAuthError();
+          if (!email || !password) {
+              window.displayAuthError('Email and password are required.');
+              return;
+          }
+          await window.loginUser(email, password); // Call function from auth.js
+      });
+
+      registerBtn.addEventListener('click', async () => {
+          const email = emailInput.value;
+          const password = passwordInput.value;
+          const username = usernameInput.value;
+          window.clearAuthError();
+          if (!email || !password || !username) {
+              window.displayAuthError('Email, password, and username are required for registration.');
+              return;
+          }
+          await window.registerUser(email, password, username); // Call function from auth.js
+      });
+
+      logoutBtn.addEventListener('click', () => {
+          window.logoutUser(); // Call function from auth.js
+          showSection('authSection'); // Go back to auth section after logout
+          logoutBtn.style.display = 'none'; // Hide logout button
+      });
+
 
       // --- Tattoo Design Upload Logic ---
       tattooDesignUploadArea.addEventListener('click', () => tattooDesignFileInput.click());
@@ -426,14 +515,7 @@
       });
 
       // --- Artist Section Logic ---
-      // Initially load all artists
-      window.loadDemoArtistsWithFilter(); // Make sure this is called when the artist section becomes visible or on page load
-
-      // If you want a button to switch to artists section:
-      // document.getElementById('viewArtistsBtn').addEventListener('click', () => {
-      //    showSection('artistsSection');
-      //    window.loadDemoArtistsWithFilter(); // Load artists when navigating to section
-      // });
+      window.loadDemoArtistsWithFilter();
 
       console.log('✅ SkinTip ready!');
     });

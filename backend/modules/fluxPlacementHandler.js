@@ -282,7 +282,7 @@ const fluxPlacementHandler = {
                 prompt: basePrompt,
                 // Pass the *composited* image (now a PNG with transparent background) to Flux
                 input_image: compositedImageBuffer.toString('base64'),
-                mask_image: '', // Flux API uses the mask for inpainting, but here we provide a full background image
+                mask_image: maskBase64, // Flux API uses the mask for inpainting, but here we provide a full background image
                 n: 1, // Request 1 variation per call
                 output_format: 'png', // <--- CRITICAL CHANGE: Request PNG output from Flux!
                 fidelity: 0.5, // Adjusted fidelity for more blending

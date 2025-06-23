@@ -277,14 +277,14 @@ const fluxPlacementHandler = {
         for (let i = 0; i < numVariations; i++) {
             const currentSeed = Date.now() + i; // Vary seed for different results
 
-            const fluxPayload = {
+           const fluxPayload = {
     prompt: basePrompt,
     input_image: compositedImageBuffer.toString('base64'),
     mask_image: maskBase64,
     n: 1,
     output_format: 'png',
-    prompt_upsampling: true, // As per Flux API bot info
-    safety_tolerance: 'low', // As requested, set to 'low' for less strict filtering
+    prompt_upsampling: true,    // Added: As per Flux API bot info
+    safety_tolerance: 'low',    // Added: As requested, set to 'low' for less strict filtering
     seed: currentSeed
 };
 

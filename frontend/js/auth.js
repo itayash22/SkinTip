@@ -85,7 +85,6 @@ const auth = {
             auth.logoutBtn.addEventListener('click', auth.logout);
         }
 
-        console.log('Auth init: User logged in from localStorage. Current STATE.userTokens:', STATE.userTokens);
     },
 
     // Show auth modal, optionally setting mode
@@ -142,43 +141,76 @@ const auth = {
         if (auth.isRegisterMode) {
             body.username = username;
         }
+        // --- START DEBUGGING SNIPPET for handleAuthSubmit ---
+console.log('DEBUG: Attempting authentication API call.');
+console.log('DEBUG: Endpoint:', `<span class="math-inline">\{CONFIG\.API\_URL\}/auth/</span>{endpoint}`);
+console.log('DEBUG: Request Body:', JSON.stringify(body));
+// --- END DEBUGGING SNIPPET ---
 
         try {
-            const response = await fetch(`${CONFIG.API_URL}/auth/${endpoint}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(body)
-            });
+    const response = await fetch(`<span class="math-inline">\{CONFIG\.API\_URL\}/auth/</span>{endpoint}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body)
+    });
 
-            const data = await response.json();
-            utils.hideLoading();
+    // --- START DEBUGGING SNIPPET for response ---
+    console.log('DEBUG: API Response Status:', response.status);
+    console.log('DEBUG: API Response OK:', response.ok);
+    // --- END DEBUGGING SNIPPET ---
 
-            if (!response.ok) {
-                throw new Error(data.error || 'Authentication failed');
-            }
+    const data = await response.json(); // Attempt to parse JSON even if !response.ok
+                                        // Make sure this doesn't fail if response is empty
 
-            // Authentication successful
-            STATE.token = data.token;
-            STATE.user = data.user;
-            STATE.userTokens = data.user.tokens_remaining; // Update global state
-            localStorage.setItem('jwt_token', data.token);
-            localStorage.setItem('user_info', JSON.stringify(data.user));
+    // --- START DEBUGGING SNIPPET for response data ---
+    console.log('DEBUG: API Response Data:', data);
+    // --- END DEBUGGING SNIPPET ---
 
-            auth.hideModal();
-            auth.updateUIForAuth(true); // Call updateUIForAuth to refresh display
-            
-            // Redirect to index.html after successful auth, if on welcome.html
-            if (window.location.pathname.split('/').pop() === 'welcome.html') {
-                window.location.href = 'index.html';
-            }
+    utils.hideLoading();
 
-        } catch (error) {
-            utils.hideLoading();
-            auth.authError.textContent = error.message;
-            console.error('Authentication error:', error);
-        }
+    if (!response.ok) {
+        auth.authError.textContent = data.error || 'Authentication failed (unknown error)'; // Show error from backend
+        console.error('Authentication failed:', data.error || 'Unknown API error');
+        return; // Stop here if login failed via backend response
+    }
+
+    // Authentication successful
+    STATE.token = data.token;
+    STATE.user = data.user;
+    STATE.userTokens = data.user.tokens_remaining; // Update global state
+    localStorage.setItem('jwt_token', data.token);
+    localStorage.setItem('user_info', JSON.stringify(data.user));
+
+    auth.hideModal();
+    auth.updateUIForAuth(true); // Call updateUIForAuth to refresh display
+
+    // Redirect to index.html after successful auth, if on welcome.html
+    if (window.location.pathname.split('/').pop() === 'welcome.html') {
+        window.location.href = 'index.html';
+    }
+
+} catch (error) {
+    utils.hideLoading();
+    auth.authError.textContent = error.message; // Display the fetch error message
+    console.error('Authentication Network Error:', error);
+    // --- START DEBUGGING SNIPPET for fetch error ---
+    console.log('DEBUG: Full network error object:', error);
+    // --- END DEBUGGING SNIPPET ---
+
+    // If it's a network error during login, it's often a sign of session issues or backend problems
+    if (error.message.includes('Failed to fetch') || (error instanceof TypeError)) {
+         utils.showError('Login failed: Network or server issue. Please try again.');
+         // Optionally, if login specifically fails due to network, you might also trigger a hard logout/modal
+         // if you suspect a deeper issue preventing *any* communication with the backend.
+         // For now, let's just log and display the error message.
+         // If you want to force logout here:
+         // if (typeof auth !== 'undefined' && auth.forceLogoutAndShowModal) {
+         //     auth.forceLogoutAndShowModal();
+         // }
+    }
+}
     },
 
     logout: () => {

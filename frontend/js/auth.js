@@ -55,15 +55,20 @@ const auth = {
             try {
                 STATE.user = JSON.parse(savedUser);
                 
-                // --- START NEW: JWT Expiration Check on Page Load ---
-                const decodedToken = jwt_decode(savedToken);
-                // Check if token's expiration time (exp) is in the past
-                if (decodedToken.exp * 1000 < Date.now()) { // exp is in seconds, Date.now() is ms
-                    console.log("Auth init: Token found but already expired. Forcing logout.");
-                    auth.forceLogoutAndShowModal(); // Use the existing robust logout function
-                    return; // Stop execution of init, effectively logging out
+                // --- JWT Expiration Check on Page Load ---
+                // Ensure jwt-decode library is loaded in index.html for this to work
+                if (typeof jwt_decode === 'function') {
+                    const decodedToken = jwt_decode(savedToken);
+                    // Check if token's expiration time (exp) is in the past
+                    if (decodedToken.exp * 1000 < Date.now()) { // exp is in seconds, Date.now() is ms
+                        console.log("Auth init: Token found but already expired. Forcing logout.");
+                        auth.forceLogoutAndShowModal(); // Use the existing robust logout function
+                        return; // Stop execution of init, effectively logging out
+                    }
+                } else {
+                    console.warn("jwt-decode library not found. Skipping frontend JWT expiration check.");
                 }
-                // --- END NEW: JWT Expiration Check on Page Load ---
+                // --- END JWT Expiration Check on Page Load ---
 
                 STATE.userTokens = STATE.user.tokens_remaining; // Load tokens from saved user info
                 console.log('Auth init: STATE.user.tokens_remaining from localStorage:', STATE.userTokens);
@@ -99,7 +104,8 @@ const auth = {
             auth.logoutBtn.addEventListener('click', auth.logout);
         }
 
-        console.log('Auth init: User logged in from localStorage. Current STATE.userTokens:', STATE.userTokens);
+        // This log should now correctly reflect the user's state after all checks
+        console.log(`Auth init: User state after init. Logged in: ${STATE.user ? 'Yes' : 'No'}, Tokens: ${STATE.userTokens}`);
     }, // End of init function
 
     // Show auth modal, optionally setting mode
@@ -115,8 +121,8 @@ const auth = {
     forceLogoutAndShowModal: function() {
         console.log("Forcing logout due to expired session.");
         // Clear all stored authentication data
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+        localStorage.removeItem('jwt_token'); // Use 'jwt_token' as per your localStorage key
+        localStorage.removeItem('user_info'); // Use 'user_info' as per your localStorage key
         // If you implement refresh tokens later, clear them here too
         // localStorage.removeItem('refreshToken');
 

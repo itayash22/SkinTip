@@ -92,6 +92,33 @@ const auth = {
         }
     },
 
+    forceLogoutAndShowModal: function() {
+        console.log("Forcing logout due to expired session.");
+        // Clear all stored authentication data
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        // If you implement refresh tokens later, clear them here too
+        // localStorage.removeItem('refreshToken');
+
+        // Reset global STATE variables
+        STATE.user = null;
+        STATE.token = null;
+        STATE.userTokens = 0; // Reset tokens
+
+        // Update UI to reflect logged-out state
+        if (typeof utils !== 'undefined' && utils.updateTokenDisplay) {
+            utils.updateTokenDisplay();
+        }
+        document.getElementById('userInfo').textContent = 'Guest';
+        document.getElementById('logoutBtn').style.display = 'none'; // Assuming this button is only for logged-in users
+
+        // Display login modal with a clear message (assuming showModal works for this)
+        this.showModal(); // 'this' refers to the auth object
+    },
+
+
+
+    
     hideModal: () => {
         if (auth.modal) {
             auth.modal.style.display = 'none';

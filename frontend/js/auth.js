@@ -32,6 +32,11 @@ const auth = {
         // These elements are in index.html, but auth.js needs to manage them globally
         auth.logoutBtn = document.getElementById('logoutBtn');
         auth.userInfoSpan = document.getElementById('userInfo'); // Make sure this reference is solid
+
+        // --- START Debugging for UI elements existence ---
+        console.log(`DEBUG: auth.logoutBtn element: ${auth.logoutBtn ? 'Found' : 'NOT FOUND'}`);
+        console.log(`DEBUG: auth.userInfoSpan element: ${auth.userInfoSpan ? 'Found' : 'NOT FOUND'}`);
+        // --- END Debugging for UI elements existence ---
         
         // Initial UI update for the top-right area (based on loaded state)
         if (auth.userInfoSpan) {
@@ -41,8 +46,18 @@ const auth = {
         if (auth.logoutBtn) {
             auth.logoutBtn.style.display = STATE.token ? 'block' : 'none'; // Show/hide based on token presence
         }
+        // --- START Debugging for initial UI state ---
+        if (auth.userInfoSpan) {
+            console.log(`DEBUG: Initial userInfoSpan textContent after init: "${auth.userInfoSpan.textContent}"`);
+            console.log(`DEBUG: Initial userInfoSpan display style after init: "${auth.userInfoSpan.style.display}"`);
+        }
+        if (auth.logoutBtn) {
+            console.log(`DEBUG: Initial logoutBtn display style after init: "${auth.logoutBtn.style.display}"`);
+        }
+        // --- END Debugging for initial UI state ---
 
-        console.log('Auth init function started.');
+
+        console.log('Auth init function started.'); // This log is correctly placed now.
 
         // Load token and user info from localStorage on init
         const savedToken = localStorage.getItem('jwt_token');
@@ -89,7 +104,7 @@ const auth = {
         }
 
         console.log('Auth init: User logged in from localStorage. Current STATE.userTokens:', STATE.userTokens);
-    },
+    }, // End of init function
 
     // Show auth modal, optionally setting mode
     showModal: (mode = 'login') => {

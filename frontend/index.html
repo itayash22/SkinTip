@@ -217,7 +217,7 @@
     <script src="js/auth.js"></script>
     <script>console.log('Loading drawing.js...');</script>
     <script src="js/drawing.js"></script>
-   <script>
+  <script>
     console.log('Main inline script starting...');
 
     /**
@@ -353,7 +353,7 @@
                     'https://images.unsplash.com/photo-1604881991720-f91add269bed'
                 ]
             }
-        ];
+        ]; // Correctly closing allArtists array
         window.displayArtists(allArtists);
     };
 
@@ -540,8 +540,8 @@
 
         // --- END Desktop Inactivity Auto-Logout Logic ---
 
+        // --- START Main Event Listeners Block (Correctly placed) ---
 
-        // --- Event Listeners --- // <--- ANOTHER DUPLICATE START HERE
         // Tattoo Design Upload
         tattooDesignUploadArea?.addEventListener('click', () => {
             tattooDesignFileInput.click();

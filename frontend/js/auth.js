@@ -33,11 +33,6 @@ const auth = {
         auth.logoutBtn = document.getElementById('logoutBtn');
         auth.userInfoSpan = document.getElementById('userInfo'); // Make sure this reference is solid
 
-        // --- START Debugging for UI elements existence ---
-        console.log(`DEBUG: auth.logoutBtn element: ${auth.logoutBtn ? 'Found' : 'NOT FOUND'}`);
-        console.log(`DEBUG: auth.userInfoSpan element: ${auth.userInfoSpan ? 'Found' : 'NOT FOUND'}`);
-        // --- END Debugging for UI elements existence ---
-        
         // Initial UI update for the top-right area (based on loaded state)
         if (auth.userInfoSpan) {
             auth.userInfoSpan.textContent = STATE.user ? `${STATE.user.username || STATE.user.email} (${STATE.userTokens} tokens)` : 'Guest';
@@ -46,18 +41,8 @@ const auth = {
         if (auth.logoutBtn) {
             auth.logoutBtn.style.display = STATE.token ? 'block' : 'none'; // Show/hide based on token presence
         }
-        // --- START Debugging for initial UI state ---
-        if (auth.userInfoSpan) {
-            console.log(`DEBUG: Initial userInfoSpan textContent after init: "${auth.userInfoSpan.textContent}"`);
-            console.log(`DEBUG: Initial userInfoSpan display style after init: "${auth.userInfoSpan.style.display}"`);
-        }
-        if (auth.logoutBtn) {
-            console.log(`DEBUG: Initial logoutBtn display style after init: "${auth.logoutBtn.style.display}"`);
-        }
-        // --- END Debugging for initial UI state ---
 
-
-        console.log('Auth init function started.'); // This log is correctly placed now.
+        console.log('Auth init function started.');
 
         // Load token and user info from localStorage on init
         const savedToken = localStorage.getItem('jwt_token');
@@ -69,12 +54,23 @@ const auth = {
             STATE.token = savedToken;
             try {
                 STATE.user = JSON.parse(savedUser);
+                
+                // --- START NEW: JWT Expiration Check on Page Load ---
+                const decodedToken = jwt_decode(savedToken);
+                // Check if token's expiration time (exp) is in the past
+                if (decodedToken.exp * 1000 < Date.now()) { // exp is in seconds, Date.now() is ms
+                    console.log("Auth init: Token found but already expired. Forcing logout.");
+                    auth.forceLogoutAndShowModal(); // Use the existing robust logout function
+                    return; // Stop execution of init, effectively logging out
+                }
+                // --- END NEW: JWT Expiration Check on Page Load ---
+
                 STATE.userTokens = STATE.user.tokens_remaining; // Load tokens from saved user info
                 console.log('Auth init: STATE.user.tokens_remaining from localStorage:', STATE.userTokens);
                 auth.updateUIForAuth(true); // Update UI for logged-in state
             } catch (e) {
-                console.error('Failed to parse user info from localStorage:', e);
-                auth.clearAuthData(); // Clear corrupted data
+                console.error('Failed to parse user info or decode token from localStorage:', e); // Updated error message
+                auth.clearAuthData(); // Clear corrupted or invalid token data
                 auth.updateUIForAuth(false);
             }
         } else {

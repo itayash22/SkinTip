@@ -495,6 +495,83 @@
             }
 
             resetUI();
+            // Snippet for index.html
+
+            document.addEventListener('DOMContentLoaded', () => {
+                console.log('🎨 SkinTip initializing (DOMContentLoaded)!');
+
+                // Initialize auth module (handles redirection for authenticated users)
+                if (typeof auth !== 'undefined' && auth.init) {
+                    auth.init();
+                } else {
+                    console.error("Auth module not loaded or 'auth.init' is not defined.");
+                }
+
+                // --- UI Element References ---
+                // ... (all your existing UI element references) ...
+
+                // --- Core Logic & State Management ---
+                // Initial UI setup and reset function
+                function resetUI() {
+                    // ... (resetUI function content) ...
+                }
+                resetUI(); 
+
+                // --- START Desktop Inactivity Auto-Logout Logic ---
+                let inactivityTimeout; // Holds the timer reference
+
+                // Function to reset the timer (called on user activity)
+                function resetInactivityTimer() {
+                    clearTimeout(inactivityTimeout); // Clear any existing timer
+                    // Only set a new timer if the user is logged in AND it's likely a desktop device
+                    // This heuristic roughly defines desktop vs mobile by checking for touch support.
+                    const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (navigator.msMaxTouchPoints > 0);
+                    
+                    if (!isTouchDevice) { // Apply auto-logout ONLY if NOT a touch device (assumed desktop)
+                        if (STATE.user && STATE.token) { // Only auto-logout if user is currently logged in
+                            inactivityTimeout = setTimeout(handleInactivityLogout, CONFIG.DESKTOP_INACTIVITY_TIMEOUT_MS);
+                            console.log(`Inactivity timer reset. Auto-logout in ${CONFIG.DESKTOP_INACTIVITY_TIMEOUT_MS / 1000 / 60} minutes.`);
+                        } else {
+                            console.log("User not logged in or mobile device, inactivity timer not started/reset.");
+                        }
+                    }
+                }
+
+                // Function to be called when inactivity timeout is reached
+                function handleInactivityLogout() {
+                    console.log("User inactive for too long. Forcing logout.");
+                    utils.showError('You have been logged out due to inactivity.');
+                    // Call the unified logout function from auth.js
+                    if (typeof auth !== 'undefined' && auth.forceLogoutAndShowModal) {
+                        auth.forceLogoutAndShowModal();
+                    } else {
+                        // Fallback for simple logout if auth.js function isn't found
+                        localStorage.removeItem('token');
+                        localStorage.removeItem('user');
+                        STATE.user = null;
+                        STATE.token = null;
+                        utils.updateTokenDisplay();
+                        // window.location.reload(); // Or redirect to login page
+                    }
+                }
+
+                // Set up event listeners for user activity across the document
+                const activityEvents = ['mousemove', 'keydown', 'click', 'scroll'];
+                // If you strictly want this only for non-touch, DO NOT add 'touchstart' here
+                // If you want any touch on desktop to count as activity, you can add 'touchstart'
+                activityEvents.forEach(event => {
+                    document.addEventListener(event, resetInactivityTimer);
+                });
+
+                // Initial call to set up the timer when the page finishes loading (if logged in)
+                resetInactivityTimer();
+
+                // --- END Desktop Inactivity Auto-Logout Logic ---
+
+
+                // --- Event Listeners --- (This is where your existing listeners start)
+                tattooDesignUploadArea?.addEventListener('click', () => {
+                // ... (rest of your event listeners and other code) ...
 
 
             // --- Event Listeners ---

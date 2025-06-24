@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/jwt-decode/build/jwt-decode.js"></script> 
 </head>
 <body>
     <nav class="navbar">
@@ -540,7 +541,7 @@
 
             // --- END Desktop Inactivity Auto-Logout Logic ---
 
-            // --- Event Listeners --- // <--- CORRECTED START OF MAIN EVENT LISTENERS BLOCK
+            // --- START Main Event Listeners Block (Correctly placed) ---
 
             // Tattoo Design Upload
             tattooDesignUploadArea?.addEventListener('click', () => {
@@ -776,7 +777,7 @@
                      }
                 } else if (!error.message.includes('Your session has expired')) { // Avoid double message if already handled above
                      utils.showError(`Tattoo generation failed: ${error.message}`);
-                } else { // Fallback for any other unhandled errors not caught by specific conditions.
+                } else { // Fallback for any other unhandled errors.
                      utils.showError(`Tattoo generation failed: ${error.message}`);
                 }
                 // --- END Robust Logout for Generic Fetch Errors ---
@@ -829,10 +830,10 @@
         // --- General Navigation & Artist Loading ---
 
         // New Design button
-        document.getElementById('newDesignBtn')?.addEventListener('click', () => {
-            resetUI();
-            tattooDesignUploadSection.scrollIntoView({ behavior: 'smooth' });
-        });
+            document.getElementById('newDesignBtn')?.addEventListener('click', () => {
+                resetUI();
+                tattooDesignUploadSection.scrollIntoView({ behavior: 'smooth' });
+            });
 
         // The filter event listeners for artists:
         const locationFilter = document.getElementById('locationFilter');

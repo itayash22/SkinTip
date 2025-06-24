@@ -32,16 +32,15 @@ const auth = {
         // These elements are in index.html, but auth.js needs to manage them globally
         auth.logoutBtn = document.getElementById('logoutBtn');
         auth.userInfoSpan = document.getElementById('userInfo'); // Make sure this reference is solid
-        // --- START Snippet to add inside your `init: () => { ... }` function ---
-// Initial UI update for the top-right area (based on loaded state)
-if (auth.userInfoSpan) {
-    auth.userInfoSpan.textContent = STATE.user ? `<span class="math-inline">\{STATE\.user\.username \|\| STATE\.user\.email\} \(</span>{STATE.userTokens} tokens)` : 'Guest';
-    auth.userInfoSpan.style.display = STATE.user ? 'inline-block' : 'none'; // Show/hide based on login
-}
-if (auth.logoutBtn) {
-    auth.logoutBtn.style.display = STATE.token ? 'block' : 'none'; // Show/hide based on token presence
-}
-
+        
+        // Initial UI update for the top-right area (based on loaded state)
+        if (auth.userInfoSpan) {
+            auth.userInfoSpan.textContent = STATE.user ? `${STATE.user.username || STATE.user.email} (${STATE.userTokens} tokens)` : 'Guest';
+            auth.userInfoSpan.style.display = STATE.user ? 'inline-block' : 'none'; // Show/hide based on login
+        }
+        if (auth.logoutBtn) {
+            auth.logoutBtn.style.display = STATE.token ? 'block' : 'none'; // Show/hide based on token presence
+        }
 
         console.log('Auth init function started.');
 
@@ -82,8 +81,8 @@ if (auth.logoutBtn) {
 
         // Only set up event listeners if on a page that uses the modal or logout button
         if (auth.modal) { // Check if modal elements are present on this page (e.g., welcome.html)
-             auth.authForm.addEventListener('submit', auth.handleAuthSubmit);
-             auth.authSwitchLink.addEventListener('click', auth.toggleAuthMode);
+            auth.authForm.addEventListener('submit', auth.handleAuthSubmit);
+            auth.authSwitchLink.addEventListener('click', auth.toggleAuthMode);
         }
         if (auth.logoutBtn) { // Logout button is in index.html
             auth.logoutBtn.addEventListener('click', auth.logout);
@@ -119,21 +118,16 @@ if (auth.logoutBtn) {
         if (typeof utils !== 'undefined' && utils.updateTokenDisplay) {
             utils.updateTokenDisplay();
         }
-        // --- START Snippet to update inside `forceLogoutAndShowModal` ---
-if (auth.userInfoSpan) { // Use auth property
-    auth.userInfoSpan.textContent = 'Guest';
-    auth.userInfoSpan.style.display = 'inline-block'; // Ensure it's visible as 'Guest'
-}
-if (auth.logoutBtn) { // Use auth property
-    auth.logoutBtn.style.display = 'none';
-}
-// --- END Snippet to update inside `forceLogoutAndShowModal` ---
+        if (auth.userInfoSpan) { // Use auth property
+            auth.userInfoSpan.textContent = 'Guest';
+            auth.userInfoSpan.style.display = 'inline-block'; // Ensure it's visible as 'Guest'
+        }
+        if (auth.logoutBtn) { // Use auth property
+            auth.logoutBtn.style.display = 'none';
+        }
         // Display login modal with a clear message (assuming showModal works for this)
         this.showModal(); // 'this' refers to the auth object
     },
-
-
-
     
     hideModal: () => {
         if (auth.modal) {
@@ -233,49 +227,47 @@ if (auth.logoutBtn) { // Use auth property
         localStorage.removeItem('user_info');
     },
 
-    // --- START Snippet to replace your ENTIRE `updateUIForAuth` function ---
-updateUIForAuth: (isAuthenticated) => {
-    // Use the already referenced elements (auth.userInfoSpan, auth.logoutBtn)
-    const userInfoSpan = auth.userInfoSpan;
-    const logoutBtn = auth.logoutBtn;
-    // These elements are on welcome.html, so still get them here
-    const loginBtn = document.getElementById('loginBtn'); 
-    const registerBtn = document.getElementById('registerBtn');
-    const heroRegisterBtn = document.getElementById('heroRegisterBtn');
+    updateUIForAuth: (isAuthenticated) => {
+        // Use the already referenced elements (auth.userInfoSpan, auth.logoutBtn)
+        const userInfoSpan = auth.userInfoSpan;
+        const logoutBtn = auth.logoutBtn;
+        // These elements are on welcome.html, so still get them here
+        const loginBtn = document.getElementById('loginBtn'); 
+        const registerBtn = document.getElementById('registerBtn');
+        const heroRegisterBtn = document.getElementById('heroRegisterBtn');
 
-    if (isAuthenticated) {
-        if (userInfoSpan && STATE.user) {
-            userInfoSpan.textContent = `<span class="math-inline">\{STATE\.user\.username \|\| STATE\.user\.email\} \(</span>{STATE.userTokens} tokens)`;
-            userInfoSpan.style.display = 'inline-block'; // Ensure it's visible
+        if (isAuthenticated) {
+            if (userInfoSpan && STATE.user) {
+                userInfoSpan.textContent = `${STATE.user.username || STATE.user.email} (${STATE.userTokens} tokens)`;
+                userInfoSpan.style.display = 'inline-block'; // Ensure it's visible
+            }
+            if (logoutBtn) {
+                logoutBtn.style.display = 'block'; // Show logout button
+            }
+            // Hide welcome page buttons if on welcome.html and logged in
+            const currentPage = window.location.pathname.split('/').pop();
+            if (currentPage === 'welcome.html') {
+                if (loginBtn) loginBtn.style.display = 'none';
+                if (registerBtn) registerBtn.style.display = 'none';
+                if (heroRegisterBtn) heroRegisterBtn.style.display = 'none';
+            }
+        } else { // Not authenticated (logged out)
+            if (userInfoSpan) {
+                userInfoSpan.textContent = 'Guest'; // Set to Guest
+                userInfoSpan.style.display = 'inline-block'; // Ensure it's visible as 'Guest'
+            }
+            if (logoutBtn) {
+                logoutBtn.style.display = 'none'; // Hide logout button
+            }
+            // Show welcome page buttons if on welcome.html and logged out
+            const currentPage = window.location.pathname.split('/').pop();
+            if (currentPage === 'welcome.html') {
+                if (loginBtn) loginBtn.style.display = 'inline-block';
+                if (registerBtn) registerBtn.style.display = 'inline-block';
+                if (heroRegisterBtn) heroRegisterBtn.style.display = 'inline-block';
+            }
         }
-        if (logoutBtn) {
-            logoutBtn.style.display = 'block'; // Show logout button
-        }
-        // Hide welcome page buttons if on welcome.html and logged in
-        const currentPage = window.location.pathname.split('/').pop();
-        if (currentPage === 'welcome.html') {
-            if (loginBtn) loginBtn.style.display = 'none';
-            if (registerBtn) registerBtn.style.display = 'none';
-            if (heroRegisterBtn) heroRegisterBtn.style.display = 'none';
-        }
-    } else { // Not authenticated (logged out)
-        if (userInfoSpan) {
-            userInfoSpan.textContent = 'Guest'; // Set to Guest
-            userInfoSpan.style.display = 'inline-block'; // Ensure it's visible as 'Guest'
-        }
-        if (logoutBtn) {
-            logoutBtn.style.display = 'none'; // Hide logout button
-        }
-        // Show welcome page buttons if on welcome.html and logged out
-        const currentPage = window.location.pathname.split('/').pop();
-        if (currentPage === 'welcome.html') {
-            if (loginBtn) loginBtn.style.display = 'inline-block';
-            if (registerBtn) registerBtn.style.display = 'inline-block';
-            if (heroRegisterBtn) heroRegisterBtn.style.display = 'inline-block';
-        }
-    }
-},
-// --- END Snippet to replace your ENTIRE `updateUIForAuth` function ---
+    },
 };
 
 // Expose the auth object globally

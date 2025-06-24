@@ -32,6 +32,16 @@ const auth = {
         // These elements are in index.html, but auth.js needs to manage them globally
         auth.logoutBtn = document.getElementById('logoutBtn');
         auth.userInfoSpan = document.getElementById('userInfo'); // Make sure this reference is solid
+        // --- START Snippet to add inside your `init: () => { ... }` function ---
+// Initial UI update for the top-right area (based on loaded state)
+if (auth.userInfoSpan) {
+    auth.userInfoSpan.textContent = STATE.user ? `<span class="math-inline">\{STATE\.user\.username \|\| STATE\.user\.email\} \(</span>{STATE.userTokens} tokens)` : 'Guest';
+    auth.userInfoSpan.style.display = STATE.user ? 'inline-block' : 'none'; // Show/hide based on login
+}
+if (auth.logoutBtn) {
+    auth.logoutBtn.style.display = STATE.token ? 'block' : 'none'; // Show/hide based on token presence
+}
+
 
         console.log('Auth init function started.');
 

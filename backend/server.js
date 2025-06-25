@@ -2,20 +2,22 @@
 // This file was last updated on 2025-06-14 (EOD) to fix ES Module import errors.
 
 // --- START OF ACTUAL IMPORTS (SHOULD ONLY APPEAR ONCE) ---
-import 'dotenv/config'; // Use 'dotenv/config' for top-level loading with ESM
+import 'dotenv/config'; 
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import { createClient } from '@supabase/supabase-js';
-import bcryptjs from 'bcryptjs'; // Corrected import for bcryptjs
+import bcryptjs from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import sizeOf from 'image-size'; // image-size default export might be different, but typically it's named 'imageSize' or used as a function
+import sizeOf from 'image-size';
 
 // Import our new modularized services
-import tokenService from './modules/tokenService.js'; // Added .js extension
-import fluxKontextHandler from './modules/fluxPlacementHandler.js'; // Added .js extension
+import tokenService from './modules/tokenService.js';
+import omnigenImageGenerator from './modules/fluxPlacementHandler.js'; // CHANGED: Import OmniGen2 handler (using old filename)
+// If you successfully renamed it in Phase 2, Step 2, this line would be:
+// import omnigenImageGenerator from './modules/omnigenImageGenerator.js';
 // --- END OF ACTUAL IMPORTS ---
 
 // Function to generate a dynamic timestamp for deployment tracking
@@ -319,17 +321,18 @@ app.post('/api/generate-final-tattoo',
                 return res.status(400).json({ error: 'Skin image, tattoo design, and mask are all required.' });
             }
 
-            if (!process.env.FLUX_API_KEY) {
-                console.log('Flux API Key not configured. Returning mock data.');
-                return res.json({
-                    images: [
-                        'https://picsum.photos/512/512?random=1',
-                        'https://picsum.photos/512/512?random=2',
-                        'https://picsum.photos/512/512?random=3'
-                    ],
-                    tokens_remaining: req.user.tokens_remaining
-                });
-            }
+            // REPLICATE_API_TOKEN check for mock data
+            if (!process.env.REPLICATE_API_TOKEN) { // CHANGED THIS LINE
+                 console.log('REPLICATE_API_TOKEN is not configured. Returning mock data.'); // CHANGED THIS LINE
+                 return res.json({
+                     images: [
+                         'https://picsum.photos/512/512?random=1',
+                         'https://picsum.photos/512/512?random=2',
+                         'https://picsum.photos/512/512?random=3'
+                     ],
+                     tokens_remaining: req.user.tokens_remaining
+                 });
+             }
 
             const tokensRequired = process.env.NODE_ENV === 'development' ? 0 : 15;
             const hasEnoughTokens = await tokenService.checkTokens(userId, 'FLUX_PLACEMENT', tokensRequired);
@@ -364,19 +367,20 @@ app.post('/api/generate-final-tattoo',
                 return res.status(500).json({ error: 'Failed to read image dimensions for validation.' });
             }
 
-            // --- CRITICAL FIX HERE: ARGUMENT ORDER ---
-            // The 'prompt: userPromptText' from req.body is no longer passed to fluxKontextHandler.placeTattooOnSkin
-            const generatedImageUrls = await fluxKontextHandler.placeTattooOnSkin(
+            // --- CALL TO OMNIGEN GENERATOR ---
+            const numVariations = 3; 
+            const generatedImageUrls = await omnigenImageGenerator.generateImageWithOmnigen( // CHANGED THIS LINE: Call new function
                 skinImageBuffer,
                 tattooDesignImageBase64,
                 mask,
-                userId,          // Corresponds to 'userId' in fluxPlacementHandler.js
-                3,               // Corresponds to 'numVariations' in fluxPlacementHandler.js
-                process.env.FLUX_API_KEY // Corresponds to 'fluxApiKey' in fluxPlacementHandler.js
+                userId,          
+                numVariations,   
+                process.env.REPLICATE_API_TOKEN // CHANGED THIS LINE: Pass Replicate API token
             );
-            // --- END CRITICAL FIX ---
+            // --- END CALL TO OMNIGEN GENERATOR ---
 
-            const newTokens = await tokenService.deductTokens(userId, 'FLUX_PLACEMENT', tokensRequired, `Tattoo placement for user ${userId}`);
+            const newTokens = await tokenService.deductTokens(userId, 'FLUX_PLACEMENT', tokensRequired, `Tattoo placement for user ${userId}`); 
+            // Consider renaming 'FLUX_PLACEMENT' to 'OMNIGEN_PLACEMENT' or similar in config.js / database
             console.log('Tokens deducted successfully. New balance:', newTokens);
 
             res.json({
@@ -387,7 +391,12 @@ app.post('/api/generate-final-tattoo',
         } catch (error) {
             console.error('API Error in /api/generate-final-tattoo:', error);
 
-            if (error.message.includes('Flux API: Content Moderated')) {
+            if (error.message.includes('OmniGen2 API:')) { // CHANGED THIS LINE
+                return res.status(500).json({ // OmniGen2 errors should usually be 500, not 400/403 unless specific validation
+                    error: error.message,
+                });
+            }
+            if (error.message.includes('Flux API: Content Moderated')) { // Consider removing if no longer using Flux
                 return res.status(403).json({
                     error: error.message,
                 });

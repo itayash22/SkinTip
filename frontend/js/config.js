@@ -1,7 +1,7 @@
 // frontend/js/config.js
 
 const CONFIG = {
-    API_URL: 'https://skintip-backend.onrender.com/api', // Update this when you deploy backend
+    API_URL: 'https://skintip-backend.onrender.com/api', // Ensure this points to your Render backend URL
     MAX_FILE_SIZE: 5 * 1024 * 1024, // 5MB
     ALLOWED_FILE_TYPES: ['image/jpeg', 'image/png', 'image/webp'],
     DEFAULT_BRUSH_SIZE: 20,
@@ -10,7 +10,7 @@ const CONFIG = {
     
     // Define token costs for each API action
     TOKEN_COSTS: {
-        FLUX_PLACEMENT: 15 // Cost for one Flux tattoo placement (3 variations, watermarked)
+        FLUX_PLACEMENT: 15 // Consider renaming this to OMNIGEN_PLACEMENT later, and adjusting cost if needed
     }
 };
 
@@ -18,11 +18,11 @@ const CONFIG = {
 const STATE = {
     user: null, // Stores authenticated user info
     token: null, // Stores JWT token for API authentication
-    userTokens: 0, // NEW: Tracks the user's current token balance
-    uploadedTattooDesignBase64: null, // NEW: Stores the Base64 of the user's uploaded tattoo design
+    userTokens: 0, // Tracks the user's current token balance
+    uploadedTattooDesignBase64: null, // Stores the Base64 of the user's uploaded tattoo design
     currentImage: null, // Stores the user's uploaded skin photo (File object)
     currentMask: null, // Stores the Base64 of the drawing mask
-    generatedImages: [], // Stores URLs of generated tattoo images from Flux
+    generatedImages: [], // Stores URLs of generated tattoo images from OmniGen2
     currentArtists: [], // Stores loaded artist data
     currentSlide: 0 // For artist portfolio carousel
 };

@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js (This file now handles OmniGen2)
-console.log('OMNIGEN_HANDLER_VERSION: 2025-06-25_V1.2_OMNIGEN_RAW_INPUTS_FINAL');
+console.log('OMNIGEN_HANDLER_VERSION: 2025-06-25_V1.3_OMNIGEN_MODEL_VERSION_FIX');
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -13,9 +13,11 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generated-tattoos';
 
-// OmniGen2 (Replicate) Specifics (unchanged)
+// OmniGen2 (Replicate) Specifics
 const REPLICATE_API_URL = "https://api.replicate.com/v1/predictions";
-const OMNIGEN_MODEL_VERSION = "a5ce5260dd43640b37996a1a1f021e155b46d7888de6d628d096d29b28b6131c"; // From Replicate model page for OmniGen2
+const OMNIGEN_MODEL_VERSION = "2a96752c00224b"; // <--- UPDATED MODEL VERSION FROM REPLICATE EXAMPLE
+// Check the model page (https://replicate.com/vectorspacelab/omnigen) for the very latest version hash
+// (It might be under the 'Versions' tab if it changes again)
 
 // --- HELPER FUNCTIONS (unchanged) ---
 async function getMaskBoundingBox(maskBuffer, width, height) {
@@ -45,7 +47,7 @@ async function getMaskBoundingBox(maskBuffer, width, height) {
     return { minX: minX, minY: minY, maxX: maxX, maxY: maxY, width: maxX - minX + 1, height: maxY - minY + 1, isEmpty: false };
 }
 
-const omnigenImageGenerator = { // Renamed conceptually from fluxPlacementHandler
+const omnigenImageGenerator = {
 
     /**
      * Calls Remove.bg API to remove background from an image buffer.
@@ -120,7 +122,7 @@ const omnigenImageGenerator = { // Renamed conceptually from fluxPlacementHandle
     /**
      * Uploads an image buffer to Supabase Storage and returns its public URL.
      */
-    uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '', contentType = 'image/png') => { // Default contentType to PNG
+    uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '', contentType = 'image/png') => {
         const filePath = folder ? `${userId}/${folder}/${fileName}` : `${userId}/${fileName}`;
         const { data, error } = await supabase.storage
             .from(SUPABASE_STORAGE_BUCKET)

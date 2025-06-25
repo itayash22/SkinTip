@@ -90,13 +90,11 @@ const drawing = {
             drawing.stopDrawing();
         }, { passive: false });
 
-        // Clear canvas button event listener - NOW WORKS
+        // Clear canvas button event listener
         document.getElementById('clearCanvas')?.addEventListener('click', () => {
-            console.log('Clear Selection button clicked.'); // DEBUG LOG
+            console.log('Clear Selection button clicked.');
             drawing.clearCanvas();
         });
-
-        // The "Continue to Design" (now "Generate Tattoo on Skin") button listener is handled in index.html.
     },
 
     startDrawing: (e) => {
@@ -163,110 +161,90 @@ const drawing = {
     },
 
     stopDrawing: () => {
-        if (!drawing.isDrawing) return; // If drawing wasn't active, do nothing
+        if (!drawing.isDrawing) return;
         drawing.isDrawing = false;
 
-        // Get the continue button (Generate Tattoo on Skin)
         const continueBtn = document.getElementById('continueBtn');
 
-        // Check if path is closed and has enough points (min 10 points to avoid tiny clicks)
         if (drawing.currentPath.length > 10) {
             const first = drawing.currentPath[0];
             const last = drawing.currentPath[drawing.currentPath.length - 1];
-            // Distance check in original image coordinates
             const distance = Math.sqrt(Math.pow(last.x - first.x, 2) + Math.pow(last.y - first.y, 2));
 
-            if (distance < 30) { // If closed (threshold of 30 pixels in original image resolution)
-                drawing.currentPathCoords = [...drawing.currentPath]; // Save the coordinates of the closed path
-                drawing.updateMask(); // Generate the mask image on the hidden canvas
-                drawing.selectedArea = drawing.maskCanvas.toDataURL('image/png'); // Store the mask as Base64 for API (ensure PNG!)
+            if (distance < 30) {
+                drawing.currentPathCoords = [...drawing.currentPath];
+                drawing.updateMask();
+                drawing.selectedArea = drawing.maskCanvas.toDataURL('image/png');
 
-                // Show continue button (now "Generate Tattoo on Skin")
                 if (continueBtn) continueBtn.style.display = 'block';
-                console.log('Drawing stopped: Valid mask created. Generate button shown.'); // DEBUG LOG
+                console.log('Drawing stopped: Valid mask created. Generate button shown.');
             } else {
                 alert('Please close the shape by drawing near your starting point to define the tattoo area.');
-                // Clear the path if not closed well enough
                 drawing.currentPath = [];
                 drawing.currentPathCoords = null;
                 drawing.selectedArea = null;
-                if (continueBtn) continueBtn.style.display = 'none'; // Hide if not valid
-                console.log('Drawing stopped: Mask not closed. Generate button hidden.'); // DEBUG LOG
+                if (continueBtn) continueBtn.style.display = 'none';
+                console.log('Drawing stopped: Mask not closed. Generate button hidden.');
             }
         } else {
             alert('Please draw a larger and more defined area for your tattoo.');
-            // Clear the path if too small
             drawing.currentPath = [];
             drawing.currentPathCoords = null;
             drawing.selectedArea = null;
-            if (continueBtn) continueBtn.style.display = 'none'; // Hide if not valid
-            console.log('Drawing stopped: Mask too small. Generate button hidden.'); // DEBUG LOG
+            if (continueBtn) continueBtn.style.display = 'none';
+            console.log('Drawing stopped: Mask too small. Generate button hidden.');
         }
 
-        drawing.redrawCanvas(); // Redraw to show the filled selected area or clear temporary path
+        drawing.redrawCanvas();
     },
 
     redrawCanvas: () => {
-        // Only attempt to draw if canvas and context are initialized
         if (!drawing.canvas || !drawing.ctx || !drawing.originalImage) {
-            console.log('RedrawCanvas: Canvas not initialized, skipping redraw.'); // DEBUG LOG
+            console.log('RedrawCanvas: Canvas not initialized, skipping redraw.');
             return;
         }
 
-        // Always clear and redraw the original image first
         drawing.ctx.clearRect(0, 0, drawing.canvas.width, drawing.canvas.height);
         drawing.ctx.drawImage(drawing.originalImage, 0, 0, drawing.canvas.width, drawing.canvas.height);
 
-        // Draw the previously selected (closed) area if it exists
         if (drawing.currentPathCoords && drawing.currentPathCoords.length > 0) {
             drawing.ctx.save();
-
-            // Scale drawing to display canvas dimensions
             const displayScaleX = drawing.canvas.width / drawing.originalImage.width;
             const displayScaleY = drawing.canvas.height / drawing.originalImage.height;
 
-            // Luminescent fill style for the selected area
             drawing.ctx.fillStyle = 'rgba(99, 102, 241, 0.2)';
             drawing.ctx.strokeStyle = '#818cf8';
-            drawing.ctx.lineWidth = 3 * Math.min(displayScaleX, displayScaleY); // Scale line width
+            drawing.ctx.lineWidth = 3 * Math.min(displayScaleX, displayScaleY);
             drawing.ctx.shadowColor = '#6366f1';
             drawing.ctx.shadowBlur = 15 * Math.min(displayScaleX, displayScaleY);
 
             drawing.ctx.beginPath();
-            // Draw the saved path coordinates, scaled for display
             drawing.ctx.moveTo(drawing.currentPathCoords[0].x * displayScaleX, drawing.currentPathCoords[0].y * displayScaleY);
             for (let i = 1; i < drawing.currentPathCoords.length; i++) {
                 drawing.ctx.lineTo(drawing.currentPathCoords[i].x * displayScaleX, drawing.currentPathCoords[i].y * displayScaleY);
             }
-            drawing.ctx.closePath(); // Close the shape
-            drawing.ctx.fill(); // Fill the shape
-            drawing.ctx.stroke(); // Draw the outline
+            drawing.ctx.closePath();
+            drawing.ctx.fill();
+            drawing.ctx.stroke();
             drawing.ctx.restore();
-            console.log('RedrawCanvas: Mask drawn on display canvas.'); // DEBUG LOG
+            console.log('RedrawCanvas: Mask drawn on display canvas.');
         } else {
-            console.log('RedrawCanvas: No mask to draw on display canvas.'); // DEBUG LOG
+            console.log('RedrawCanvas: No mask to draw on display canvas.');
         }
     },
 
     updateMask: () => {
-        // Only attempt to update mask if maskCanvas and maskCtx are initialized
         if (!drawing.maskCanvas || !drawing.maskCtx || !drawing.originalImage) {
-            console.log('UpdateMask: Mask canvas not initialized, skipping update.'); // DEBUG LOG
+            console.log('UpdateMask: Mask canvas not initialized, skipping update.');
             return;
         }
 
-        // Create the mask on the HIDDEN canvas.
-        // Frontend mask is white for the tattoo area, black elsewhere.
-
-        // Start with a BLACK background for the mask canvas
         drawing.maskCtx.fillStyle = 'black';
         drawing.maskCtx.fillRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
 
-        // Draw the drawn area as WHITE on the mask canvas
         if (drawing.currentPathCoords && drawing.currentPathCoords.length > 0) {
-            drawing.maskCtx.fillStyle = 'white'; // Use white for the area to be filled
+            drawing.maskCtx.fillStyle = 'white';
             drawing.maskCtx.beginPath();
-            // Use original image coordinates for mask for pixel accuracy
             drawing.maskCtx.moveTo(drawing.currentPathCoords[0].x, drawing.currentPathCoords[0].y);
 
             for (let i = 1; i < drawing.currentPathCoords.length; i++) {
@@ -274,66 +252,58 @@ const drawing = {
             }
 
             drawing.maskCtx.closePath();
-            drawing.maskCtx.fill(); // Fill the shape with white
-            console.log('UpdateMask: Mask drawn on hidden canvas.'); // DEBUG LOG
+            drawing.maskCtx.fill();
+            console.log('UpdateMask: Mask drawn on hidden canvas.');
         } else {
-            console.log('UpdateMask: No mask to draw on hidden canvas.'); // DEBUG LOG
+            console.log('UpdateMask: No mask to draw on hidden canvas.');
         }
     },
 
     clearCanvas: () => {
-        console.log('clearCanvas function called.'); // DEBUG LOG at start
+        console.log('clearCanvas function called.');
 
-        // Only attempt to clear if canvas and context are initialized
         if (!drawing.canvas || !drawing.ctx) {
-            console.warn("clearCanvas: Canvas not initialized, cannot clear."); // DEBUG LOG
+            console.warn("clearCanvas: Canvas not initialized, cannot clear.");
             return;
         }
 
-        // Clear both display and mask canvases
         drawing.ctx.clearRect(0, 0, drawing.canvas.width, drawing.canvas.height);
-        console.log('clearCanvas: Display canvas cleared.'); // DEBUG LOG
+        console.log('clearCanvas: Display canvas cleared.');
 
         if (drawing.maskCtx && drawing.maskCanvas) {
             drawing.maskCtx.clearRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
-            console.log('clearCanvas: Mask canvas cleared.'); // DEBUG LOG
+            console.log('clearCanvas: Mask canvas cleared.');
         }
 
-        // Reset all drawing state variables
         drawing.currentPath = [];
         drawing.selectedArea = null;
         drawing.currentPathCoords = null;
-        console.log('clearCanvas: Drawing state variables reset.'); // DEBUG LOG
+        console.log('clearCanvas: Drawing state variables reset.');
         
-        // Redraw the original image (which will clear the display canvas if no image)
-        // This will effectively put the original image back without any drawings.
         drawing.redrawCanvas();
-        console.log('clearCanvas: redrawCanvas called after reset.'); // DEBUG LOG
+        console.log('clearCanvas: redrawCanvas called after reset.');
 
-        // Re-initialize mask canvas with black background after clearing for consistency
         if (drawing.maskCtx && drawing.maskCanvas) {
             drawing.maskCtx.fillStyle = 'black';
             drawing.maskCtx.fillRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
-            console.log('clearCanvas: Mask canvas re-initialized with black background.'); // DEBUG LOG
+            console.log('clearCanvas: Mask canvas re-initialized with black background.');
         }
 
-        // Hide the continue button (now "Generate Tattoo on Skin") explicitly on clear
         const continueBtn = document.getElementById('continueBtn');
         if (continueBtn) {
             continueBtn.style.display = 'none';
-            console.log('clearCanvas: Generate button hidden.'); // DEBUG LOG
+            console.log('clearCanvas: Generate button hidden.');
         } else {
-            console.warn('clearCanvas: Generate button element not found.'); // DEBUG LOG
+            console.warn('clearCanvas: Generate button element not found.');
         }
         
-        console.log('clearCanvas function finished.'); // DEBUG LOG at end
+        console.log('clearCanvas function finished.');
     },
 
-    // Public getter for mask data URL (used by index.html)
     getMaskDataURL: () => {
         return drawing.selectedArea;
     }
 };
 
-// Expose the drawing object globally so index.html can access it
+// Expose the drawing object globally
 window.drawing = drawing;

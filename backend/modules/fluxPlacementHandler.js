@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js (This file now handles OmniGen2)
-console.log('OMNIGEN_HANDLER_VERSION: 2025-06-25_V1.0_INITIAL_OMNIGEN_INTEGRATION');
+console.log('OMNIGEN_HANDLER_VERSION: 2025-06-25_V1.2_OMNIGEN_RAW_INPUTS_FINAL');
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -7,17 +7,17 @@ import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
 import FormData from 'form-data'; // Needed for Node.js when sending multipart/form-data
 
-// Initialize Supabase Storage client
+// Initialize Supabase Storage client (unchanged)
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generated-tattoos';
 
-// OmniGen2 (Replicate) Specifics
+// OmniGen2 (Replicate) Specifics (unchanged)
 const REPLICATE_API_URL = "https://api.replicate.com/v1/predictions";
 const OMNIGEN_MODEL_VERSION = "a5ce5260dd43640b37996a1a1f021e155b46d7888de6d628d096d29b28b6131c"; // From Replicate model page for OmniGen2
 
-// --- HELPER FUNCTIONS (unchanged from previous flux handler) ---
+// --- HELPER FUNCTIONS (unchanged) ---
 async function getMaskBoundingBox(maskBuffer, width, height) {
     let minX = width, minY = height, maxX = 0, maxY = 0;
     let foundWhite = false;
@@ -42,7 +42,7 @@ async function getMaskBoundingBox(maskBuffer, width, height) {
     minY = Math.max(0, minY - padding);
     maxX = Math.min(width, maxX + padding);
     maxY = Math.min(height, maxY + padding);
-    return { minX: minX, minY: minY, maxY: maxY, width: maxX - minX + 1, height: maxY - minY + 1, isEmpty: false };
+    return { minX: minX, minY: minY, maxX: maxX, maxY: maxY, width: maxX - minX + 1, height: maxY - minY + 1, isEmpty: false };
 }
 
 const omnigenImageGenerator = { // Renamed conceptually from fluxPlacementHandler
@@ -52,7 +52,7 @@ const omnigenImageGenerator = { // Renamed conceptually from fluxPlacementHandle
      * Returns a buffer of the image with background removed (always PNG).
      */
     removeImageBackground: async (imageBuffer) => {
-        const REMOVE_BG_API_KEY = process.env.REMOVE_BG_API_KEY; // Get key here
+        const REMOVE_BG_API_KEY = process.env.REMOVE_BG_API_KEY;
         if (!REMOVE_BG_API_KEY) {
             console.warn('REMOVE_BG_API_KEY is not set. Skipping background removal and returning original image as PNG.');
             return await sharp(imageBuffer).png().toBuffer();
@@ -144,61 +144,63 @@ const omnigenImageGenerator = { // Renamed conceptually from fluxPlacementHandle
 
     /**
      * Generates images using OmniGen2 (Replicate) API.
-     * @param {Buffer} skinImageBuffer - Buffer of the skin image (JPG or opaque PNG).
-     * @param {string} tattooDesignImageBase64 - Base64 of the tattoo design image (transparent PNG expected, but will be processed by remove.bg).
-     * @param {string} maskBase64 - Base64 of the mask image (white on black, PNG).
+     * @param {Buffer} skinImageBuffer - Buffer of the skin image (will be image_input).
+     * @param {string} tattooDesignImageBase64 - Base64 of the tattoo design image (will be image_2 in prompt).
+     * @param {string} maskBase64 - Base64 of the mask image (white on black, PNG, will be mask_input).
      * @param {string} userId - User ID for storage.
      * @param {number} numVariations - Number of variations to generate (OmniGen2 typically generates 1 per call).
      * @param {string} replicateApiToken - Replicate API Token.
      * @returns {Promise<string[]>} Array of generated image URLs.
      */
     generateImageWithOmnigen: async (skinImageBuffer, tattooDesignImageBase64, maskBase64, userId, numVariations, replicateApiToken) => {
-        console.log('Starting OmniGen2 (Replicate) image generation process...');
+        console.log('Starting OmniGen2 (Replicate) image generation process with raw inputs...');
 
-        // 1. Prepare tattoo design: Ensure transparent PNG after background removal
-        // This will now always output a PNG with transparency (from remove.bg or original)
-        let tattooDesignPngFinalBuffer = await omnigenImageGenerator.removeImageBackground(
+        // 1. Prepare skin image: Convert to Base64 PNG for OmniGen2's `image_input`
+        const skinImagePngBuffer = await sharp(skinImageBuffer).png().toBuffer();
+        const skinImagePngBase64 = `data:image/png;base64,${skinImagePngBuffer.toString('base64')}`;
+        const skinImageMeta = await sharp(skinImagePngBuffer).metadata();
+        console.log(`Skin Image (for OmniGen image_input) Meta: format=${skinImageMeta.format}, width=${skinImageMeta.width}, height=${skinImageMeta.height}, hasAlpha=${skinImageMeta.hasAlpha}`);
+
+
+        // 2. Prepare tattoo design: Ensure transparent PNG after background removal (will be `image_2` in prompt)
+        const tattooDesignPngFinalBuffer = await omnigenImageGenerator.removeImageBackground(
             Buffer.from(tattooDesignImageBase64, 'base64')
         );
+        const tattooDesignPngFinalBase64 = `data:image/png;base64,${tattooDesignPngFinalBuffer.toString('base64')}`;
+        const tattooDesignMeta = await sharp(tattooDesignPngFinalBuffer).metadata();
+        console.log(`Tattoo Design (for OmniGen image_2) Meta: format=${tattooDesignMeta.format}, width=${tattooDesignMeta.width}, height=${tattooDesignMeta.height}, hasAlpha=${tattooDesignMeta.hasAlpha}`);
 
-        // 2. Prepare mask: Ensure white on black PNG
-        // The mask is directly passed to OmniGen2's mask_input
+
+        // 3. Prepare mask: Ensure white on black PNG (will be `mask_input`)
         const maskPngBuffer = await sharp(Buffer.from(maskBase64, 'base64')).png().toBuffer();
         const maskPngBase64 = `data:image/png;base64,${maskPngBuffer.toString('base64')}`;
-
-
-        // 3. Composite tattoo onto skin using Sharp for OmniGen2's `image_input`
-        // OmniGen2 expects the "base image" and the "mask" separately.
-        // The `image_input` should be the skin image WITH the transparent tattoo overlaid.
-        let compositedImageBuffer = await sharp(skinImageBuffer)
-            .composite([
-                {
-                    input: tattooDesignPngFinalBuffer,
-                    blend: 'over', // Standard blend mode
-                    tile: false,
-                    left: 0, // OmniGen2 repositions; here we're just overlaying for the base image
-                    top: 0
-                }
-            ])
-            .png() // Ensure the composited base image is PNG to send to OmniGen2
-            .toBuffer();
+        const maskMeta = await sharp(maskPngBuffer).metadata();
+        console.log(`Mask Meta: format=${maskMeta.format}, width=${maskMeta.width}, height=${maskMeta.height}`);
         
-        // Upload debug composite image (tattoo on skin) - this is what OmniGen2 will see as its input_image
-        const debugFileName = `debug_sharp_composite_omnigen_input_${uuidv4()}.png`;
-        const debugPublicUrl = await omnigenImageGenerator.uploadToSupabaseStorage(
-            compositedImageBuffer, debugFileName, userId, 'debug', 'image/png'
-        );
-        console.log(`DEBUG: SHARP COMPOSITED INPUT TO OMNIGEN URL: ${debugPublicUrl}`);
+        // --- DEBUGGING STEP: Upload inputs to Supabase for verification ---
+        // These are the images as they will be sent to OmniGen2
+        const debugSkinUrl = await omnigenImageGenerator.uploadToSupabaseStorage(skinImagePngBuffer, `debug_omnigen_input_skin_${uuidv4()}.png`, userId, 'debug_input', 'image/png');
+        console.log(`DEBUG: OMNIGEN INPUT SKIN URL: ${debugSkinUrl}`);
+
+        const debugTattooUrl = await omnigenImageGenerator.uploadToSupabaseStorage(tattooDesignPngFinalBuffer, `debug_omnigen_input_tattoo_${uuidv4()}.png`, userId, 'debug_input', 'image/png');
+        console.log(`DEBUG: OMNIGEN INPUT TATTOO URL: ${debugTattooUrl}`);
+
+        const debugMaskUrl = await omnigenImageGenerator.uploadToSupabaseStorage(maskPngBuffer, `debug_omnigen_input_mask_${uuidv4()}.png`, userId, 'debug_input', 'image/png');
+        console.log(`DEBUG: OMNIGEN INPUT MASK URL: ${debugMaskUrl}`);
+        // --- END DEBUGGING STEP ---
+
 
         // OmniGen2 API call parameters
-        const omnigenPrompt = "Make the tattoo look naturally placed on the skin, blend seamlessly, adjust lighting and shadows for realism. Realistic photo, professional tattoo photography, high detail.";
+        // The prompt now explicitly guides the AI to place image_2 (tattoo) onto image_1 (skin) using the mask.
+        const omnigenPrompt = `Place the tattoo design ${'<img><|image_2|></img>'} onto the skin ${'<img><|image_1|></img>'} seamlessly, adjusting for lighting and shadows. Make it look like a realistic tattoo.`;
         
         const replicatePayload = {
             version: OMNIGEN_MODEL_VERSION,
             input: {
                 prompt: omnigenPrompt,
-                image_input: `data:image/png;base64,${compositedImageBuffer.toString('base64')}`, // Composited image
-                mask_input: maskPngBase64, // Mask from drawing
+                image_input: skinImagePngBase64, // The base skin image (image_1 in prompt)
+                mask_input: maskPngBase64, // The mask to guide placement/editing
+                image_2: tattooDesignPngFinalBase64, // The tattoo design itself (image_2 in prompt)
                 inference_steps: 75, // Higher quality steps (default 50)
                 guidance_scale: 7.5, // Balance text prompt adherence
                 img_guidance_scale: 1.8, // Balance adherence to input image
@@ -252,7 +254,6 @@ const omnigenImageGenerator = { // Renamed conceptually from fluxPlacementHandle
 
                 if (predictionStatus === 'succeeded') {
                     if (pollResponse.data.output && pollResponse.data.output.length > 0) {
-                        // OmniGen2 outputs an array of URLs for 'n' variations (even if n=1)
                         for (const imageUrlFromOmnigen of pollResponse.data.output) {
                             if (typeof imageUrlFromOmnigen === 'string' && imageUrlFromOmnigen.startsWith('http')) {
                                 console.log(`Downloading result from OmniGen2: ${imageUrlFromOmnigen.substring(0, 50)}...`);

@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js (This file now handles OmniGen2)
-console.log('OMNIGEN_HANDLER_VERSION: 2025-06-25_V1.3_OMNIGEN_MODEL_VERSION_FIX');
+console.log('OMNIGEN_HANDLER_VERSION: 2025-06-25_V1.4_NEW_MODEL_VERSION'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -15,11 +15,9 @@ const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generate
 
 // OmniGen2 (Replicate) Specifics
 const REPLICATE_API_URL = "https://api.replicate.com/v1/predictions";
-const OMNIGEN_MODEL_VERSION = "2a96752c00224b"; // <--- UPDATED MODEL VERSION FROM REPLICATE EXAMPLE
-// Check the model page (https://replicate.com/vectorspacelab/omnigen) for the very latest version hash
-// (It might be under the 'Versions' tab if it changes again)
+const OMNIGEN_MODEL_VERSION = "696cdda9b4fdb09335bac614c0cb8d60fcd4215d"; // <--- UPDATED TO THE NEW HASH YOU PROVIDED
 
-// --- HELPER FUNCTIONS (unchanged) ---
+// --- HELPER FUNCTIONS (unchanged from previous flux handler) ---
 async function getMaskBoundingBox(maskBuffer, width, height) {
     let minX = width, minY = height, maxX = 0, maxY = 0;
     let foundWhite = false;
@@ -47,7 +45,7 @@ async function getMaskBoundingBox(maskBuffer, width, height) {
     return { minX: minX, minY: minY, maxX: maxX, maxY: maxY, width: maxX - minX + 1, height: maxY - minY + 1, isEmpty: false };
 }
 
-const omnigenImageGenerator = {
+const omnigenImageGenerator = { // Renamed conceptually from fluxPlacementHandler
 
     /**
      * Calls Remove.bg API to remove background from an image buffer.
@@ -122,7 +120,7 @@ const omnigenImageGenerator = {
     /**
      * Uploads an image buffer to Supabase Storage and returns its public URL.
      */
-    uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '', contentType = 'image/png') => {
+    uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '', contentType = 'image/png') => { // Default contentType to PNG
         const filePath = folder ? `${userId}/${folder}/${fileName}` : `${userId}/${fileName}`;
         const { data, error } = await supabase.storage
             .from(SUPABASE_STORAGE_BUCKET)

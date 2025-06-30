@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js (This file now handles OmniGen2)
-console.log('OMNIGEN_HANDLER_VERSION: 2025-06-30_V1.5_AUTO_LATEST_MODEL'); // UPDATED VERSION LOG
+console.log('OMNIGEN_HANDLER_VERSION: 2025-06-30_V1.6_EXPLICIT_MODEL_HASH'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -15,7 +15,7 @@ const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generate
 
 // OmniGen2 (Replicate) Specifics
 const REPLICATE_API_URL = "https://api.replicate.com/v1/predictions";
-const OMNIGEN_MODEL_VERSION = "vectorspacelab/omnigen"; // <--- CHANGED TO USE MODEL NAME DIRECTLY (auto-updates to latest stable)
+const OMNIGEN_MODEL_VERSION = "696cdda9b4fdb09335bac614c0cb8d60fcd4215d"; // <--- CHANGED BACK TO EXPLICIT HASH YOU PROVIDED
 
 // --- HELPER FUNCTIONS (unchanged from previous flux handler) ---
 async function getMaskBoundingBox(maskBuffer, width, height) {
@@ -45,7 +45,7 @@ async function getMaskBoundingBox(maskBuffer, width, height) {
     return { minX: minX, minY: minY, maxX: maxX, maxY: maxY, width: maxX - minX + 1, height: maxY - minY + 1, isEmpty: false };
 }
 
-const omnigenImageGenerator = {
+const omnigenImageGenerator = { // Renamed conceptually from fluxPlacementHandler
 
     /**
      * Calls Remove.bg API to remove background from an image buffer.
@@ -120,7 +120,7 @@ const omnigenImageGenerator = {
     /**
      * Uploads an image buffer to Supabase Storage and returns its public URL.
      */
-    uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '', contentType = 'image/png') => {
+    uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '', contentType = 'image/png') => { // Default contentType to PNG
         const filePath = folder ? `${userId}/${folder}/${fileName}` : `${userId}/${fileName}`;
         const { data, error } = await supabase.storage
             .from(SUPABASE_STORAGE_BUCKET)

@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js (This file now handles OmniGen2)
-console.log('OMNIGEN_HANDLER_VERSION: 2025-06-25_V1.4_NEW_MODEL_VERSION'); // UPDATED VERSION LOG
+console.log('OMNIGEN_HANDLER_VERSION: 2025-06-25_V1.4_NEW_MODEL_VERSION_FROM_USER'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';

@@ -487,3 +487,48 @@ app.get('/api/debug/test-omnigen-token', async (req, res) => {
     }
 });
 
+app.get('/api/debug/test-omnigen-access', async (req, res) => {
+    try {
+        const axios = await import('axios').then(m => m.default);
+
+        const testVersion = "8e5a119bfc428e27e2e816e1f4e4a8f8d9bfc84b47e64ae5e61b95fe5c2b0f40";
+        const replicateToken = process.env.REPLICATE_API_TOKEN;
+
+        const response = await axios.post(
+            'https://api.replicate.com/v1/predictions',
+            {
+                version: testVersion,
+                input: {
+                    prompt: "test input",
+                    image_input: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB...", // 1x1 base64 pixel
+                    mask_input: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB...",
+                    image_2: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB...",
+                    inference_steps: 1,
+                    output_format: "png"
+                }
+            },
+            {
+                headers: {
+                    Authorization: `Token ${replicateToken}`,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+
+        res.status(200).json({
+            ok: true,
+            message: "Prediction started successfully",
+            replicate_response: response.data
+        });
+
+    } catch (err) {
+        const status = err.response?.status || 500;
+        const errorDetail = err.response?.data || err.message || "Unknown error";
+
+        res.status(status).json({
+            ok: false,
+            error: errorDetail,
+            token_used: process.env.REPLICATE_API_TOKEN?.slice(0, 12) + "..."
+        });
+    }
+});

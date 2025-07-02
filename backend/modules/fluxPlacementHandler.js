@@ -15,7 +15,7 @@ const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generate
 
 // OmniGen2 (Replicate) Specifics
 const REPLICATE_API_URL = "https://api.replicate.com/v1/predictions";
-const OMNIGEN_MODEL_VERSION = "78c4e6dc1c00e3cb9b3b708944d1153dfe3f6563"; // <-- Confirmed public hash as of June 2025
+const OMNIGEN_MODEL_VERSION = "8e5a119bfc428e27e2e816e1f4e4a8f8d9bfc84b47e64ae5e61b95fe5c2b0f40";
 
 // --- HELPER FUNCTIONS (unchanged from previous flux handler) ---
 async function getMaskBoundingBox(maskBuffer, width, height) {

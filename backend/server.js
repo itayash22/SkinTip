@@ -462,3 +462,28 @@ app.listen(PORT, () => {
     console.log(`🔐 Supabase Service Key: ${SUPABASE_SERVICE_KEY ? 'Configured' : 'Not configured'}`);
     console.log(`📦 Supabase Storage Bucket: ${process.env.SUPABASE_STORAGE_BUCKET ? 'Configured' : 'Not configured'}`);
 });
+app.get('/api/debug/test-omnigen-token', async (req, res) => {
+    try {
+        const axios = await import('axios').then(m => m.default);
+        const response = await axios.post(
+            'https://api.replicate.com/v1/predictions',
+            {
+                version: '8e5a119bfc428e27e2e816e1f4e4a8f8d9bfc84b47e64ae5e61b95fe5c2b0f40',
+                input: { prompt: "test" }
+            },
+            {
+                headers: {
+                    'Authorization': `Token ${process.env.REPLICATE_API_TOKEN}`,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+        res.json({ ok: true, response: response.data });
+    } catch (err) {
+        res.status(500).json({
+            ok: false,
+            error: err.response?.data || err.message
+        });
+    }
+});
+

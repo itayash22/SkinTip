@@ -571,6 +571,15 @@
                     utils.showError('Tattoo design file size must be less than 5MB.');
                     return;
                 }
+                // Snippet for index.html - to be pasted INSIDE handleTattooDesignFile function
+
+        // --- NEW: PNG Preference Message ---
+        // If the file is not a PNG, display a warning.
+        if (file.type !== 'image/png') {
+            utils.showError('Heads up! PNG files with transparent backgrounds typically yield the best results for your tattoo design. For optimal realism, consider using a tool like Sora (or similar AI art generators) to create a transparent PNG, or a background removal tool before uploading.');
+            // We still proceed with processing the image, but the user is warned.
+        }
+        // End of snippet
 
                 utils.showLoading('Processing tattoo design...');
                 const reader = new FileReader();

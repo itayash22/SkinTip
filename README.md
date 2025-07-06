@@ -29,7 +29,7 @@ SkinTip/
 
 ## 🌳 **Development Branches & Tags**
 
-* **`v1.0.0` (Tagged Release)**: This tag points to the initial stable and fully functional version of the SkinTip platform. It includes user authentication, image upload, tattoo area selection, **text-based AI tattoo generation (using old Flux API)**, and artist Browse/contact. This served as a production-ready baseline.
+* **`stable-v1.1-w` (Tagged Release)**: This tag points to the initial stable and fully functional version of the SkinTip platform. It includes user authentication, image upload, tattoo area selection, **text-based AI tattoo generation (using old Flux API)**, and artist Browse/contact. This served as a production-ready baseline.
 * **`main` Branch**: This is the primary development branch. It contains the **latest code with the updated workflow**, focusing on user-uploaded tattoo designs for placement with Flux Kontext. Active feature development and bug fixes are performed here. This branch is directly deployed to Render.
 * **`feature/your-new-feature-name` (Example)**: Future feature development will happen on dedicated branches branched off `main`.
 

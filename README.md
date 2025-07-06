@@ -81,7 +81,7 @@ SkinTip operates on a token system to manage AI generation costs.
 * ✅ **WhatsApp Integration:** Direct contact with demo artists via WhatsApp.
 * ✅ **Mobile Friendly:** Designed for a seamless experience on all mobile devices.
 
-### Competiion: https://tatship.com/
+### Competition: https://tatship.com/
 
 ### Coming Soon / Next Steps
 * 🔄 Payment integration with Stripe for token purchases.

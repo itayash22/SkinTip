@@ -84,7 +84,7 @@ SkinTip operates on a token system to manage AI generation costs.
 ### Competition: https://tatship.com/
 
 ### Coming Soon / Next Steps
-* 🔄 Payment integration with Stripe for token purchases.
+* 🔄 usder resize and angle tatoo before masking and sending to 3d party
 * 🔄 Artist portfolio management and real artist profiles.
 * 🔄 Social sharing enhancements (e.g., direct Instagram sharing after download).
 * 🔄 Go over entire UX and text and polish
@@ -120,5 +120,6 @@ SkinTip operates on a token system to manage AI generation costs.
 * **`main` Branch**: This is the primary development branch. All active feature development and bug fixes for SkinTip are performed here. This branch may contain incomplete or experimental code during its development phase. The current work for the "two-image tattoo generation" feature is being developed here.
 
 ---
+updated working version: stable-v1.1-w
 
-Made with ❤️ by @itayash22
+Made with ❤️ by @itayash22 : itayash@gmail.com

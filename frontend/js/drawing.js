@@ -1,15 +1,36 @@
 // frontend/js/drawing.js
-
+import * as THREE from 'three';
+// --- Interaction variables (Declared globally for the module) ---
+let isDragging = false;
+let dragMode = 'none'; // 'none', 'translate', 'scale'
+const raycaster = new THREE.Raycaster(); // Used for detecting clicks on 3D objects
+const pointer = new THREE.Vector2(); // Stores normalized mouse/touch coordinates
+let dragOffset = new THREE.Vector3(); // Stores offset for smooth dragging (translation)
+let initialScale = 1; // Stores tattooMesh scale at the start of a scaling gesture/drag
+let initialPinchDistance = 0; // For touch-based pinch scaling
 const drawing = {
-    canvas: null,
-    ctx: null,
-    maskCanvas: null, // Hidden canvas for creating the mask sent to AI
-    maskCtx: null,
-    originalImage: null, // The skin image being drawn on
-    isDrawing: false,
-    currentPath: [], // Stores coordinates of the path being drawn
-    currentPathCoords: null, // Stores the coordinates of the *saved* closed path
-    selectedArea: null, // Stores the Base64 Data URL of the final mask image for API
+    const drawing = {
+    // --- THREE.js Core Variables ---
+    canvas: null, // This will be the main 3D canvas
+    renderer: null,
+    scene: null,
+    camera: null,
+    skinMesh: null, // 3D plane for the skin photo
+    tattooMesh: null, // 3D plane for the tattoo silhouette
+
+    // --- Image Storage ---
+    uploadedSkinPhotoFile: null, // Original File object for skin (for Flux)
+    uploadedTattooDesignFile: null, // Original File object for tattoo (for Flux)
+    uploadedTattooDesignImg: null, // Original Image object (HTMLImageElement) for 2D manipulations
+
+    // --- UI Element References ---
+    statusMessage: null,
+    angleSlider: null,
+    angleInput: null,
+    sizeSlider: null,
+    sizeInput: null,
+    resetTattooTransformBtn: null, // New reset button for 3D transform
+    tattooControlsDiv: null, // Container for angle/size sliders
 
     init: (imageUrl) => {
         drawing.canvas = document.getElementById('drawingCanvas');

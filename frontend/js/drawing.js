@@ -8,9 +8,10 @@ const pointer = new THREE.Vector2(); // Stores normalized mouse/touch coordinate
 let dragOffset = new THREE.Vector3(); // Stores offset for smooth dragging (translation)
 let initialScale = 1; // Stores tattooMesh scale at the start of a scaling gesture/drag
 let initialPinchDistance = 0; // For touch-based pinch scaling
-const drawing = {
-    const drawing = {
-    // --- THREE.js Core Variables ---
+
+const drawing = { 
+
+        // --- THREE.js Core Variables ---
     canvas: null, // This will be the main 3D canvas
     renderer: null,
     scene: null,
@@ -116,15 +117,7 @@ const drawing = {
     drawing.tattooControlsDiv.style.display = 'none';
 },
 
-    
-
-   
-
-    
-
-
-
-   
+  
 };
 
 // Expose the drawing object globally so index.html can access it

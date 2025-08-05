@@ -411,101 +411,100 @@ onPointerDown: (event) => {
 
     // --- Mask Capture (Modified to generate rotated/scaled tattoo for Flux) ---
     // This is the function called when 'Generate Tattoo on Skin' is clicked.
-    captureMask: async () => {
-        if (!drawing.tattooMesh.visible || !drawing.skinMesh.material.map || !drawing.uploadedTattooDesignImg) {
-            drawing.statusMessage.textContent = 'Error: Upload both skin photo and tattoo first.';
-            return;
-        }
-
-        drawing.statusMessage.textContent = 'Capturing mask...';
-
-        // 1. Generate the mask (silhouette of the 3D-positioned tattoo)
-        // This process renders the 3D tattooMesh (with its current 3D position, scale, and Z-rotation)
-        // to an offscreen 2D canvas, creating the mask.
-        const maskRenderTarget = new THREE.WebGLRenderTarget(drawing.canvas.width, drawing.canvas.height, {
-            minFilter: THREE.LinearFilter,
-            magFilter: THREE.NearestFilter,
-            format: THREE.RGBAFormat,
-            encoding: THREE.sRGBEncoding 
-        });
-
-        // Store original states to restore later
-        const originalClearColor = new THREE.Color();
-        drawing.renderer.getClearColor(originalClearColor);
-        const originalClearAlpha = drawing.renderer.getClearAlpha();
-        const originalBackground = drawing.scene.background;
-        const originalTattooMaterial = drawing.tattooMesh.material;
-
-        // Set up scene for mask capture (black background, white tattoo)
-        drawing.scene.background = null;
-        drawing.renderer.setClearColor(0x000000, 0); 
-        drawing.tattooMesh.material = new THREE.MeshBasicMaterial({ color: 0xFFFFFF, transparent: false, side: THREE.DoubleSide });
-        drawing.skinMesh.visible = false; // Hide skin photo for mask generation
-
-        drawing.renderer.render(drawing.scene, drawing.camera);
-
-        // Read pixels
-        const pixelBuffer = new Uint8Array(drawing.canvas.width * drawing.canvas.height * 4);
-        drawing.renderer.readRenderTargetPixels(maskRenderTarget, 0, 0, drawing.canvas.width, drawing.canvas.height, pixelBuffer);
-
-        // Restore renderer and scene state
-        drawing.renderer.setRenderTarget(null); 
-        drawing.tattooMesh.material = originalTattooMaterial; 
-        drawing.skinMesh.visible = true; 
-        drawing.scene.background = originalBackground;
-        drawing.renderer.setClearColor(originalClearColor, originalClearAlpha);
-
-        // Create 2D canvas for mask Blob
-        const maskCanvas = document.createElement('canvas');
-        maskCanvas.width = drawing.canvas.width;
-        maskCanvas.height = drawing.canvas.height;
-        const maskCtx = maskCanvas.getContext('2d');
-        const imageData = maskCtx.createImageData(maskCanvas.width, maskCtx.height);
-        imageData.data.set(pixelBuffer);
-        maskCtx.putImageData(imageData, 0, 0);
-
-        const maskBlob = await new Promise(resolve => maskCanvas.toBlob(resolve, 'image/png'));
-        console.log('Generated Mask Blob (from 3D view):', maskBlob);
-
-        // 2. Prepare the original tattoo image, ROTATED AND SCALED, for Flux
-        // This is crucial for Flux to receive the image with the correct orientation and resolution.
-        const finalTattooDesignCanvas = document.createElement('canvas');
-        const finalTattooDesignCtx = finalTattooDesignCanvas.getContext('2d');
-        
-        const img = drawing.uploadedTattooDesignImg;
-        const angle = parseFloat(drawing.angleInput.value); // Get final angle from UI slider
-        const scale = parseFloat(drawing.sizeInput.value); // Get final scale from UI slider (this is the scale factor for the IMAGE CONTENT)
-
-        // Calculate canvas size to accommodate rotated and scaled image
-        // We need the diagonal of the original image, then scale that diagonal.
-        const initialDiagonal = Math.hypot(img.width, img.height);
-        const scaledDiagonal = initialDiagonal * scale;
-        // Provide ample buffer so no clipping occurs after rotation/scaling
-        finalTattooDesignCanvas.width = Math.ceil(scaledDiagonal * 1.5); 
-        finalTattooDesignCanvas.height = Math.ceil(scaledDiagonal * 1.5);
-
-        // Draw rotated and scaled original tattoo image onto new canvas
-        finalTattooDesignCtx.translate(finalTattooDesignCanvas.width / 2, finalTattooDesignCanvas.height / 2);
-        finalTattooDesignCtx.rotate(angle * THREE.MathUtils.DEG2RAD);
-        finalTattooDesignCtx.scale(scale, scale); // Apply scaling to the image content
-        finalTattooDesignCtx.drawImage(img, -img.width / 2, -img.height / 2);
-        finalTattooDesignCtx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform
-
-        const finalTattooDesignBlob = await new Promise(resolve => finalTattooDesignCanvas.toBlob(resolve, 'image/png'));
-        console.log('Rotated & Scaled Original Tattoo Design Blob (for Flux):', finalTattooDesignBlob);
-
-        // 3. Prepare Skin Photo Blob
-        const skinPhotoBlob = drawing.uploadedSkinPhotoFile; 
-        console.log('Original Skin Photo Blob (for Flux):', skinPhotoBlob);
-
-        drawing.statusMessage.textContent = 'Masks generated! Check console for blobs. Ready to send.';
-        
-        /* ACTUAL FLUX FETCH REQUEST (this part needs to be integrated with main app's Flux API call)
-        // This logic comes from the index.html main script's 'continueBtn' listener.
-        // It should use the generated blobs (maskBlob, finalTattooDesignBlob, skinPhotoBlob)
-        // and send them to your backend's generate-final-tattoo endpoint.
-        */
+    // --- Mask Capture (Modified to generate rotated/scaled tattoo for Flux) ---
+// This is the function called when 'Generate Tattoo on Skin' is clicked.
+captureMask: async () => {
+    if (!drawing.tattooMesh.visible || !drawing.skinMesh.material.map || !drawing.uploadedTattooDesignImg) {
+        drawing.statusMessage.textContent = 'Error: Upload both skin photo and tattoo first.';
+        return null;
     }
+
+    drawing.statusMessage.textContent = 'Capturing mask...';
+
+    // 1. Generate the mask (silhouette of the 3D-positioned tattoo)
+    // This process renders the 3D tattooMesh (with its current 3D position, scale, and Z-rotation)
+    // to an offscreen 2D canvas, creating the mask.
+    const rect = drawing.canvas.getBoundingClientRect();
+    const maskRenderTarget = new THREE.WebGLRenderTarget(rect.width, rect.height, {
+        minFilter: THREE.LinearFilter,
+        magFilter: THREE.NearestFilter,
+        format: THREE.RGBAFormat,
+        encoding: THREE.sRGBEncoding
+    });
+
+    // Store original states to restore later
+    const originalClearColor = new THREE.Color();
+    drawing.renderer.getClearColor(originalClearColor);
+    const originalClearAlpha = drawing.renderer.getClearAlpha();
+    const originalBackground = drawing.scene.background;
+    const originalTattooMaterial = drawing.tattooMesh.material;
+
+    // Set up scene for mask capture (black background, white tattoo)
+    drawing.scene.background = null;
+    drawing.renderer.setClearColor(0x000000, 0);
+    drawing.tattooMesh.material = new THREE.MeshBasicMaterial({ color: 0xFFFFFF, transparent: false, side: THREE.DoubleSide });
+    drawing.skinMesh.visible = false; // Hide skin photo for mask generation
+
+    drawing.renderer.setRenderTarget(maskRenderTarget);
+    drawing.renderer.render(drawing.scene, drawing.camera);
+
+    // Read pixels
+    const pixelBuffer = new Uint8Array(rect.width * rect.height * 4);
+    drawing.renderer.readRenderTargetPixels(maskRenderTarget, 0, 0, rect.width, rect.height, pixelBuffer);
+
+    // Restore renderer and scene state
+    drawing.renderer.setRenderTarget(null);
+    drawing.tattooMesh.material = originalTattooMaterial;
+    drawing.skinMesh.visible = true;
+    drawing.scene.background = originalBackground;
+    drawing.renderer.setClearColor(originalClearColor, originalClearAlpha);
+
+    // Create 2D canvas for mask Blob
+    const maskCanvas = document.createElement('canvas');
+    maskCanvas.width = rect.width;
+    maskCanvas.height = rect.height;
+    const maskCtx = maskCanvas.getContext('2d');
+    const imageData = maskCtx.createImageData(maskCanvas.width, maskCtx.height);
+    imageData.data.set(pixelBuffer);
+    maskCtx.putImageData(imageData, 0, 0);
+
+    const maskBlob = await new Promise(resolve => maskCanvas.toBlob(resolve, 'image/png'));
+    console.log('Generated Mask Blob (from 3D view):', maskBlob);
+
+    // 2. Prepare the original tattoo image, ROTATED AND SCALED, for Flux
+    const finalTattooDesignCanvas = document.createElement('canvas');
+    const finalTattooDesignCtx = finalTattooDesignCanvas.getContext('2d');
+    
+    const img = drawing.uploadedTattooDesignImg;
+    const angle = parseFloat(drawing.angleInput.value); // Get final angle from UI slider
+    const scale = parseFloat(drawing.sizeInput.value); // Get final scale from UI slider (this is the scale factor for the IMAGE CONTENT)
+
+    // Calculate canvas size to accommodate rotated and scaled image
+    const finalWidth = img.width * scale;
+    const finalHeight = img.height * scale;
+    const diagonal = Math.hypot(finalWidth, finalHeight);
+    finalTattooDesignCanvas.width = diagonal;
+    finalTattooDesignCanvas.height = diagonal;
+    
+    // Draw rotated and scaled original tattoo image onto new canvas
+    finalTattooDesignCtx.translate(finalTattooDesignCanvas.width / 2, finalTattooDesignCanvas.height / 2);
+    finalTattooDesignCtx.rotate(angle * THREE.MathUtils.DEG2RAD);
+    finalTattooDesignCtx.drawImage(img, -img.width / 2, -img.height / 2, img.width, img.height); // Draw image without additional scaling
+    finalTattooDesignCtx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform
+
+    const finalTattooDesignBlob = await new Promise(resolve => finalTattooDesignCanvas.toBlob(resolve, 'image/png'));
+    console.log('Rotated & Scaled Original Tattoo Design Blob (for Flux):', finalTattooDesignBlob);
+
+    // Update STATE with the new mask and tattoo design
+    STATE.currentMask = maskBlob; // This should be the mask blob
+    STATE.uploadedTattooDesignBase64 = URL.createObjectURL(finalTattooDesignBlob); // This is a temporary URL for the new blob
+
+    drawing.statusMessage.textContent = 'Masks generated! Ready to send.';
+    
+    // This is where you would return or trigger the main app logic to send the data.
+    // The existing 'continueBtn' logic in index.html will pick this up from the STATE object.
+    return { mask: maskBlob, tattooDesign: finalTattooDesignBlob };
+}
 };
 
 // Expose the drawing object globally so index.html can access it

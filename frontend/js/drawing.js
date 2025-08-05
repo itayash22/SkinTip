@@ -85,8 +85,10 @@ const drawing = { 
 
     // Hide the old 2D drawing section and its old continue button
     const drawingSection = document.getElementById('drawingSection');
-    if (drawingSection) drawingSection.style.display = 'none'; 
-    const oldContinueBtn = document.getElementById('continueBtn'); // Old ID for continue button
+    if (drawingSection) drawingSection.style.display = 'block'; 
+    const oldDrawingCanvas = document.getElementById('drawingCanvas');
+    if (oldDrawingCanvas) oldDrawingCanvas.style.display = 'none';
+    const oldContinueBtn = document.getElementById('continueBtn');
     if (oldContinueBtn) oldContinueBtn.style.display = 'none'; 
 },
 
@@ -162,16 +164,15 @@ onWindowResize: () => {
 },
 
 // --- UI Event Handlers ---
-handleSkinUpload: (e) => { // This will be called by index.html's handleSkinPhotoFile
-    if (!e.target.files.length) return;
-    drawing.uploadedSkinPhotoFile = e.target.files[0]; 
+handleSkinUpload: (file) => {
+    drawing.uploadedSkinPhotoFile = file; 
     drawing.statusMessage.textContent = 'Loading skin photo...';
 
     drawing.loadTextureAndImage(drawing.uploadedSkinPhotoFile, (tex, img) => {
         const ar = img.width / img.height;
         const canvasAr = window.innerWidth / window.innerHeight;
 
-        let w = 100, h = 100; // Default values for world units
+        let w = 100, h = 100;
         const cameraZ = drawing.camera.position.z;
         const vFOV = drawing.camera.fov * THREE.MathUtils.DEG2RAD;
         const totalHeight = 2 * Math.tan(vFOV / 2) * cameraZ;
@@ -196,30 +197,25 @@ handleSkinUpload: (e) => { // This will be called by index.html's handleSkinPhot
     });
 },
 
-handleTattooUpload: (e) => { // This handles the tattoo design file (called by index.html's handleTattooDesignFile)
-    if (!e.target.files.length) return;
-    drawing.uploadedTattooDesignFile = e.target.files[0]; 
+handleTattooUpload: (file) => {
+    drawing.uploadedTattooDesignFile = file; 
     drawing.statusMessage.textContent = 'Loading tattoo design...';
 
     drawing.loadTextureAndImage(drawing.uploadedTattooDesignFile, (tex, img) => {
-        drawing.uploadedTattooDesignImg = img; // Store the original Image object
+        drawing.uploadedTattooDesignImg = img;
         
-        // Initialize tattoo display with current angle (0) and size (1)
         drawing.updateTattooDisplay(); 
-        drawing.setAngle(0); // This sets the Z rotation on the mesh and updates UI
-        drawing.setSize(1);  // This sets the scale on the mesh and updates UI
+        drawing.setAngle(0);
+        drawing.setSize(1);
 
-        tattooMesh.visible = true; // Use tattooMesh directly as it's a top-level var
-        // The 'continueBtn' now named 'captureMaskBtn' will be enabled
+        drawing.tattooMesh.visible = true;
         document.getElementById('captureMaskBtn').disabled = false; 
-        drawing.tattooControlsDiv.style.display = 'flex'; // Show angle/size controls
+        drawing.tattooControlsDiv.style.display = 'flex';
 
         drawing.statusMessage.textContent = 'Tattoo loaded! Drag to move, Shift+Drag to scale, use slider for 2D angle.';
     });
 },
 
-// Update tattoo texture: now it ONLY converts uploadedTattooDesignImg to silhouette
-// It does NOT apply rotation or scaling here. Those are done by tattooMesh.rotation.z and tattooMesh.scale.
 updateTattooDisplay: () => { 
     if (!drawing.uploadedTattooDesignImg) return;
 
@@ -227,13 +223,11 @@ updateTattooDisplay: () => {
     const offscreenCanvas = document.createElement('canvas');
     const ctx = offscreenCanvas.getContext('2d');
 
-    // Canvas size for silhouette should be original image size, no scaling/rotation applied here
     offscreenCanvas.width = img.width;
     offscreenCanvas.height = img.height;
 
     ctx.drawImage(img, 0, 0);
 
-    // Generate silhouette (green outline).
     const imageData = ctx.getImageData(0, 0, offscreenCanvas.width, offscreenCanvas.height);
     const data = imageData.data;
 
@@ -263,16 +257,12 @@ updateTattooDisplay: () => {
     drawing.tattooMesh.material.map = newTattooTexture;
     drawing.tattooMesh.material.needsUpdate = true;
 
-    // Adjust tattooMesh geometry aspect ratio. Scale is handled by tattooMesh.scale.
     const newAspectRatio = offscreenCanvas.width / offscreenCanvas.height;
-    const currentBasePlaneWidth = 40; // Consistent base width for the mesh
+    const currentBasePlaneWidth = 40;
     drawing.tattooMesh.geometry.dispose(); 
     drawing.tattooMesh.geometry = new THREE.PlaneGeometry(currentBasePlaneWidth, currentBasePlaneWidth / newAspectRatio);
-    
-    // UI update for angle/size is handled by setAngle/setSize directly
 },
 
-// Angle and Size Control Logic
 setAngle: (v) => {
     drawing.tattooMesh.rotation.z = THREE.MathUtils.degToRad(v);
     drawing.angleSlider.value = v;
@@ -301,15 +291,14 @@ handleSizeSliderChange: () => {
 handleSizeInputChange: () => {
     let value = parseFloat(drawing.sizeInput.value);
     if (isNaN(value)) value = 1;
-    value = Math.max(0.1, Math.min(3, value)); // Clamp to slider's min/max
+    value = Math.max(0.1, Math.min(3, value));
     drawing.setSize(value);
 },
 
-// Reset Angle, Size, and Position
 resetTattooTransform: () => {
     drawing.setAngle(0);
     drawing.setSize(1);
-    drawing.tattooMesh.position.set(0, 0, 1); // Reset position to initial
+    drawing.tattooMesh.position.set(0, 0, 1);
 },
 
 // --- Mouse/Touch Interaction ---
@@ -324,187 +313,162 @@ getNormalizedPointerCoords: (event) => {
 },
 
 onPointerDown: (event) => {
-    // Only allow left mouse button (0) or first touch (touchstart)
     if ((event.button === 0 || event.type === 'touchstart') && drawing.tattooMesh.visible) {
-        drawing.getNormalizedPointerCoords(event); // Update pointer vector
+        drawing.getNormalizedPointerCoords(event);
         drawing.raycaster.setFromCamera(drawing.pointer, drawing.camera);
 
-        const intersects = drawing.raycaster.intersectObject(drawing.tattooMesh, false); // false for no recursion
+        const intersects = drawing.raycaster.intersectObject(drawing.tattooMesh, false);
 
         if (intersects.length > 0) {
             isDragging = true;
             drawing.canvas.style.cursor = 'grabbing';
 
-            // Get initial intersection point with the plane of the tattooMesh
             const intersectPoint = new THREE.Vector3();
-            const planeZ = new THREE.Plane(new THREE.Vector3(0, 0, 1), -drawing.tattooMesh.position.z); // Plane at tattoo's Z
+            const planeZ = new THREE.Plane(new THREE.Vector3(0, 0, 1), -drawing.tattooMesh.position.z);
             drawing.raycaster.ray.intersectPlane(planeZ, intersectPoint);
             
             drawing.dragOffset.copy(intersectPoint).sub(drawing.tattooMesh.position);
 
             if (event.shiftKey || (event.touches && event.touches.length > 1)) {
                 dragMode = 'scale';
-                initialScale = drawing.tattooMesh.scale.x; // Store current scale for relative scaling
-                // For touch scaling, store initial distance
+                initialScale = drawing.tattooMesh.scale.x;
                 if (event.touches && event.touches.length > 1) {
                     const dx = event.touches[0].clientX - event.touches[1].clientX;
                     const dy = event.touches[0].clientY - event.touches[1].clientY;
-                    initialPinchDistance = Math.sqrt(dx * dx + dy * dy);
+                    initialPinchDistance = Math.hypot(dx, dy);
                 }
             } else {
                 dragMode = 'translate';
             }
-            event.preventDefault(); // Prevent browser default (like scrolling/text selection)
+            event.preventDefault();
         }
-    },
+    }
+},
 
-    onPointerMove: (event) => {
-        if (!isDragging || !drawing.tattooMesh.visible) return;
+onPointerMove: (event) => {
+    if (!isDragging || !drawing.tattooMesh.visible) return;
+    const localPointer = drawing.getNormalizedPointerCoords(event);
+    
+    if (dragMode === 'translate') {
+        drawing.raycaster.setFromCamera(localPointer, drawing.camera);
+        const currentTattooPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -drawing.tattooMesh.position.z);
+        const intersectPoint = new THREE.Vector3();
+        drawing.raycaster.ray.intersectPlane(currentTattooPlane, intersectPoint);
+        
+        if (intersectPoint) {
+            drawing.tattooMesh.position.copy(intersectPoint).sub(drawing.dragOffset);
+        }
 
-        drawing.getNormalizedPointerCoords(event); // Update pointer vector
-
-        if (dragMode === 'translate') {
-            drawing.raycaster.setFromCamera(drawing.pointer, drawing.camera);
-            const currentTattooPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -drawing.tattooMesh.position.z); 
-            const intersectPoint = new THREE.Vector3();
-            drawing.raycaster.ray.intersectPlane(currentTattooPlane, intersectPoint);
-            
-            if (intersectPoint) { // Ensure intersectPoint is valid
-                drawing.tattooMesh.position.copy(intersectPoint).sub(drawing.dragOffset);
-            }
-
-        } else if (dragMode === 'scale') {
-            if (event.touches && event.touches.length > 1) {
-                // Pinch scale (two fingers)
-                const dx = event.touches[0].clientX - event.touches[1].clientX;
-                const dy = event.touches[0].clientY - event.touches[1].clientY;
-                const currentPinchDistance = Math.hypot(dx, dy); // Use Math.hypot for distance
-                if (initialPinchDistance > 0) {
-                    const scaleFactor = currentPinchDistance / initialPinchDistance;
-                    let newScale = initialScale * scaleFactor;
-                    newScale = Math.max(parseFloat(drawing.sizeSlider.min), Math.min(parseFloat(drawing.sizeSlider.max), newScale));
-                    drawing.setSize(newScale); // Use setSize to update tattooMesh.scale and UI
-                }
-            } else {
-                // Mouse scale (Shift + Drag vertical movement)
-                const sensitivity = 0.005; // Adjust this value for mouse scaling speed
-                const currentY = pointer.y; // Current normalized pointer Y
-                const startY = offset.y; // Initial normalized Y of click stored in offset (offset here is initial click point)
-                
-                const scaleFactor = 1 + (currentY - startY) * sensitivity; 
+    } else if (dragMode === 'scale') {
+        if (event.touches && event.touches.length > 1) {
+            const dx = event.touches[0].clientX - event.touches[1].clientX;
+            const dy = event.touches[0].clientY - event.touches[1].clientY;
+            const currentPinchDistance = Math.hypot(dx, dy);
+            if (initialPinchDistance > 0) {
+                const scaleFactor = currentPinchDistance / initialPinchDistance;
                 let newScale = initialScale * scaleFactor;
-
                 newScale = Math.max(parseFloat(drawing.sizeSlider.min), Math.min(parseFloat(drawing.sizeSlider.max), newScale));
-                drawing.setSize(newScale); // Use setSize to update tattooMesh.scale and UI
+                drawing.setSize(newScale);
             }
+        } else {
+            const sensitivity = 0.005;
+            // The 'offset' variable was an error. We use the initial pointer Y from onPointerDown.
+            // Re-using dragOffset from onPointerDown for a relative y-movement calculation.
+            const startY = drawing.dragOffset.y; // Corrected to use a variable from global scope
+            const scaleFactor = 1 + (localPointer.y - startY) * sensitivity;
+            let newScale = initialScale * scaleFactor;
+
+            newScale = Math.max(parseFloat(drawing.sizeSlider.min), Math.min(parseFloat(drawing.sizeSlider.max), newScale));
+            drawing.setSize(newScale);
         }
-        event.preventDefault(); 
-    },
+    }
+    event.preventDefault();
+},
 
-    onPointerUp: () => {
-        isDragging = false;
-        dragMode = 'none';
-        drawing.canvas.style.cursor = 'grab'; 
-        drawing.dragOffset.set(0,0,0); 
-        initialScale = drawing.tattooMesh.scale.x; // Update initial scale for next drag
-    },
+onPointerUp: () => {
+    isDragging = false;
+    dragMode = 'none';
+    drawing.canvas.style.cursor = 'grab';
+    drawing.dragOffset.set(0, 0, 0);
+    initialScale = drawing.tattooMesh.scale.x;
+},
 
-    // --- Mask Capture (Modified to generate rotated/scaled tattoo for Flux) ---
-    // This is the function called when 'Generate Tattoo on Skin' is clicked.
-    // --- Mask Capture (Modified to generate rotated/scaled tattoo for Flux) ---
-// This is the function called when 'Generate Tattoo on Skin' is clicked.
+// --- Mask Capture (Modified to generate rotated/scaled tattoo for Flux) ---
 captureMask: async () => {
     if (!drawing.tattooMesh.visible || !drawing.skinMesh.material.map || !drawing.uploadedTattooDesignImg) {
         drawing.statusMessage.textContent = 'Error: Upload both skin photo and tattoo first.';
-        return null;
+        return;
     }
 
     drawing.statusMessage.textContent = 'Capturing mask...';
-
-    // 1. Generate the mask (silhouette of the 3D-positioned tattoo)
-    // This process renders the 3D tattooMesh (with its current 3D position, scale, and Z-rotation)
-    // to an offscreen 2D canvas, creating the mask.
-    const rect = drawing.canvas.getBoundingClientRect();
-    const maskRenderTarget = new THREE.WebGLRenderTarget(rect.width, rect.height, {
-        minFilter: THREE.LinearFilter,
-        magFilter: THREE.NearestFilter,
-        format: THREE.RGBAFormat,
-        encoding: THREE.sRGBEncoding
-    });
-
-    // Store original states to restore later
-    const originalClearColor = new THREE.Color();
-    drawing.renderer.getClearColor(originalClearColor);
-    const originalClearAlpha = drawing.renderer.getClearAlpha();
-    const originalBackground = drawing.scene.background;
-    const originalTattooMaterial = drawing.tattooMesh.material;
-
-    // Set up scene for mask capture (black background, white tattoo)
-    drawing.scene.background = null;
-    drawing.renderer.setClearColor(0x000000, 0);
-    drawing.tattooMesh.material = new THREE.MeshBasicMaterial({ color: 0xFFFFFF, transparent: false, side: THREE.DoubleSide });
-    drawing.skinMesh.visible = false; // Hide skin photo for mask generation
-
-    drawing.renderer.setRenderTarget(maskRenderTarget);
-    drawing.renderer.render(drawing.scene, drawing.camera);
-
-    // Read pixels
-    const pixelBuffer = new Uint8Array(rect.width * rect.height * 4);
-    drawing.renderer.readRenderTargetPixels(maskRenderTarget, 0, 0, rect.width, rect.height, pixelBuffer);
-
-    // Restore renderer and scene state
-    drawing.renderer.setRenderTarget(null);
-    drawing.tattooMesh.material = originalTattooMaterial;
-    drawing.skinMesh.visible = true;
-    drawing.scene.background = originalBackground;
-    drawing.renderer.setClearColor(originalClearColor, originalClearAlpha);
-
-    // Create 2D canvas for mask Blob
+    
+    // Create a new offscreen canvas for the final mask, matching the skin image dimensions
+    const skinImg = drawing.skinMesh.material.map.image;
     const maskCanvas = document.createElement('canvas');
-    maskCanvas.width = rect.width;
-    maskCanvas.height = rect.height;
+    maskCanvas.width = skinImg.width;
+    maskCanvas.height = skinImg.height;
     const maskCtx = maskCanvas.getContext('2d');
-    const imageData = maskCtx.createImageData(maskCanvas.width, maskCtx.height);
-    imageData.data.set(pixelBuffer);
-    maskCtx.putImageData(imageData, 0, 0);
+    
+    // Get the tattoo's current position, rotation, and scale from the THREE.js mesh
+    const tattooMeshWorldPosition = new THREE.Vector3();
+    drawing.tattooMesh.getWorldPosition(tattooMeshWorldPosition);
+    const tattooRotationZ = drawing.tattooMesh.rotation.z;
+    const tattooScale = drawing.tattooMesh.scale.x;
 
+    // Project the 3D position to 2D screen coordinates to get pixel position
+    const screenPos = tattooMeshWorldPosition.clone().project(drawing.camera);
+    const canvasRect = drawing.canvas.getBoundingClientRect();
+    const pixelX = (screenPos.x * 0.5 + 0.5) * canvasRect.width;
+    const pixelY = (-screenPos.y * 0.5 + 0.5) * canvasRect.height;
+    
+    // Draw the tattoo image onto the mask canvas with its current position, rotation, and scale
+    const img = drawing.uploadedTattooDesignImg;
+    const scaledWidth = img.width * tattooScale;
+    const scaledHeight = img.height * tattooScale;
+    
+    maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+    maskCtx.translate(pixelX, pixelY);
+    maskCtx.rotate(tattooRotationZ);
+    maskCtx.drawImage(img, -scaledWidth / 2, -scaledHeight / 2, scaledWidth, scaledHeight);
+    maskCtx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform
+
+    // Convert the mask to a silhouette (white on transparent)
+    const imageData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+        const alpha = data[i + 3];
+        if (alpha > 50) { 
+            data[i] = 255; // White
+            data[i + 1] = 255; 
+            data[i + 2] = 255;
+            data[i + 3] = 255;
+        } else {
+            data[i] = 0;   // Transparent
+            data[i + 1] = 0; 
+            data[i + 2] = 0;
+            data[i + 3] = 0;
+        }
+    }
+    maskCtx.putImageData(imageData, 0, 0);
+    
+    // Get the mask blob
     const maskBlob = await new Promise(resolve => maskCanvas.toBlob(resolve, 'image/png'));
     console.log('Generated Mask Blob (from 3D view):', maskBlob);
 
-    // 2. Prepare the original tattoo image, ROTATED AND SCALED, for Flux
-    const finalTattooDesignCanvas = document.createElement('canvas');
-    const finalTattooDesignCtx = finalTattooDesignCanvas.getContext('2d');
+    // Prepare the original tattoo image, without transformations, for Flux.
+    // The backend now expects the original, non-scaled image.
+    const originalTattooBlob = await (await fetch(drawing.uploadedTattooDesignImg.src)).blob();
     
-    const img = drawing.uploadedTattooDesignImg;
-    const angle = parseFloat(drawing.angleInput.value); // Get final angle from UI slider
-    const scale = parseFloat(drawing.sizeInput.value); // Get final scale from UI slider (this is the scale factor for the IMAGE CONTENT)
-
-    // Calculate canvas size to accommodate rotated and scaled image
-    const finalWidth = img.width * scale;
-    const finalHeight = img.height * scale;
-    const diagonal = Math.hypot(finalWidth, finalHeight);
-    finalTattooDesignCanvas.width = diagonal;
-    finalTattooDesignCanvas.height = diagonal;
-    
-    // Draw rotated and scaled original tattoo image onto new canvas
-    finalTattooDesignCtx.translate(finalTattooDesignCanvas.width / 2, finalTattooDesignCanvas.height / 2);
-    finalTattooDesignCtx.rotate(angle * THREE.MathUtils.DEG2RAD);
-    finalTattooDesignCtx.drawImage(img, -img.width / 2, -img.height / 2, img.width, img.height); // Draw image without additional scaling
-    finalTattooDesignCtx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform
-
-    const finalTattooDesignBlob = await new Promise(resolve => finalTattooDesignCanvas.toBlob(resolve, 'image/png'));
-    console.log('Rotated & Scaled Original Tattoo Design Blob (for Flux):', finalTattooDesignBlob);
-
-    // Update STATE with the new mask and tattoo design
-    STATE.currentMask = maskBlob; // This should be the mask blob
-    STATE.uploadedTattooDesignBase64 = URL.createObjectURL(finalTattooDesignBlob); // This is a temporary URL for the new blob
+    // Update STATE with the new mask and original tattoo design
+    window.STATE.currentMask = maskBlob;
+    window.STATE.uploadedTattooDesignFile = originalTattooBlob;
 
     drawing.statusMessage.textContent = 'Masks generated! Ready to send.';
     
-    // This is where you would return or trigger the main app logic to send the data.
-    // The existing 'continueBtn' logic in index.html will pick this up from the STATE object.
-    return { mask: maskBlob, tattooDesign: finalTattooDesignBlob };
-}
+    // The main script will pick up these blobs from the global STATE object
+    return { mask: maskBlob, tattooDesign: originalTattooBlob };
+},
+
 };
 
 // Expose the drawing object globally so index.html can access it

@@ -36,78 +36,77 @@ const drawing = { 
     init: (imageUrl) => { // imageUrl here is actually the resized skin photo DataURL
         console.log("MARKER: drawing.init called.");
         return new Promise(resolve => {
-            // Deferring initialization to ensure canvas dimensions are available
-            setTimeout(() => {
-                // --- Get UI element references ---
+            const checkCanvasReady = () => {
                 drawing.canvas = document.getElementById('main3DCanvas');
-                if (!drawing.canvas) {
-                    console.error("MARKER: FATAL ERROR - main3DCanvas not found!");
-                    return;
+                if (drawing.canvas && drawing.canvas.clientWidth > 0 && drawing.canvas.clientHeight > 0) {
+                    console.log(`MARKER: Canvas dimensions are ready: ${drawing.canvas.clientWidth}x${drawing.canvas.clientHeight}`);
+                    
+                    // --- Get UI element references ---
+                    drawing.statusMessage = document.getElementById('statusMessage');
+                    drawing.angleSlider = document.getElementById('angleSlider');
+                    drawing.angleInput = document.getElementById('angleInput');
+                    drawing.sizeSlider = document.getElementById('sizeSlider');
+                    drawing.sizeInput = document.getElementById('sizeInput');
+                    drawing.resetTattooTransformBtn = document.getElementById('resetTattooTransformBtn');
+                    drawing.tattooControlsDiv = document.getElementById('tattooControls');
+
+                    // --- Initialize THREE.js Scene ---
+                    drawing.renderer = new THREE.WebGLRenderer({ canvas: drawing.canvas, antialias: true, alpha: true });
+                    drawing.renderer.setSize(drawing.canvas.clientWidth, drawing.canvas.clientHeight);
+                    drawing.renderer.setPixelRatio(window.devicePixelRatio);
+
+                    drawing.scene = new THREE.Scene();
+                    drawing.camera = new THREE.PerspectiveCamera(75, drawing.canvas.clientWidth / drawing.canvas.clientHeight, 0.1, 1000);
+                    drawing.camera.position.z = 100;
+
+                    // Lights
+                    drawing.scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+                    const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
+                    dirLight.position.set(1, 1, 1).normalize();
+                    drawing.scene.add(dirLight);
+
+                    // Skin Plane
+                    drawing.skinMesh = new THREE.Mesh(
+                        new THREE.PlaneGeometry(100, 100),
+                        new THREE.MeshBasicMaterial({ color: 0x555555, side: THREE.DoubleSide })
+                    );
+                    drawing.skinMesh.position.z = 0;
+                    drawing.scene.add(drawing.skinMesh);
+
+                    // Tattoo Plane
+                    drawing.tattooMesh = new THREE.Mesh(
+                        new THREE.PlaneGeometry(40, 40),
+                        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.99, side: THREE.DoubleSide })
+                    );
+                    drawing.tattooMesh.position.z = 1;
+                    drawing.tattooMesh.visible = false;
+                    drawing.scene.add(drawing.tattooMesh);
+
+                    // Render loop
+                    drawing.renderer.setAnimationLoop(() => {
+                        drawing.renderer.render(drawing.scene, drawing.camera);
+                    });
+
+                    drawing.setupEventListeners();
+                    drawing.statusMessage.textContent = 'Upload Skin Photo and Tattoo Design.';
+
+                    const drawingSection = document.getElementById('drawingSection');
+                    if (drawingSection) drawingSection.style.display = 'block';
+                    const oldDrawingCanvas = document.getElementById('drawingCanvas');
+                    if (oldDrawingCanvas) oldDrawingCanvas.style.display = 'none';
+                    const oldContinueBtn = document.getElementById('continueBtn');
+                    if (oldContinueBtn) oldContinueBtn.style.display = 'none';
+
+                    // Now that the canvas is ready, call the resize handler once
+                    drawing.onWindowResize();
+                    console.log("MARKER: drawing.init finished.");
+                    resolve();
+                } else {
+                    console.log("MARKER: Canvas not ready, waiting for next animation frame...");
+                    requestAnimationFrame(checkCanvasReady);
                 }
-                drawing.statusMessage = document.getElementById('statusMessage');
-                drawing.angleSlider = document.getElementById('angleSlider');
-                drawing.angleInput = document.getElementById('angleInput');
-                drawing.sizeSlider = document.getElementById('sizeSlider');
-                drawing.sizeInput = document.getElementById('sizeInput');
-                drawing.resetTattooTransformBtn = document.getElementById('resetTattooTransformBtn');
-                drawing.tattooControlsDiv = document.getElementById('tattooControls');
-
-                console.log(`MARKER: Canvas Client Dims: ${drawing.canvas.clientWidth}x${drawing.canvas.clientHeight}`);
-                if (drawing.canvas.clientWidth === 0 || drawing.canvas.clientHeight === 0) {
-                     console.error("MARKER: CRITICAL WARNING - Canvas dimensions are zero, rendering will fail!");
-                }
-                // --- Initialize THREE.js Scene ---
-                drawing.renderer = new THREE.WebGLRenderer({ canvas: drawing.canvas, antialias: true, alpha: true });
-                drawing.renderer.setSize(drawing.canvas.clientWidth, drawing.canvas.clientHeight);
-                drawing.renderer.setPixelRatio(window.devicePixelRatio);
-
-                drawing.scene = new THREE.Scene();
-                drawing.camera = new THREE.PerspectiveCamera(75, drawing.canvas.clientWidth / drawing.canvas.clientHeight, 0.1, 1000);
-                drawing.camera.position.z = 100;
-
-                // Lights
-                drawing.scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-                const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
-                dirLight.position.set(1, 1, 1).normalize();
-                drawing.scene.add(dirLight);
-
-                // Skin Plane
-                drawing.skinMesh = new THREE.Mesh(
-                    new THREE.PlaneGeometry(100, 100),
-                    new THREE.MeshBasicMaterial({ color: 0x555555, side: THREE.DoubleSide })
-                );
-                drawing.skinMesh.position.z = 0;
-                drawing.scene.add(drawing.skinMesh);
-
-                // Tattoo Plane
-                drawing.tattooMesh = new THREE.Mesh(
-                    new THREE.PlaneGeometry(40, 40),
-                    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.99, side: THREE.DoubleSide })
-                );
-                drawing.tattooMesh.position.z = 1;
-                drawing.tattooMesh.visible = false;
-                drawing.scene.add(drawing.tattooMesh);
-
-                // Render loop
-                drawing.renderer.setAnimationLoop(() => {
-                    drawing.renderer.render(drawing.scene, drawing.camera);
-                });
-
-                drawing.setupEventListeners();
-                drawing.statusMessage.textContent = 'Upload Skin Photo and Tattoo Design.';
-
-                const drawingSection = document.getElementById('drawingSection');
-                if (drawingSection) drawingSection.style.display = 'block';
-                const oldDrawingCanvas = document.getElementById('drawingCanvas');
-                if (oldDrawingCanvas) oldDrawingCanvas.style.display = 'none';
-                const oldContinueBtn = document.getElementById('continueBtn');
-                if (oldContinueBtn) oldContinueBtn.style.display = 'none';
-
-                // Now that the canvas is ready, call the resize handler once
-                drawing.onWindowResize();
-                console.log("MARKER: drawing.init finished.");
-                resolve(); // Resolve the promise when initialization is complete
-            }, 0);
+            };
+            requestAnimationFrame(checkCanvasReady);
         });
     },
 
@@ -148,8 +147,8 @@ loadTextureAndImage: (file, cb) => {
 },
 
 onWindowResize: () => {
-    if (!drawing.canvas) {
-        console.warn("MARKER: onWindowResize called before canvas is ready.");
+    if (!drawing.canvas || drawing.canvas.clientWidth === 0 || drawing.canvas.clientHeight === 0) {
+        console.warn("MARKER: onWindowResize called but canvas is not ready.");
         return;
     }
     console.log(`MARKER: onWindowResize called. Current canvas dims: ${drawing.canvas.clientWidth}x${drawing.canvas.clientHeight}`);
@@ -239,7 +238,6 @@ handleTattooUpload: (file) => {
 
         drawing.statusMessage.textContent = 'Tattoo loaded! Drag to move, Shift+Drag to scale, use slider for 2D angle.';
         console.log("MARKER: Tattoo loaded successfully.");
-        // CRITICAL FIX: Add a resize call to ensure the tattoo is positioned correctly after its texture is loaded.
         drawing.onWindowResize();
     });
 },

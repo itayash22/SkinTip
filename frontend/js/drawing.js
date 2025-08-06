@@ -244,16 +244,15 @@ updateTattooDisplay: () => {
     for (let i = 0; i < data.length; i += 4) {
         const alpha = data[i + 3];
         if (alpha > 50) { 
-            // VIBRANT BLUE SILHOUETTE
-            data[i] = 0;   
-            data[i + 1] = 0; 
-            data[i + 2] = 255;   
-            data[i + 3] = 255; 
+            data[i] = 255; // White
+            data[i + 1] = 255; 
+            data[i + 2] = 255;
+            data[i + 3] = 255;
         } else {
-            data[i] = 0;
-            data[i + 1] = 0;
+            data[i] = 0;   // Transparent
+            data[i + 1] = 0; 
             data[i + 2] = 0;
-            data[i + 3] = 0; 
+            data[i + 3] = 0;
         }
     }
     ctx.putImageData(imageData, 0, 0);

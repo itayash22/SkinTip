@@ -438,7 +438,7 @@ captureMask: async () => {
             data[i + 3] = 0;
         }
     }
-    ctx.putImageData(imageData, 0, 0);
+    maskCtx.putImageData(imageData, 0, 0);
     
     // Get the mask blob
     const maskBlob = await new Promise(resolve => maskCanvas.toBlob(resolve, 'image/png'));

@@ -45,11 +45,11 @@ const drawing = { 
 
     // --- Initialize THREE.js Scene ---
     drawing.renderer = new THREE.WebGLRenderer({ canvas: drawing.canvas, antialias: true, alpha: true });
-    drawing.renderer.setSize(window.innerWidth, window.innerHeight);
+    drawing.renderer.setSize(drawing.canvas.clientWidth, drawing.canvas.clientHeight);
     drawing.renderer.setPixelRatio(window.devicePixelRatio); 
 
     drawing.scene = new THREE.Scene();
-    drawing.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    drawing.camera = new THREE.PerspectiveCamera(75, drawing.canvas.clientWidth / drawing.canvas.clientHeight, 0.1, 1000);
     drawing.camera.position.z = 100; // Position camera back from the origin
 
     // Lights
@@ -135,14 +135,14 @@ loadTextureAndImage: (file, cb) => {
 
 // --- Window Resize Handler ---
 onWindowResize: () => {
-    drawing.camera.aspect = window.innerWidth / window.innerHeight;
+    drawing.renderer.setSize(drawing.canvas.clientWidth, drawing.canvas.clientHeight);
+    drawing.camera.aspect = drawing.canvas.clientWidth / drawing.canvas.clientHeight;
     drawing.camera.updateProjectionMatrix();
-    drawing.renderer.setSize(window.innerWidth, window.innerHeight);
 
     if (drawing.skinMesh.material.map && drawing.skinMesh.material.map.image) {
         const img = drawing.skinMesh.material.map.image;
         const aspectRatio = img.width / img.height;
-        const canvasAspectRatio = window.innerWidth / window.innerHeight;
+        const canvasAspectRatio = drawing.canvas.clientWidth / drawing.canvas.clientHeight;
 
         const cameraZ = drawing.camera.position.z;
         const vFOV = drawing.camera.fov * THREE.MathUtils.DEG2RAD; 
@@ -170,7 +170,7 @@ handleSkinUpload: (file) => {
 
     drawing.loadTextureAndImage(drawing.uploadedSkinPhotoFile, (tex, img) => {
         const ar = img.width / img.height;
-        const canvasAr = window.innerWidth / window.innerHeight;
+        const canvasAr = drawing.canvas.clientWidth / drawing.canvas.clientHeight;
 
         let w = 100, h = 100;
         const cameraZ = drawing.camera.position.z;
@@ -307,17 +307,17 @@ getNormalizedPointerCoords: (event) => {
     const clientX = event.clientX || event.touches[0].clientX;
     const clientY = event.clientY || event.touches[0].clientY;
     
-    pointer.x = ((clientX - rect.left) / drawing.canvas.width) * 2 - 1;
-    pointer.y = -(((clientY - rect.top) / drawing.canvas.height) * 2 - 1);
+    pointer.x = ((clientX - rect.left) / drawing.canvas.clientWidth) * 2 - 1;
+    pointer.y = -(((clientY - rect.top) / drawing.canvas.clientHeight) * 2 - 1);
     return pointer;
 },
 
 onPointerDown: (event) => {
     if ((event.button === 0 || event.type === 'touchstart') && drawing.tattooMesh.visible) {
         drawing.getNormalizedPointerCoords(event);
-        drawing.raycaster.setFromCamera(drawing.pointer, drawing.camera);
+        raycaster.setFromCamera(pointer, drawing.camera);
 
-        const intersects = drawing.raycaster.intersectObject(drawing.tattooMesh, false);
+        const intersects = raycaster.intersectObject(drawing.tattooMesh, false);
 
         if (intersects.length > 0) {
             isDragging = true;
@@ -325,7 +325,7 @@ onPointerDown: (event) => {
 
             const intersectPoint = new THREE.Vector3();
             const planeZ = new THREE.Plane(new THREE.Vector3(0, 0, 1), -drawing.tattooMesh.position.z);
-            drawing.raycaster.ray.intersectPlane(planeZ, intersectPoint);
+            raycaster.ray.intersectPlane(planeZ, intersectPoint);
             
             dragOffset.copy(intersectPoint).sub(drawing.tattooMesh.position);
 
@@ -350,10 +350,10 @@ onPointerMove: (event) => {
     const localPointer = drawing.getNormalizedPointerCoords(event);
     
     if (dragMode === 'translate') {
-        drawing.raycaster.setFromCamera(localPointer, drawing.camera);
+        raycaster.setFromCamera(localPointer, drawing.camera);
         const currentTattooPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -drawing.tattooMesh.position.z);
         const intersectPoint = new THREE.Vector3();
-        drawing.raycaster.ray.intersectPlane(currentTattooPlane, intersectPoint);
+        raycaster.ray.intersectPlane(currentTattooPlane, intersectPoint);
         
         if (intersectPoint) {
             drawing.tattooMesh.position.copy(intersectPoint).sub(dragOffset);

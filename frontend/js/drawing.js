@@ -457,7 +457,7 @@ captureMask: async () => {
     maskCtx.drawImage(img, -scaledWidth / 2, -scaledHeight / 2, scaledWidth, scaledHeight);
     maskCtx.setTransform(1, 0, 0, 1, 0, 0);
 
-    const imageData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+    const imageData = maskCtx.getImageData(0, 0, offscreenCanvas.width, offscreenCanvas.height);
     const data = imageData.data;
     for (let i = 0; i < data.length; i += 4) {
         const alpha = data[i + 3];

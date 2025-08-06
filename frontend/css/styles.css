@@ -342,11 +342,10 @@ body {
 
 
 /* Drawing Canvas Section */
-/* New rule to fix canvas height */
 .canvas-wrapper {
     position: relative;
     width: 100%;
-    padding-bottom: 75%; /* This sets a 4:3 aspect ratio (e.g., 600px wide, 450px high) */
+    padding-bottom: 75%; /* Sets a 4:3 aspect ratio */
     height: 0;
     overflow: hidden;
     max-width: 600px;

@@ -34,6 +34,7 @@ const drawing = { 
     tattooControlsDiv: null,
 
     init: (imageUrl) => {
+         drawing.statusMessage = document.getElementById('statusMessage');
         setTimeout(() => {
             drawing.canvas = document.getElementById('main3DCanvas');
             drawing.statusMessage = document.getElementById('statusMessage');

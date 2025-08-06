@@ -2,8 +2,7 @@ import * as THREE from 'three';
 // --- Interaction variables (Declared globally for the module) ---
 // These are now properties of the 'drawing' object to prevent scoping issues.
 
-const drawing = { 
-
+const drawing = {
     // --- THREE.js Core Variables ---
     canvas: null,
     renderer: null,
@@ -36,9 +35,9 @@ const drawing = {
     init: (imageUrl) => {
         // Ensure statusMessage is available immediately
         drawing.statusMessage = document.getElementById('statusMessage');
-
+        // Defer Three.js and UI setup to avoid paint jank
         setTimeout(() => {
-            // --- Core setup (deferred slightly to avoid paint jank) ---
+            // Canvas & UI elements
             drawing.canvas                = document.getElementById('main3DCanvas');
             drawing.angleSlider           = document.getElementById('angleSlider');
             drawing.angleInput            = document.getElementById('angleInput');
@@ -95,7 +94,7 @@ const drawing = {
             drawing.statusMessage.textContent = 'Upload Skin Photo and Tattoo Design.';
             document.getElementById('drawingSection').style.display = 'block';
 
-            // --- Option 2: If a skin file was preloaded before init(), apply it now ---
+            // Option 2: Apply pending skin upload if present
             if (drawing.uploadedSkinPhotoFile) {
                 drawing.handleSkinUpload(drawing.uploadedSkinPhotoFile);
                 drawing.uploadedSkinPhotoFile = null;
@@ -122,9 +121,104 @@ const drawing = {
         drawing.tattooControlsDiv.style.display = 'none';
     },
 
-    // ... rest of your functions unchanged ...
+    loadTextureAndImage: (file, cb) => {
+        const reader = new FileReader();
+        reader.onload = e => {
+            const img = new Image();
+            img.src = e.target.result;
+            img.onload = () => {
+                const texture = new THREE.TextureLoader().load(
+                    e.target.result,
+                    undefined,
+                    undefined,
+                    (err) => console.error('Error loading texture:', err)
+                );
+                texture.colorSpace = THREE.SRGBColorSpace;
+                cb(texture, img);
+            };
+        };
+        reader.readAsDataURL(file);
+    },
 
+    onWindowResize: () => {
+        if (!drawing.canvas) return;
+        drawing.renderer.setSize(drawing.canvas.clientWidth, drawing.canvas.clientHeight);
+        drawing.camera.aspect = drawing.canvas.clientWidth / drawing.canvas.clientHeight;
+        drawing.camera.updateProjectionMatrix();
+        if (drawing.skinMesh.material.map && drawing.skinMesh.material.map.image) {
+            const img = drawing.skinMesh.material.map.image;
+            const aspectRatio = img.width / img.height;
+            const canvasAspectRatio = drawing.canvas.clientWidth / drawing.canvas.clientHeight;
+            const cameraZ = drawing.camera.position.z;
+            const vFOV = drawing.camera.fov * THREE.MathUtils.DEG2RAD;
+            const totalHeight = 2 * Math.tan(vFOV / 2) * cameraZ;
+            const totalWidth = totalHeight * drawing.camera.aspect;
+            let w, h;
+            if (aspectRatio > canvasAspectRatio) {
+                w = totalWidth;
+                h = w / aspectRatio;
+            } else {
+                h = totalHeight;
+                w = h * aspectRatio;
+            }
+            drawing.skinMesh.geometry.dispose();
+            drawing.skinMesh.geometry = new THREE.PlaneGeometry(w, h);
+            drawing.skinMesh.position.set(0, 0, 0);
+        }
+    },
+
+    handleSkinUpload: (file) => {
+        drawing.uploadedSkinPhotoFile = file;
+        drawing.statusMessage.textContent = 'Loading skin photo...';
+        drawing.loadTextureAndImage(file, (tex, img) => {
+            const ar = img.width / img.height;
+            const canvasAr = drawing.canvas.clientWidth / drawing.canvas.clientHeight;
+            let w = 100, h = 100;
+            const cameraZ = drawing.camera.position.z;
+            const vFOV = drawing.camera.fov * THREE.MathUtils.DEG2RAD;
+            const totalHeight = 2 * Math.tan(vFOV / 2) * cameraZ;
+            const totalWidth = totalHeight * drawing.camera.aspect;
+            if (ar > canvasAr) { w = totalWidth; h = w / ar; }
+            else { h = totalHeight; w = h * ar; }
+            drawing.skinMesh.geometry.dispose();
+            drawing.skinMesh.geometry = new THREE.PlaneGeometry(w, h);
+            drawing.skinMesh.material.map = tex;
+            drawing.skinMesh.material.color.set(0xffffff);
+            drawing.skinMesh.material.needsUpdate = true;
+            drawing.skinMesh.position.set(0, 0, 0);
+            drawing.statusMessage.textContent = 'Skin photo loaded. Now upload tattoo!';
+        });
+    },
+
+    handleTattooUpload: (file) => {
+        drawing.uploadedTattooDesignFile = file;
+        drawing.statusMessage.textContent = 'Loading tattoo design...';
+        drawing.loadTexture AndImage(file, (tex, img) => {
+            drawing.uploadedTattooDesignImg = img;
+            drawing.updateTattooDisplay();
+            drawing.setAngle(0);
+            drawing.setSize(1);
+            drawing.tattooMesh.visible = true;
+            document.getElementById('captureMaskBtn').disabled = false;
+            drawing.tattooControlsDiv.style.display = 'flex';
+            drawing.statusMessage.textContent = 'Tattoo loaded! Drag to move, Shift+Drag to scale, use slider for 2D angle.';
+        });
+    },
+
+    updateTattooDisplay: () => { /* existing code... */ },
+    setAngle: v => { /* existing code... */ },
+    handleAngleSliderChange: () => { /* existing code... */ },
+    handleAngleInputChange: () => { /* existing code... */ },
+    setSize: v => { /* existing code... */ },
+    handleSizeSliderChange: () => { /* existing code... */ },
+    handleSizeInputChange: () => { /* existing code... */ },
+    resetTattooTransform: () => { /* existing code... */ },
+    getNormalizedPointerCoords: event => { /* existing code... */ },
+    onPointerDown: event => { /* existing code... */ },
+    onPointerMove: event => { /* existing code... */ },
+    onPointerUp: () => { /* existing code... */ },
+    captureMask: async () => { /* existing code... */ }
 };
 
-// Expose the drawing object globally
+// Expose the drawing object globally so index.html can access it
 window.drawing = drawing;

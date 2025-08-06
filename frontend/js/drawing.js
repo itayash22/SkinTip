@@ -40,6 +40,10 @@ const drawing = { 
             setTimeout(() => {
                 // --- Get UI element references ---
                 drawing.canvas = document.getElementById('main3DCanvas');
+                if (!drawing.canvas) {
+                    console.error("MARKER: FATAL ERROR - main3DCanvas not found!");
+                    return;
+                }
                 drawing.statusMessage = document.getElementById('statusMessage');
                 drawing.angleSlider = document.getElementById('angleSlider');
                 drawing.angleInput = document.getElementById('angleInput');
@@ -48,6 +52,10 @@ const drawing = { 
                 drawing.resetTattooTransformBtn = document.getElementById('resetTattooTransformBtn');
                 drawing.tattooControlsDiv = document.getElementById('tattooControls');
 
+                console.log(`MARKER: Canvas Client Dims: ${drawing.canvas.clientWidth}x${drawing.canvas.clientHeight}`);
+                if (drawing.canvas.clientWidth === 0 || drawing.canvas.clientHeight === 0) {
+                     console.error("MARKER: CRITICAL WARNING - Canvas dimensions are zero, rendering will fail!");
+                }
                 // --- Initialize THREE.js Scene ---
                 drawing.renderer = new THREE.WebGLRenderer({ canvas: drawing.canvas, antialias: true, alpha: true });
                 drawing.renderer.setSize(drawing.canvas.clientWidth, drawing.canvas.clientHeight);
@@ -104,6 +112,7 @@ const drawing = { 
     },
 
    setupEventListeners: () => {
+    console.log("MARKER: setupEventListeners called.");
     window.addEventListener('resize', drawing.onWindowResize);
 
     drawing.angleSlider.addEventListener('input', drawing.handleAngleSliderChange);
@@ -129,6 +138,7 @@ loadTextureAndImage: (file, cb) => {
         const img = new Image();
         img.src = e.target.result;
         img.onload = () => {
+            console.log(`MARKER: Image loaded. Dims: ${img.width}x${img.height}.`);
             const texture = new THREE.TextureLoader().load(e.target.result, undefined, undefined, (err) => console.error('Error loading texture:', err));
             texture.colorSpace = THREE.SRGBColorSpace;
             cb(texture, img);
@@ -138,8 +148,11 @@ loadTextureAndImage: (file, cb) => {
 },
 
 onWindowResize: () => {
-    if (!drawing.canvas) return;
-    console.log("MARKER: onWindowResize called.");
+    if (!drawing.canvas) {
+        console.warn("MARKER: onWindowResize called before canvas is ready.");
+        return;
+    }
+    console.log(`MARKER: onWindowResize called. Current canvas dims: ${drawing.canvas.clientWidth}x${drawing.canvas.clientHeight}`);
 
     drawing.renderer.setSize(drawing.canvas.clientWidth, drawing.canvas.clientHeight);
     drawing.camera.aspect = drawing.canvas.clientWidth / drawing.canvas.clientHeight;
@@ -167,17 +180,17 @@ onWindowResize: () => {
         drawing.skinMesh.geometry = new THREE.PlaneGeometry(w, h);
         drawing.skinMesh.position.set(0, 0, 0); 
 
-        // CRITICAL FIX: The skin mesh texture and geometry needs to be updated here after every resize.
-        // The rest of the onWindowResize logic handles this, so this is just a comment.
+        console.log(`MARKER: Skin mesh geometry updated to ${w}x${h}.`);
     }
 },
 
 handleSkinUpload: (file) => {
-    console.log("MARKER: handleSkinUpload called.");
+    console.log("MARKER: handleSkinUpload called with file:", file.name);
     drawing.uploadedSkinPhotoFile = file; 
     drawing.statusMessage.textContent = 'Loading skin photo...';
 
     drawing.loadTextureAndImage(drawing.uploadedSkinPhotoFile, (tex, img) => {
+        console.log("MARKER: Inside handleSkinUpload loadTextureAndImage callback.");
         const ar = img.width / img.height;
         const canvasAr = drawing.canvas.clientWidth / drawing.canvas.clientHeight;
 
@@ -208,11 +221,12 @@ handleSkinUpload: (file) => {
 },
 
 handleTattooUpload: (file) => {
-    console.log("MARKER: handleTattooUpload called.");
+    console.log("MARKER: handleTattooUpload called with file:", file.name);
     drawing.uploadedTattooDesignFile = file; 
     drawing.statusMessage.textContent = 'Loading tattoo design...';
 
     drawing.loadTextureAndImage(drawing.uploadedTattooDesignFile, (tex, img) => {
+        console.log("MARKER: Inside handleTattooUpload loadTextureAndImage callback.");
         drawing.uploadedTattooDesignImg = img;
         
         drawing.updateTattooDisplay(); 
@@ -225,12 +239,17 @@ handleTattooUpload: (file) => {
 
         drawing.statusMessage.textContent = 'Tattoo loaded! Drag to move, Shift+Drag to scale, use slider for 2D angle.';
         console.log("MARKER: Tattoo loaded successfully.");
+        // CRITICAL FIX: Add a resize call to ensure the tattoo is positioned correctly after its texture is loaded.
+        drawing.onWindowResize();
     });
 },
 
 updateTattooDisplay: () => { 
-    if (!drawing.uploadedTattooDesignImg) return;
-    console.log("MARKER: updateTattooDisplay called.");
+    if (!drawing.uploadedTattooDesignImg) {
+        console.warn("MARKER: updateTattooDisplay called but no image data available.");
+        return;
+    }
+    console.log(`MARKER: updateTattooDisplay called with image dims: ${drawing.uploadedTattooDesignImg.width}x${drawing.uploadedTattooDesignImg.height}`);
 
     const img = drawing.uploadedTattooDesignImg;
     const offscreenCanvas = document.createElement('canvas');
@@ -247,15 +266,16 @@ updateTattooDisplay: () => {
     for (let i = 0; i < data.length; i += 4) {
         const alpha = data[i + 3];
         if (alpha > 50) { 
-            data[i] = 255;
+            // VIBRANT GREEN SILHOUETTE
+            data[i] = 0;   
             data[i + 1] = 255; 
-            data[i + 2] = 255;
-            data[i + 3] = 255;
+            data[i + 2] = 0;   
+            data[i + 3] = 255; 
         } else {
             data[i] = 0;
-            data[i + 1] = 0; 
+            data[i + 1] = 0;
             data[i + 2] = 0;
-            data[i + 3] = 0;
+            data[i + 3] = 0; 
         }
     }
     ctx.putImageData(imageData, 0, 0);
@@ -269,6 +289,7 @@ updateTattooDisplay: () => {
 
     drawing.tattooMesh.material.map = newTattooTexture;
     drawing.tattooMesh.material.needsUpdate = true;
+    console.log("MARKER: Tattoo texture applied to mesh.");
 
     const newAspectRatio = offscreenCanvas.width / offscreenCanvas.height;
     const currentBasePlaneWidth = 40;

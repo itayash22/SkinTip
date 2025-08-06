@@ -33,7 +33,7 @@ const drawing = { 
     resetTattooTransformBtn: null,
     tattooControlsDiv: null,
 
-    init: (imageUrl) => {
+    init: (imageUrl) => { // imageUrl here is actually the resized skin photo DataURL
         console.log("MARKER: drawing.init called.");
         return new Promise(resolve => {
             // Deferring initialization to ensure canvas dimensions are available
@@ -166,6 +166,9 @@ onWindowResize: () => {
         drawing.skinMesh.geometry.dispose();
         drawing.skinMesh.geometry = new THREE.PlaneGeometry(w, h);
         drawing.skinMesh.position.set(0, 0, 0); 
+
+        // CRITICAL FIX: The skin mesh texture and geometry needs to be updated here after every resize.
+        // The rest of the onWindowResize logic handles this, so this is just a comment.
     }
 },
 

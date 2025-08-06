@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/jwt-decode@4.0.0/build/jwt-decode.js"></script>
+    <script src="https://unpkg.com/jwt-decode/build/jwt-decode.js"></script>
     <script type="importmap">
 {
   "imports": {
@@ -104,7 +104,7 @@
                 
                 <div class="canvas-wrapper">
                     <div class="drawing-container">
-                        <canvas id="main3DCanvas" style="width:100%; height:100%; display:block; touch-action: none;"></canvas>
+                        <canvas id="main3DCanvas" style="width:100%; height:auto; display:block; touch-action: none;"></canvas>
                         <div class="drawing-tools">
                             <div id="tattooControls" style="display: none; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 1rem; background: rgba(0,0,0,0.6); padding: 10px; border-radius: 8px;">
                                 <div id="angleBox" style="display:flex; align-items:center; gap:6px;">
@@ -694,7 +694,6 @@
 
                 if (window.drawing && drawing.init) {
                     drawing.init(resizedDataURL);
-                     drawing.handleSkinUpload(resizedFile);
                     if (STATE.uploadedTattooDesignBase64) {
                         const tattooBlob = await (await fetch(STATE.uploadedTattooDesignBase64)).blob();
                         drawing.handleTattooUpload(tattooBlob);
@@ -729,20 +728,11 @@
                 utils.showError('Please upload your skin photo first.');
                 return;
             }
-            // CRITICAL FIX: The `drawing.selectedArea` property no longer exists in the new `drawing.js`
-            // The `captureMask` function now does the work of creating the mask when the button is clicked.
-            // The `if (!window.drawing || !drawing.selectedArea)` check is now obsolete.
-            
-            // Call captureMask to generate the mask and update the STATE object
-            try {
-                await drawing.captureMask();
-            } catch (error) {
-                console.error("Error capturing mask:", error);
-                utils.showError("Failed to capture tattoo placement. Please ensure both images are uploaded.");
+            if (!window.drawing || !drawing.selectedArea) { // Check drawing module and selected area
+                utils.showError('Please mark the tattoo area on your photo before generating.');
                 return;
             }
-            // The mask is now in `window.STATE.currentMask`
-
+            STATE.currentMask = drawing.selectedArea; // Ensure mask is set
 
             utils.showLoading('Generating your tattoo designs...');
 

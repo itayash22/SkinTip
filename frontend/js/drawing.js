@@ -33,7 +33,7 @@ const drawing = { 
     resetTattooTransformBtn: null,
     tattooControlsDiv: null,
 
-    init: (imageUrl) => { // imageUrl here is actually the resized skin photo DataURL
+    init: (imageUrl) => {
         console.log("MARKER: drawing.init called.");
         return new Promise(resolve => {
             // Deferring initialization to ensure canvas dimensions are available
@@ -244,12 +244,12 @@ updateTattooDisplay: () => {
     for (let i = 0; i < data.length; i += 4) {
         const alpha = data[i + 3];
         if (alpha > 50) { 
-            data[i] = 255; // White
+            data[i] = 255;
             data[i + 1] = 255; 
             data[i + 2] = 255;
             data[i + 3] = 255;
         } else {
-            data[i] = 0;   // Transparent
+            data[i] = 0;
             data[i + 1] = 0; 
             data[i + 2] = 0;
             data[i + 3] = 0;

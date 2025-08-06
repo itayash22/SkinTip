@@ -327,7 +327,7 @@ onPointerDown: (event) => {
             const planeZ = new THREE.Plane(new THREE.Vector3(0, 0, 1), -drawing.tattooMesh.position.z);
             drawing.raycaster.ray.intersectPlane(planeZ, intersectPoint);
             
-            drawing.dragOffset.copy(intersectPoint).sub(drawing.tattooMesh.position);
+            dragOffset.copy(intersectPoint).sub(drawing.tattooMesh.position);
 
             if (event.shiftKey || (event.touches && event.touches.length > 1)) {
                 dragMode = 'scale';
@@ -356,7 +356,7 @@ onPointerMove: (event) => {
         drawing.raycaster.ray.intersectPlane(currentTattooPlane, intersectPoint);
         
         if (intersectPoint) {
-            drawing.tattooMesh.position.copy(intersectPoint).sub(drawing.dragOffset);
+            drawing.tattooMesh.position.copy(intersectPoint).sub(dragOffset);
         }
 
     } else if (dragMode === 'scale') {
@@ -374,7 +374,7 @@ onPointerMove: (event) => {
             const sensitivity = 0.005;
             // The 'offset' variable was an error. We use the initial pointer Y from onPointerDown.
             // Re-using dragOffset from onPointerDown for a relative y-movement calculation.
-            const startY = drawing.dragOffset.y; // Corrected to use a variable from global scope
+            const startY = dragOffset.y;
             const scaleFactor = 1 + (localPointer.y - startY) * sensitivity;
             let newScale = initialScale * scaleFactor;
 
@@ -389,7 +389,7 @@ onPointerUp: () => {
     isDragging = false;
     dragMode = 'none';
     drawing.canvas.style.cursor = 'grab';
-    drawing.dragOffset.set(0, 0, 0);
+    dragOffset.set(0, 0, 0);
     initialScale = drawing.tattooMesh.scale.x;
 },
 

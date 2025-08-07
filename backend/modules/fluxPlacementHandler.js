@@ -176,8 +176,7 @@ const fluxPlacementHandler = {
      * Handles all image preprocessing (resizing, mask inversion, watermarking, storage).
      * Now makes multiple Flux API calls to get multiple variations.
      */
-    placeTattooOnSkin: async (skinImageBuffer, tattooDesignImageBase64, maskBase64, userId, numVariations, fluxApiKey, tattooAngle = 0) => {
-        // 1. Convert tattoo design Base64 to Buffer.
+    placeTattooOnSkin: async (skinImageBuffer, tattooDesignImageBase64, maskBase64, userId, numVariations, fluxApiKey, tattooAngle = 0) => {        // 1. Convert tattoo design Base64 to Buffer.
         let tattooDesignOriginalBuffer = Buffer.from(tattooDesignImageBase64, 'base64');
         let tattooMeta = await sharp(tattooDesignOriginalBuffer).metadata();
         console.log(`Original tattoo design input meta: format=${tattooMeta.format}, channels=${tattooMeta.channels}, hasAlpha=${tattooMeta.hasAlpha}`);
@@ -215,14 +214,16 @@ const fluxPlacementHandler = {
         }
 
         // --- Step 2.3: Resize the tattoo design to fit the mask's bounding box and prepare for placement ---
-        let tattooForPlacement;
-        try {
-            tattooForPlacement = await sharp(tattooDesignPngWithRemovedBackground) // Use the background-removed PNG buffer
-                .resize(maskBoundingBox.width, maskBoundingBox.height, {
-                    fit: 'contain',
-                    background: { r: 0, g: 0, b: 0, alpha: 0 } // Ensures transparent background if tattoo is smaller than bounding box
-                })
-                .toBuffer();
+        // --- Step 2.3: Resize the tattoo design to fit the mask's bounding box and prepare for placement ---
+let tattooForPlacement;
+try {
+    tattooForPlacement = await sharp(tattooDesignPngWithRemovedBackground) // Use the background-removed PNG buffer
+        .rotate(tattooAngle) // NEW: Rotate the image here based on the angle
+        .resize(maskBoundingBox.width, maskBoundingBox.height, {
+            fit: 'contain',
+            background: { r: 0, g: 0, b: 0, alpha: 0 } // Ensures transparent background if tattoo is smaller than bounding box
+        })
+        .toBuffer();
             console.log(`Tattoo design resized specifically for mask bounding box: ${maskBoundingBox.width}x${maskBoundingBox.height}.`);
         } catch (error) {
             console.error('Error resizing tattoo design for placement:', error);

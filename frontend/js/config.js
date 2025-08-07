@@ -18,8 +18,9 @@ const CONFIG = {
 const STATE = {
     user: null, // Stores authenticated user info
     token: null, // Stores JWT token for API authentication
-    userTokens: 0, // NEW: Tracks the user's current token balance
-    uploadedTattooDesignBase64: null, // NEW: Stores the Base64 of the user's uploaded tattoo design
+    userTokens: 0, // Tracks the user's current token balance
+    uploadedTattooDesignBase64: null,
+    tattooAngle: 0, // NEW: Stores the rotation angle in degrees
     currentImage: null, // Stores the user's uploaded skin photo (File object)
     currentMask: null, // Stores the Base64 of the drawing mask
     generatedImages: [], // Stores URLs of generated tattoo images from Flux

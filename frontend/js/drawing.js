@@ -46,7 +46,7 @@ const drawing = {
                     scaleX: canvas.width / skinImg.width,
                     scaleY: canvas.height / skinImg.height,
                 });
-                console.log("DEBUG: Canvas background set.");
+                console.log("DEBUG: Set background image call made.");
 
                 const tattooImgElement = new Image();
                 tattooImgElement.crossOrigin = "anonymous";

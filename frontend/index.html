@@ -97,9 +97,13 @@
                 <div class="drawing-container">
                     <canvas id="drawingCanvas"></canvas>
                     <div class="drawing-tools">
-                        <button id="clearCanvas" class="btn btn-outline btn-sm">Clear Selection</button>
-                        <span style="margin-left: 1rem; font-size: 0.875rem; color: #6b7280;">Draw around the area where you want your tattoo</span>
-                    </div>
+    <button id="clearCanvas" class="btn btn-outline btn-sm">Clear Selection</button>
+    <div class="rotation-control">
+        <label for="rotationSlider">Rotate Tattoo: <span id="rotationValue">0°</span></label>
+        <input type="range" id="rotationSlider" min="-45" max="45" value="0">
+    </div>
+    <span style="margin-left: 1rem; font-size: 0.875rem; color: #6b7280;">Draw around the area where you want your tattoo</span>
+</div>
                 </div>
 
                 <button id="continueBtn" class="btn btn-primary" style="margin-top: 2rem; display: block; margin-left: auto; margin-right: auto;">Generate Tattoo on Skin</button>
@@ -701,22 +705,22 @@
             utils.showLoading('Generating your tattoo designs...');
 
             try {
-                const formData = new FormData();
-                formData.append('skinImage', STATE.currentImage);
-                const tattooDesignBlob = await (await fetch(STATE.uploadedTattooDesignBase64)).blob();
-                // Crucial fix: Use the correct original file type, not hardcoded 'image/jpeg'
-                // Ensure the name also suggests PNG if the type is PNG
-                const tattooDesignFileName = tattooDesignBlob.type === 'image/png' ? 'tattoo_design.png' : 'tattoo_design.jpeg';
-                Object.defineProperty(tattooDesignBlob, 'name', { value: tattooDesignFileName });
-                Object.defineProperty(tattooDesignBlob, 'type', { value: tattooDesignBlob.type }); // Retain the type from the blob (which comes from toDataURL)
-                formData.append('tattooDesignImage', tattooDesignBlob);
-                
-                let maskToSend = STATE.currentMask;
-                if (maskToSend && maskToSend.startsWith('data:')) {
-                    maskToSend = maskToSend.split(',')[1];
-                }
-                formData.append('mask', maskToSend);
-                formData.append('prompt', '');
+                // In index.html, inside the 'continueBtn' click handler
+const formData = new FormData();
+formData.append('skinImage', STATE.currentImage);
+const tattooDesignBlob = await (await fetch(STATE.uploadedTattooDesignBase64)).blob();
+const tattooDesignFileName = tattooDesignBlob.type === 'image/png' ? 'tattoo_design.png' : 'tattoo_design.jpeg';
+Object.defineProperty(tattooDesignBlob, 'name', { value: tattooDesignFileName });
+Object.defineProperty(tattooDesignBlob, 'type', { value: tattooDesignBlob.type });
+formData.append('tattooDesignImage', tattooDesignBlob);
+
+let maskToSend = STATE.currentMask;
+if (maskToSend && maskToSend.startsWith('data:')) {
+    maskToSend = maskToSend.split(',')[1];
+}
+formData.append('mask', maskToSend);
+formData.append('prompt', '');
+formData.append('tattooAngle', STATE.tattooAngle); // NEW: Send the rotation angle
 
                 const response = await fetch(`${CONFIG.API_URL}/generate-final-tattoo`, {
                     method: 'POST',

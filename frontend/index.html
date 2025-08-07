@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SkinTip - AI Tattoo Visualization</title>
     <link rel="stylesheet" href="css/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/fabric@6.7.1/dist/index.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -90,8 +91,8 @@
 
             <section id="drawingSection" class="section" style="display: none;">
                 <div class="section-header">
-                    <h2>Mark Tattoo Area</h2>
-                    <p>Draw on the area where you want your tattoo</p>
+                    <h2>Position Your Tattoo</h2>
+                    <p>Drag, resize, and rotate the tattoo to place it on the skin.</p>
                 </div>
                 
                 <div class="drawing-area-and-preview">
@@ -111,12 +112,14 @@
                 </div>
 
                 <div class="drawing-tools">
-                    <button id="clearCanvas" class="btn btn-outline btn-sm">Clear Selection</button>
                     <div class="rotation-control">
                         <label for="rotationSlider">Rotate Tattoo: <span id="rotationValue">0°</span></label>
                         <input type="range" id="rotationSlider" min="-45" max="45" value="0">
                     </div>
-                    <span style="margin-left: 1rem; font-size: 0.875rem; color: #6b7280;">Draw around the area where you want your tattoo</span>
+                    <div class="size-control" style="margin-left: 1rem;">
+                        <label for="sizeSlider">Resize Tattoo: <span id="sizeValue">100%</span></label>
+                        <input type="range" id="sizeSlider" min="20" max="200" value="100">
+                    </div>
                 </div>
 
                 <button id="continueBtn" class="btn btn-primary" style="margin-top: 2rem; display: block; margin-left: auto; margin-right: auto;">Generate Tattoo on Skin</button>
@@ -678,7 +681,8 @@
                 previewImg.src = resizedDataURL;
 
                 if (window.drawing && drawing.init) {
-                    drawing.init(resizedDataURL);
+                    // Pass both skin and tattoo image URLs to the new init function
+                    drawing.init(resizedDataURL, STATE.uploadedTattooDesignBase64);
                 } else {
                     console.error("drawing.js module not loaded correctly or 'drawing' object not exposed.");
                 }
@@ -689,11 +693,10 @@
 
         // Continue from Drawing to Design (NOW DIRECTLY GENERATES)
         continueBtn?.addEventListener('click', async () => { // Changed to async
-            // Combined logic from previous generateBtn here
             // Ensure user is logged in
             if (!STATE.user || !STATE.token) {
                 utils.showError('You must be logged in to generate tattoos.');
-                auth.showModal(); // Call auth modal (now in welcome.html)
+                auth.showModal();
                 return;
             }
 
@@ -701,19 +704,25 @@
                 utils.showError(`Not enough tokens! This action costs ${CONFIG.TOKEN_COSTS.FLUX_PLACEMENT} tokens. You have ${STATE.userTokens || 0}.`);
                 return;
             }
-            if (!STATE.uploadedTattooDesignBase64) {
-                utils.showError('Please upload a tattoo design first.');
+            if (!STATE.uploadedTattooDesignBase64 || !STATE.currentImage) {
+                utils.showError('Please ensure both a tattoo design and a skin photo are uploaded.');
                 return;
             }
-            if (!STATE.currentImage) {
-                utils.showError('Please upload your skin photo first.');
+
+            // Generate the mask from the current tattoo position
+            if (window.drawing && drawing.updateMask) {
+                await drawing.updateMask(); // It's async now because of image cloning
+            } else {
+                 utils.showError('Drawing module not ready.');
+                 return;
+            }
+
+            if (!drawing.selectedArea) {
+                utils.showError('Could not generate the tattoo mask. Please try again.');
                 return;
             }
-            if (!window.drawing || !drawing.selectedArea) { // Check drawing module and selected area
-                utils.showError('Please mark the tattoo area on your photo before generating.');
-                return;
-            }
-            STATE.currentMask = drawing.selectedArea; // Ensure mask is set
+
+            STATE.currentMask = drawing.selectedArea;
 
             utils.showLoading('Generating your tattoo designs...');
 

@@ -46,6 +46,7 @@ const drawing = {
 
         // --- Load Textures ---
         drawing.loadTexture(skinImageUrl, (tex, img) => {
+            drawing.originalImage = img; // Store the original image element
             const ar = img.width / img.height;
             const canvasWidth = 600;
             const canvasHeight = canvasWidth / ar;

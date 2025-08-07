@@ -191,6 +191,11 @@ const drawing = {
             const maskTattoo = drawing.tattooMesh.clone();
             maskTattoo.material = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
+            // 4. Manually copy transformations to the clone
+            maskTattoo.position.copy(drawing.tattooMesh.position);
+            maskTattoo.rotation.copy(drawing.tattooMesh.rotation);
+            maskTattoo.scale.copy(drawing.tattooMesh.scale);
+
             maskScene.add(maskTattoo);
 
             // 5. Render the mask scene to a render target of the correct size

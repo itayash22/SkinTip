@@ -311,7 +311,7 @@ app.post('/api/generate-final-tattoo',
             console.log('API: /api/generate-final-tattoo endpoint called.');
 
             const userId = req.user.id;
-            const { mask, prompt: userPromptText } = req.body;
+            const { mask, prompt: userPromptText, tattooAngle } = req.body;
             const skinImageFile = req.files.skinImage ? req.files.skinImage[0] : null;
             const tattooDesignImageFile = req.files.tattooDesignImage ? req.files.tattooDesignImage[0] : null;
 
@@ -366,16 +366,17 @@ app.post('/api/generate-final-tattoo',
 
             // --- CRITICAL FIX HERE: ARGUMENT ORDER ---
             // The 'prompt: userPromptText' from req.body is no longer passed to fluxKontextHandler.placeTattooOnSkin
-            const generatedImageUrls = await fluxKontextHandler.placeTattooOnSkin(
-                skinImageBuffer,
-                tattooDesignImageBase64,
-                mask,
-                userId,          // Corresponds to 'userId' in fluxPlacementHandler.js
-                3,               // Corresponds to 'numVariations' in fluxPlacementHandler.js
-                process.env.FLUX_API_KEY // Corresponds to 'fluxApiKey' in fluxPlacementHandler.js
-                parseInt(tattooAngle)
-            );
-            // --- END CRITICAL FIX ---
+            // --- CRITICAL FIX HERE: ARGUMENT ORDER ---
+const generatedImageUrls = await fluxKontextHandler.placeTattooOnSkin(
+    skinImageBuffer,
+    tattooDesignImageBase64,
+    mask,
+    userId,        // Corresponds to 'userId' in fluxPlacementHandler.js
+    3,             // Corresponds to 'numVariations' in fluxPlacementHandler.js
+    process.env.FLUX_API_KEY, // Corresponds to 'fluxApiKey' in fluxPlacementHandler.js
+    parseInt(tattooAngle) // NEW: Pass the angle to the handler
+);
+// --- END CRITICAL FIX ---
 
             const newTokens = await tokenService.deductTokens(userId, 'FLUX_PLACEMENT', tokensRequired, `Tattoo placement for user ${userId}`);
             console.log('Tokens deducted successfully. New balance:', newTokens);

@@ -176,8 +176,7 @@ const fluxPlacementHandler = {
      * Handles all image preprocessing (resizing, mask inversion, watermarking, storage).
      * Now makes multiple Flux API calls to get multiple variations.
      */
-    placeTattooOnSkin: async (skinImageBuffer, tattooDesignImageBase64, maskBase64, userId, numVariations, fluxApiKey, tattooAngle = 0) => {        console.log('Starting Flux tattoo placement process...');
-
+    placeTattooOnSkin: async (skinImageBuffer, tattooDesignImageBase64, maskBase64, userId, numVariations, fluxApiKey, tattooAngle = 0) => {
         // 1. Convert tattoo design Base64 to Buffer.
         let tattooDesignOriginalBuffer = Buffer.from(tattooDesignImageBase64, 'base64');
         let tattooMeta = await sharp(tattooDesignOriginalBuffer).metadata();

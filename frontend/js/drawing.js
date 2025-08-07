@@ -163,15 +163,23 @@ const drawing = {
     updateMask: () => {
         return new Promise((resolve) => {
             console.log("DEBUG: updateMask started.");
-            if (!drawing.renderer || !drawing.scene || !drawing.camera || !drawing.skinMesh) {
-                console.error("DEBUG: Cannot generate mask: Three.js components not initialized.");
+            if (!drawing.renderer || !drawing.originalImage || !drawing.skinMesh) {
+                console.error("DEBUG: Cannot generate mask: components not initialized.");
                 return resolve();
             }
 
-            const { width, height } = drawing.skinMesh.geometry.parameters;
+            // Get the dimensions of the plane in the 3D scene
+            const planeWidth = drawing.skinMesh.geometry.parameters.width;
+            const planeHeight = drawing.skinMesh.geometry.parameters.height;
 
-            // 1. Create an orthographic camera that looks at the scene from the front
-            const orthoCamera = new THREE.OrthographicCamera(-width / 2, width / 2, height / 2, -height / 2, 1, 1000);
+            // Get the dimensions of the original (resized) skin image
+            const maskWidth = drawing.originalImage.width;
+            const maskHeight = drawing.originalImage.height;
+
+            console.log(`DEBUG: Generating mask with dimensions: ${maskWidth}x${maskHeight}`);
+
+            // 1. Create an orthographic camera that looks at the 3D plane
+            const orthoCamera = new THREE.OrthographicCamera(-planeWidth / 2, planeWidth / 2, planeHeight / 2, -planeHeight / 2, 1, 1000);
             orthoCamera.position.z = 100;
 
             // 2. Create a temporary scene for mask rendering
@@ -182,46 +190,41 @@ const drawing = {
             const maskTattoo = drawing.tattooMesh.clone();
             maskTattoo.material = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
-            // 4. Ensure the clone's transformations are up to date
-            maskTattoo.position.copy(drawing.tattooMesh.position);
-            maskTattoo.rotation.copy(drawing.tattooMesh.rotation);
-            maskTattoo.scale.copy(drawing.tattooMesh.scale);
-
             maskScene.add(maskTattoo);
 
-            // 5. Render the mask scene
+            // 5. Render the mask scene to a render target of the correct size
             const currentRenderTarget = drawing.renderer.getRenderTarget();
-            const renderTarget = new THREE.WebGLRenderTarget(width, height);
+            const renderTarget = new THREE.WebGLRenderTarget(maskWidth, maskHeight);
             drawing.renderer.setRenderTarget(renderTarget);
             drawing.renderer.render(maskScene, orthoCamera);
 
-            // 6. Get the data URL
-            const gl = drawing.renderer.getContext();
-            const pixels = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
-            gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+            // 6. Read the pixels from the render target
+            const pixels = new Uint8Array(maskWidth * maskHeight * 4);
+            drawing.renderer.readRenderTargetPixels(renderTarget, 0, 0, maskWidth, maskHeight, pixels);
 
             // Create a 2D canvas to transfer the pixels to
             const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = gl.drawingBufferWidth;
-            tempCanvas.height = gl.drawingBufferHeight;
+            tempCanvas.width = maskWidth;
+            tempCanvas.height = maskHeight;
             const ctx = tempCanvas.getContext('2d');
-            const imageData = new ImageData(new Uint8ClampedArray(pixels.buffer), tempCanvas.width, tempCanvas.height);
-            ctx.putImageData(imageData, 0, 0);
+            const imageData = new ImageData(new Uint8ClampedArray(pixels.buffer), maskWidth, maskHeight);
 
-            // The image is flipped vertically, so we need to flip it back
-            ctx.globalCompositeOperation = 'copy';
-            ctx.scale(1, -1);
-            ctx.translate(0, -tempCanvas.height);
-            ctx.drawImage(tempCanvas, 0, 0);
+            // The image is flipped vertically from WebGL, so we need to flip it back
+            createImageBitmap(imageData).then(bitmap => {
+                ctx.scale(1, -1);
+                ctx.translate(0, -maskHeight);
+                ctx.drawImage(bitmap, 0, 0);
 
-            drawing.selectedArea = tempCanvas.toDataURL('image/png');
-            console.log("DEBUG: Mask generated and stored.");
+                // 7. Get the final Data URL
+                drawing.selectedArea = tempCanvas.toDataURL('image/png');
+                console.log("DEBUG: Mask generated and stored.");
 
-            // 7. Clean up and restore original state
-            drawing.renderer.setRenderTarget(currentRenderTarget);
-            renderTarget.dispose();
+                // 8. Clean up and restore original state
+                drawing.renderer.setRenderTarget(currentRenderTarget);
+                renderTarget.dispose();
 
-            resolve();
+                resolve();
+            });
         });
     },
 

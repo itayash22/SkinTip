@@ -7,64 +7,105 @@ const drawing = {
     selectedArea: null, // This will hold the final mask Data URL
 
     init: (skinImageUrl, tattooImageUrl) => {
-        if (drawing.fabricCanvas) {
-            drawing.fabricCanvas.dispose();
-        }
+        console.log("DEBUG: drawing.init started.");
+        try {
+            if (!skinImageUrl || !tattooImageUrl) {
+                console.error("DEBUG: Drawing Error: Missing skin or tattoo image URL.");
+                alert("Error: Image data is missing. Cannot initialize canvas.");
+                return;
+            }
 
-        drawing.fabricCanvas = new fabric.Canvas('drawingCanvas');
-        const canvas = drawing.fabricCanvas;
+            if (drawing.fabricCanvas) {
+                console.log("DEBUG: Disposing of existing Fabric canvas.");
+                drawing.fabricCanvas.dispose();
+            }
 
-        fabric.Image.fromURL(skinImageUrl, (skinImg) => {
-            drawing.originalImage = skinImg.getElement();
+            const canvasElement = document.getElementById('drawingCanvas');
+            if (!canvasElement) {
+                console.error("DEBUG: Drawing Error: Canvas element with ID 'drawingCanvas' not found!");
+                alert("A critical error occurred: the drawing canvas is missing.");
+                return;
+            }
 
-            const displayWidth = 600; // Max width for display
-            const scale = displayWidth / skinImg.width;
-            const displayHeight = skinImg.height * scale;
+            console.log("DEBUG: Initializing Fabric.js canvas.");
+            drawing.fabricCanvas = new fabric.Canvas('drawingCanvas');
+            const canvas = drawing.fabricCanvas;
+            console.log("DEBUG: Fabric.js canvas initialized.");
 
-            canvas.setWidth(displayWidth);
-            canvas.setHeight(displayHeight);
+            console.log("DEBUG: Loading skin image...");
+            fabric.Image.fromURL(skinImageUrl, (skinImg, isError) => {
+                if (isError || !skinImg) {
+                    console.error("DEBUG: Fabric Error: Failed to load skin image.");
+                    alert("Error: Could not load the skin image.");
+                    return;
+                }
+                console.log("DEBUG: Skin image loaded successfully.");
+                drawing.originalImage = skinImg.getElement();
 
-            canvas.setBackgroundImage(skinImg, canvas.renderAll.bind(canvas), {
-                scaleX: canvas.width / skinImg.width,
-                scaleY: canvas.height / skinImg.height,
-            });
+                const displayWidth = 600;
+                const scale = displayWidth / skinImg.width;
+                const displayHeight = skinImg.height * scale;
 
-            fabric.Image.fromURL(tattooImageUrl, (tattooImg) => {
-                drawing.tattooImage = tattooImg;
+                canvas.setWidth(displayWidth);
+                canvas.setHeight(displayHeight);
 
-                tattooImg.set({
-                    left: canvas.width / 2,
-                    top: canvas.height / 2,
-                    originX: 'center',
-                    originY: 'center',
-                    cornerColor: 'rgba(102, 153, 255, 0.5)',
-                    borderColor: 'rgba(102, 153, 255, 0.7)',
-                    transparentCorners: false,
+                canvas.setBackgroundImage(skinImg, canvas.renderAll.bind(canvas), {
+                    scaleX: canvas.width / skinImg.width,
+                    scaleY: canvas.height / skinImg.height,
                 });
+                console.log("DEBUG: Canvas background set with skin image.");
 
-                // Scale the tattoo initially to fit reasonably within the canvas
-                tattooImg.scaleToWidth(canvas.width / 2);
+                console.log("DEBUG: Loading tattoo image...");
+                fabric.Image.fromURL(tattooImageUrl, (tattooImg, isError) => {
+                    if (isError || !tattooImg) {
+                        console.error("DEBUG: Fabric Error: Failed to load tattoo image.");
+                        alert("Error: Could not load the tattoo design.");
+                        return;
+                    }
+                    console.log("DEBUG: Tattoo image loaded successfully.");
+                    drawing.tattooImage = tattooImg;
 
-                canvas.add(tattooImg);
-                canvas.setActiveObject(tattooImg);
-                canvas.renderAll();
+                    tattooImg.set({
+                        left: canvas.width / 2,
+                        top: canvas.height / 2,
+                        originX: 'center',
+                        originY: 'center',
+                        cornerColor: 'rgba(102, 153, 255, 0.5)',
+                        borderColor: 'rgba(102, 153, 255, 0.7)',
+                        transparentCorners: false,
+                    });
 
-                document.getElementById('drawingSection').style.display = 'block';
-                document.getElementById('drawingSection').scrollIntoView({ behavior: 'smooth' });
+                    tattooImg.scaleToWidth(canvas.width / 2);
 
-                // Manually trigger the size slider update
-                 const sizeSlider = document.getElementById('sizeSlider');
-                 const sizeValue = document.getElementById('sizeValue');
-                 const initialScale = tattooImg.scaleX;
-                 sizeSlider.value = Math.round(initialScale * 100);
-                 sizeValue.textContent = `${Math.round(initialScale * 100)}%`;
+                    canvas.add(tattooImg);
+                    canvas.setActiveObject(tattooImg);
+                    canvas.renderAll();
+                    console.log("DEBUG: Tattoo image added to canvas.");
 
+                    document.getElementById('drawingSection').style.display = 'block';
+                    document.getElementById('drawingSection').scrollIntoView({ behavior: 'smooth' });
+                    console.log("DEBUG: Drawing section displayed.");
+
+                    const sizeSlider = document.getElementById('sizeSlider');
+                    const sizeValue = document.getElementById('sizeValue');
+                    if(sizeSlider && sizeValue){
+                        const initialScale = tattooImg.scaleX;
+                        sizeSlider.value = Math.round(initialScale * 100);
+                        sizeValue.textContent = `${Math.round(initialScale * 100)}%`;
+                        console.log("DEBUG: Initial size slider value set.");
+                    }
+
+                }, { crossOrigin: 'anonymous' });
 
             }, { crossOrigin: 'anonymous' });
 
-        }, { crossOrigin: 'anonymous' });
+            drawing.setupEventListeners();
+            console.log("DEBUG: Event listeners set up.");
 
-        drawing.setupEventListeners();
+        } catch (error) {
+            console.error("DEBUG: A critical error occurred in drawing.init:", error);
+            alert("A critical error occurred while setting up the drawing canvas. Please check the console for details.");
+        }
     },
 
     setupEventListeners: () => {
@@ -91,30 +132,32 @@ const drawing = {
             }
         });
 
-        drawing.fabricCanvas.on('object:modified', () => {
-            if (drawing.tattooImage) {
-                const angle = Math.round(drawing.tattooImage.angle);
-                rotationSlider.value = angle;
-                rotationValue.textContent = `${angle}°`;
+        if (drawing.fabricCanvas) {
+            drawing.fabricCanvas.on('object:modified', () => {
+                if (drawing.tattooImage) {
+                    const angle = Math.round(drawing.tattooImage.angle);
+                    rotationSlider.value = angle;
+                    rotationValue.textContent = `${angle}°`;
 
-                const scale = drawing.tattooImage.scaleX;
-                sizeSlider.value = Math.round(scale * 100);
-                sizeValue.textContent = `${Math.round(scale * 100)}%`;
-            }
-        });
+                    const scale = drawing.tattooImage.scaleX;
+                    sizeSlider.value = Math.round(scale * 100);
+                    sizeValue.textContent = `${Math.round(scale * 100)}%`;
+                }
+            });
+        }
     },
 
     updateMask: () => {
         return new Promise((resolve, reject) => {
+            console.log("DEBUG: updateMask started.");
             if (!drawing.fabricCanvas || !drawing.tattooImage || !drawing.originalImage) {
-                console.error('Cannot generate mask: canvas or images not initialized.');
+                console.error('DEBUG: Cannot generate mask: canvas or images not initialized.');
                 return reject('Canvas not ready');
             }
 
             const originalWidth = drawing.originalImage.width;
             const originalHeight = drawing.originalImage.height;
             const displayWidth = drawing.fabricCanvas.width;
-            const displayHeight = drawing.fabricCanvas.height;
 
             const scaleRatio = originalWidth / displayWidth;
 
@@ -127,12 +170,14 @@ const drawing = {
             const tattoo = drawing.tattooImage;
 
             tattoo.clone((clonedTattoo) => {
+                console.log("DEBUG: Cloning tattoo for mask generation.");
                 clonedTattoo.filters.push(new fabric.Image.filters.BlendColor({
                     color: '#FFFFFF',
                     mode: 'tint',
                     alpha: 1
                 }));
                 clonedTattoo.applyFilters();
+                console.log("DEBUG: White tint applied to mask clone.");
 
                 clonedTattoo.set({
                     left: tattoo.left * scaleRatio,
@@ -143,19 +188,21 @@ const drawing = {
                     originX: 'center',
                     originY: 'center'
                 });
+                console.log("DEBUG: Transformations applied to mask clone.");
 
                 maskCanvas.add(clonedTattoo);
                 maskCanvas.renderAll();
 
                 drawing.selectedArea = maskCanvas.toDataURL({ format: 'png' });
                 maskCanvas.dispose();
-                console.log('Mask generated successfully.');
+                console.log('DEBUG: Mask generated and stored in drawing.selectedArea.');
                 resolve();
-            });
+            }, ['filters']); // Important: specify properties to clone
         });
     },
 
     clearCanvas: () => {
+        console.log("DEBUG: clearCanvas called.");
         if (drawing.fabricCanvas) {
             drawing.fabricCanvas.dispose();
             drawing.fabricCanvas = null;
@@ -172,6 +219,7 @@ const drawing = {
         const sizeValue = document.getElementById('sizeValue');
         if(rotationValue) rotationValue.textContent = '0°';
         if(sizeValue) sizeValue.textContent = '100%';
+        console.log("DEBUG: Canvas and state cleared.");
     },
 
     getMaskDataURL: () => {

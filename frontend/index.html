@@ -459,4 +459,449 @@
             if (typeof auth !== 'undefined' && auth.init) {
                 auth.init();
             } else {
-                console.error("Auth
+                console.error("Auth module not loaded or 'auth.init' is not defined.");
+            }
+
+            // --- UI Element References ---
+            const tattooDesignUploadSection = document.getElementById('tattooDesignUploadSection');
+            const tattooDesignUploadArea = document.getElementById('tattooDesignUploadArea');
+            const tattooDesignFileInput = document.getElementById('tattooDesignFileInput');
+            const tattooDesignPreview = document.getElementById('tattooDesignPreview');
+            const tattooDesignPreviewImg = document.getElementById('tattooDesignPreviewImg');
+            const changeTattooDesignBtn = document.getElementById('changeTattooDesignBtn');
+            const continueToSkinPhotoBtn = document.getElementById('continueToSkinPhotoBtn');
+
+            const skinPhotoUploadSection = document.getElementById('skinPhotoUploadSection');
+            const skinUploadArea = document.getElementById('skinUploadArea');
+            const fileInput = document.getElementById('fileInput');
+            const imagePreview = document.getElementById('imagePreview');
+            const previewImg = document.getElementById('previewImg');
+            const changeImageBtn = document.getElementById('changeImageBtn');
+
+            const drawingSection = document.getElementById('drawingSection');
+            const continueBtn = document.getElementById('continueBtn'); // This is now "Generate Tattoo on Skin"
+
+            const designSection = document.getElementById('designSection'); // This section will be hidden/removed
+            const creditsRemainingDisplay = document.getElementById('creditsRemaining'); // Keep for token display
+            const socialShareDiv = document.getElementById('socialShare');
+            const shareToInstagramBtn = document.getElementById('shareToInstagramBtn');
+            const resultsSection = document.getElementById('resultsSection');
+            const artistsSection = document.getElementById('artistsSection');
+
+
+            // --- Core Logic & State Management ---
+
+            // Initial UI setup and reset function
+            function resetUI() {
+                tattooDesignUploadSection.style.display = 'block';
+                tattooDesignPreview.style.display = 'none';
+                tattooDesignUploadArea.style.display = 'flex';
+                continueToSkinPhotoBtn.style.display = 'none';
+
+                skinPhotoUploadSection.style.display = 'none';
+                imagePreview.style.display = 'none';
+                skinUploadArea.style.display = 'flex';
+
+                drawingSection.style.display = 'none';
+                designSection.style.display = 'none'; // Ensure this is hidden
+                resultsSection.style.display = 'none';
+                artistsSection.style.display = 'none';
+                socialShareDiv.style.display = 'none';
+
+                tattooDesignFileInput.value = '';
+                fileInput.value = '';
+
+                if (window.drawing && drawing.clearCanvas) {
+                    drawing.clearCanvas();
+                }
+                STATE.uploadedTattooDesignBase64 = null;
+                STATE.currentImage = null;
+                STATE.currentMask = null;
+                STATE.generatedImages = [];
+
+                utils.updateTokenDisplay();
+            }
+
+            resetUI(); 
+
+            // --- START Desktop Inactivity Auto-Logout Logic ---
+            let inactivityTimeout; // Holds the timer reference
+
+            // Function to reset the timer (called on user activity)
+            function resetInactivityTimer() {
+                clearTimeout(inactivityTimeout); // Clear any existing timer
+                // Only set a new timer if the user is logged in AND it's likely a desktop device
+                // This heuristic roughly defines desktop vs mobile by checking for touch support.
+                const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (navigator.msMaxTouchPoints > 0);
+                
+                if (!isTouchDevice) { // Apply auto-logout ONLY if NOT a touch device (assumed desktop)
+                    if (STATE.user && STATE.token) { // Only auto-logout if user is currently logged in
+                        inactivityTimeout = setTimeout(handleInactivityLogout, CONFIG.DESKTOP_INACTIVITY_TIMEOUT_MS);
+                        console.log(`Inactivity timer reset. Auto-logout in ${CONFIG.DESKTOP_INACTIVITY_TIMEOUT_MS / 1000 / 60} minutes.`);
+                    } else {
+                        console.log("User not logged in or mobile device, inactivity timer not started/reset.");
+                    }
+                }
+            }
+
+            // Function to be called when inactivity timeout is reached
+            function handleInactivityLogout() {
+                console.log("User inactive for too long. Forcing logout.");
+                utils.showError('You have been logged out due to inactivity.');
+                // Call the unified logout function from auth.js
+                if (typeof auth !== 'undefined' && auth.forceLogoutAndShowModal) {
+                    auth.forceLogoutAndShowModal();
+                } else {
+                    // Fallback for simple logout if auth.js function isn't found
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user');
+                    STATE.user = null;
+                    STATE.token = null;
+                    utils.updateTokenDisplay();
+                    // window.location.reload(); // Or redirect to login page
+                }
+            }
+
+            // Set up event listeners for user activity across the document
+            const activityEvents = ['mousemove', 'keydown', 'click', 'scroll'];
+            activityEvents.forEach(event => {
+                document.addEventListener(event, resetInactivityTimer);
+            });
+
+            // Initial call to set up the timer when the page finishes loading (if logged in)
+            resetInactivityTimer();
+
+            // --- END Desktop Inactivity Auto-Logout Logic ---
+
+            // --- START Main Event Listeners Block (Correctly placed) ---
+
+            // Tattoo Design Upload
+            tattooDesignUploadArea?.addEventListener('click', () => {
+                console.log("MARKER: Tattoo upload area clicked.");
+                tattooDesignFileInput.click();
+            });
+
+            tattooDesignFileInput?.addEventListener('change', async (e) => {
+                console.log("MARKER: Tattoo file input changed.");
+                if (e.target.files.length > 0) {
+                    await handleTattooDesignFile(e.target.files[0]);
+                }
+            });
+
+            changeTattooDesignBtn?.addEventListener('click', () => {
+                console.log("MARKER: Change tattoo design button clicked.");
+                tattooDesignUploadArea.style.display = 'flex';
+                tattooDesignPreview.style.display = 'none';
+                tattooDesignFileInput.value = '';
+                STATE.uploadedTattooDesignBase64 = null;
+                continueToSkinPhotoBtn.style.display = 'none';
+            });
+
+            async function handleTattooDesignFile(file) {
+                if (!CONFIG.ALLOWED_FILE_TYPES.includes(file.type)) {
+                    utils.showError('Please upload a JPEG, PNG, or WebP image for your tattoo design.');
+                    return;
+                }
+                if (file.size > CONFIG.MAX_FILE_SIZE) {
+                    utils.showError('Tattoo design file size must be less than 5MB.');
+                    return;
+                }
+                // Snippet for index.html - to be pasted INSIDE handleTattooDesignFile function
+
+        // --- NEW: PNG Preference Message ---
+        // If the file is not a PNG, display a warning.
+        if (file.type !== 'image/png') {
+            utils.showError('Heads up! PNG files with transparent backgrounds typically yield the best results for your tattoo design. For optimal realism, consider using a tool like Sora (or similar AI art generators) to create a transparent PNG, or a background removal tool before uploading.');
+            // We still proceed with processing the image, but the user is warned.
+        }
+        // End of snippet
+
+                utils.showLoading('Processing tattoo design...');
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const originalDataURL = e.target.result;
+                    // Pass original file type to resizeImage
+                    const resizedDataURL = await resizeImage(originalDataURL, file.type, 768, 768, 0.9);
+                    STATE.uploadedTattooDesignBase64 = resizedDataURL;
+
+                    tattooDesignUploadArea.style.display = 'none';
+                    tattooDesignPreview.style.display = 'block';
+                    tattooDesignPreviewImg.src = resizedDataURL;
+                    continueToSkinPhotoBtn.style.display = 'block';
+                    utils.hideLoading();
+                };
+                reader.readAsDataURL(file);
+            }
+
+            // Continue to Skin Photo
+            continueToSkinPhotoBtn?.addEventListener('click', () => {
+                console.log("MARKER: Continue to skin photo button clicked.");
+                if (!STATE.uploadedTattooDesignBase64) {
+                    utils.showError('Please upload a tattoo design first.');
+                    return;
+                }
+                tattooDesignUploadSection.style.display = 'none';
+                skinPhotoUploadSection.style.display = 'block';
+                skinPhotoUploadSection.scrollIntoView({ behavior: 'smooth' });
+            });
+
+
+            // Skin Photo Upload 
+            skinUploadArea?.addEventListener('click', () => {
+                console.log("MARKER: Skin upload area clicked.");
+                fileInput.click();
+            });
+
+            fileInput?.addEventListener('change', async (e) => {
+                console.log("MARKER: Skin file input changed.");
+                if (e.target.files.length > 0) {
+                    await handleSkinPhotoFile(e.target.files[0]);
+                }
+            });
+
+            changeImageBtn?.addEventListener('click', () => {
+                console.log("MARKER: Change skin image button clicked.");
+                skinUploadArea.style.display = 'flex';
+                imagePreview.style.display = 'none';
+                fileInput.value = '';
+                STATE.currentImage = null;
+                if (window.drawing && drawing.clearCanvas) {
+                    drawing.clearCanvas();
+                }
+                skinPhotoUploadSection.style.display = 'none';
+                tattooDesignUploadSection.style.display = 'block';
+                tattooDesignUploadSection.scrollIntoView({ behavior: 'smooth' });
+            });
+
+            async function handleSkinPhotoFile(file) {
+                if (!CONFIG.ALLOWED_FILE_TYPES.includes(file.type)) {
+                    utils.showError('Please upload a JPEG, PNG, or WebP image for your skin photo.');
+                    return;
+                }
+                if (file.size > CONFIG.MAX_FILE_SIZE) {
+                    utils.showError('Skin photo file size must be less than 5MB.');
+                    return;
+                }
+
+                utils.showLoading('Processing skin photo...');
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const originalDataURL = e.target.result;
+                    // Pass original file type to resizeImage
+                    const resizedDataURL = await resizeImage(originalDataURL, file.type, 768, 768, 0.8);
+                    
+                    const resizedFile = await (await fetch(resizedDataURL)).blob();
+                    Object.defineProperty(resizedFile, 'name', { value: file.name });
+                    Object.defineProperty(resizedFile, 'type', { value: file.type }); // Use original file type here!
+                    STATE.currentImage = resizedFile;
+
+                    skinUploadArea.style.display = 'none';
+                    imagePreview.style.display = 'block';
+                    previewImg.src = resizedDataURL;
+
+                    if (window.drawing && drawing.init) {
+                        await drawing.init(resizedDataURL);
+                        if (STATE.uploadedTattooDesignBase64) {
+                            const tattooBlob = await (await fetch(STATE.uploadedTattooDesignBase64)).blob();
+                            drawing.handleTattooUpload(tattooBlob);
+                        }
+                    } else {
+                        console.error("drawing.js module not loaded correctly or 'drawing' object not exposed.");
+                    }
+                    utils.hideLoading();
+                };
+                reader.readAsDataURL(file);
+            }
+
+            // Continue from Drawing to Design (NOW DIRECTLY GENERATES)
+            const generateTattooBtn = document.getElementById('captureMaskBtn');
+            generateTattooBtn?.addEventListener('click', async () => {
+                // Combined logic from previous generateBtn here
+                // Ensure user is logged in
+                if (!STATE.user || !STATE.token) {
+                    utils.showError('You must be logged in to generate tattoos.');
+                    auth.showModal(); // Call auth modal (now in welcome.html)
+                    return;
+                }
+
+                if (!STATE.userTokens || STATE.userTokens < CONFIG.TOKEN_COSTS.FLUX_PLACEMENT) {
+                    utils.showError(`Not enough tokens! This action costs ${CONFIG.TOKEN_COSTS.FLUX_PLACEMENT} tokens. You have ${STATE.userTokens || 0}.`);
+                    return;
+                }
+                if (!STATE.uploadedTattooDesignBase64) {
+                    utils.showError('Please upload a tattoo design first.');
+                    return;
+                }
+                if (!STATE.currentImage) {
+                    utils.showError('Please upload your skin photo first.');
+                    return;
+                }
+                // Call captureMask to generate the mask and update the STATE object
+                try {
+                    await drawing.captureMask();
+                } catch (error) {
+                    console.error("Error capturing mask:", error);
+                    utils.showError("Failed to capture tattoo placement. Please ensure both images are uploaded.");
+                    return;
+                }
+                // The mask is now in `window.STATE.currentMask`
+
+
+                utils.showLoading('Generating your tattoo designs...');
+
+                try {
+                    const formData = new FormData();
+                    formData.append('skinImage', STATE.currentImage);
+                    const tattooDesignBlob = await (await fetch(STATE.uploadedTattooDesignBase64)).blob();
+                    // Crucial fix: Use the correct original file type, not hardcoded 'image/jpeg'
+                    // Ensure the name also suggests PNG if the type is PNG
+                    const tattooDesignFileName = tattooDesignBlob.type === 'image/png' ? 'tattoo_design.png' : 'tattoo_design.jpeg';
+                    Object.defineProperty(tattooDesignBlob, 'name', { value: tattooDesignFileName });
+                    Object.defineProperty(tattooDesignBlob, 'type', { value: tattooDesignBlob.type }); // Retain the type from the blob (which comes from toDataURL)
+                    formData.append('tattooDesignImage', tattooDesignBlob);
+                    
+                    let maskToSend = STATE.currentMask;
+                    if (maskToSend && typeof maskToSend === 'string' && maskToSend.startsWith('data:')) {
+                        maskToSend = maskToSend.split(',')[1];
+                    }
+                    formData.append('mask', maskToSend);
+                    formData.append('prompt', '');
+
+                    const response = await fetch(`${CONFIG.API_URL}/generate-final-tattoo`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${STATE.token}`
+                        },
+                        body: formData
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json(); // Renamed 'error' to 'errorData' for clarity
+
+                        // --- START Mobile-specific JWT expired handling ---
+                        // Check for 401 status and if the error message includes 'jwt expired'
+                        if (response.status === 401 && (errorData.error && errorData.error.includes('jwt expired'))) {
+                            utils.showError('Your session has expired. Please log in again.');
+                            // Call the dedicated logout function (from auth.js)
+                            if (typeof auth !== 'undefined' && auth.forceLogoutAndShowModal) {
+                                auth.forceLogoutAndShowModal();
+                            }
+                            return; // Important: Stop execution here after handling the specific error
+                        }
+                        // --- END Mobile-specific JWT expired handling ---
+
+                        // If it's not a JWT expired error, then throw the general error
+                        throw new Error(errorData.error || 'Failed to generate tattoo');
+                    }
+
+                    const data = await response.json();
+                    console.log('=== API RESPONSE ===');
+                    console.log('Generated image URLs:', data.images);
+
+                    if (typeof data.tokens_remaining === 'number') {
+                        STATE.userTokens = data.tokens_remaining;
+                    }
+                    utils.updateTokenDisplay();
+
+                    utils.hideLoading();
+
+                    STATE.generatedImages = data.images;
+                    const resultsGrid = document.querySelector('.results-grid');
+                    resultsGrid.innerHTML = STATE.generatedImages.map((imageUrl, index) => `
+                        <div class="result-item">
+                            <img src="${imageUrl}" alt="Generated tattoo ${index + 1}">
+                            <div class="result-actions">
+                                <button class="btn btn-sm btn-outline" onclick="window.open('${imageUrl}', '_blank')">View Full Size</button>
+                            </div>
+                        </div>
+                    `).join('');
+
+                    resultsSection.style.display = 'block';
+                    artistsSection.style.display = 'block';
+                    resultsSection.scrollIntoView({behavior: 'smooth'}); // Scroll to results section
+                    socialShareDiv.style.display = 'block';
+                    window.loadDemoArtistsWithFilter(); // Call global loadDemoArtistsWithFilter
+                    
+                } catch (error) {
+                    console.error('Generation error:', error);
+                    utils.hideLoading();
+                    // --- START Robust Logout for Generic Fetch Errors ---
+                    // If it's a TypeError (like 'Failed to fetch') or other unhandled network/API error,
+                    // assume session might be the issue and force logout.
+                    if (error.message.includes('Failed to fetch') || (error instanceof TypeError)) {
+                         utils.showError('There was a network or server issue. Your session might have expired. Please log in again.');
+                         if (typeof auth !== 'undefined' && auth.forceLogoutAndShowModal) {
+                             auth.forceLogoutAndShowModal();
+                         }
+                    } else if (!error.message.includes('Your session has expired')) { // Avoid double message if already handled above
+                         utils.showError(`Tattoo generation failed: ${error.message}`);
+                    } else { // Fallback for any other unhandled errors.
+                         utils.showError(`Tattoo generation failed: ${error.message}`);
+                    }
+                    // --- END Robust Logout for Generic Fetch Errors ---
+                }
+            });
+
+
+            // Social Share to Instagram
+            shareToInstagramBtn?.addEventListener('click', () => {
+                if (!STATE.generatedImages || STATE.generatedImages.length === 0) {
+                    utils.showError('No images generated yet to share.');
+                    return;
+                }
+                alert('To share to Instagram:\n1. Right-click (or long-press on mobile) on the image(s) below to save them to your device.\n2. Open the Instagram app and upload the saved image(s) as a new post.');
+            });
+
+
+            // Download All button
+            document.getElementById('downloadAllBtn')?.addEventListener('click', async () => {
+                if (!STATE.generatedImages || STATE.generatedImages.length === 0) {
+                    utils.showError('No images generated to download.');
+                    return;
+                }
+                utils.showLoading('Preparing images for download...');
+                for (const imageUrl of STATE.generatedImages) {
+                    try {
+                        const response = await fetch(imageUrl);
+                        const blob = await response.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        // IMPORTANT: Set download filename based on the actual image type, which should be PNG now
+                        // Infer extension from blob.type, or assume PNG if that's what backend returns
+                        const filenameExtension = blob.type.split('/')[1] || 'png';
+                        a.download = `skintip_tattoo_${Date.now()}.${filenameExtension}`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    } catch (error) {
+                        console.error('Failed to download image:', imageUrl, error);
+                        utils.showError('Failed to download one or more images.');
+                        break;
+                    }
+                }
+                utils.hideLoading();
+            });
+
+
+            // --- General Navigation & Artist Loading ---
+
+            // New Design button
+                document.getElementById('newDesignBtn')?.addEventListener('click', () => {
+                    resetUI();
+                    tattooDesignUploadSection.scrollIntoView({ behavior: 'smooth' });
+                });
+
+            // The filter event listeners for artists:
+            const locationFilter = document.getElementById('locationFilter');
+            const styleFilter = document.getElementById('styleFilter');
+            locationFilter?.addEventListener('input', window.filterArtists);
+            styleFilter?.addEventListener('change', window.filterArtists);
+
+            console.log('✅ SkinTip ready!');
+        });
+        console.log('Main inline script finished.');
+    </script>
+</body>
+</html>

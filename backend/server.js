@@ -373,6 +373,7 @@ app.post('/api/generate-final-tattoo',
                 userId,          // Corresponds to 'userId' in fluxPlacementHandler.js
                 3,               // Corresponds to 'numVariations' in fluxPlacementHandler.js
                 process.env.FLUX_API_KEY // Corresponds to 'fluxApiKey' in fluxPlacementHandler.js
+                parseInt(tattooAngle)
             );
             // --- END CRITICAL FIX ---
 

@@ -1,212 +1,241 @@
-// frontend/js/drawing.js
+import * as THREE from 'three';
 
 const drawing = {
-    fabricCanvas: null,
-    tattooImage: null,
-    originalImage: null,
+    renderer: null,
+    scene: null,
+    camera: null,
+    skinMesh: null,
+    tattooMesh: null,
+    isDragging: false,
+    dragOffset: new THREE.Vector3(),
+    raycaster: new THREE.Raycaster(),
+    pointer: new THREE.Vector2(),
     selectedArea: null,
 
     init: (skinImageUrl, tattooImageUrl) => {
-        console.log("DEBUG: drawing.init started.");
-        try {
-            if (!skinImageUrl || !tattooImageUrl) {
-                console.error("DEBUG: Drawing Error: Missing image URLs.");
-                return;
-            }
-
-            if (drawing.fabricCanvas) {
-                drawing.fabricCanvas.dispose();
-            }
-
-            const canvasElement = document.getElementById('drawingCanvas');
-            if (!canvasElement) {
-                console.error("DEBUG: Canvas element 'drawingCanvas' not found!");
-                return;
-            }
-
-            drawing.fabricCanvas = new fabric.Canvas('drawingCanvas');
-            const canvas = drawing.fabricCanvas;
-            console.log("DEBUG: Fabric canvas initialized.");
-
-            const skinImgElement = new Image();
-            skinImgElement.crossOrigin = "anonymous";
-            skinImgElement.onload = () => {
-                console.log("DEBUG: Skin image element loaded via onload.");
-                drawing.originalImage = skinImgElement;
-                const skinImg = new fabric.Image(skinImgElement);
-
-                const displayWidth = 600;
-                const scale = displayWidth / skinImg.width;
-                const displayHeight = skinImg.height * scale;
-
-                canvas.setWidth(displayWidth);
-                canvas.setHeight(displayHeight);
-
-                canvas.setBackgroundImage(skinImg, canvas.renderAll.bind(canvas), {
-                    scaleX: canvas.width / skinImg.width,
-                    scaleY: canvas.height / skinImg.height,
-                });
-                console.log("DEBUG: Set background image call made.");
-
-                const tattooImgElement = new Image();
-                tattooImgElement.crossOrigin = "anonymous";
-                tattooImgElement.onload = () => {
-                    console.log("DEBUG: Tattoo image element loaded via onload.");
-                    const tattooImg = new fabric.Image(tattooImgElement);
-                    drawing.tattooImage = tattooImg;
-
-                    tattooImg.set({
-                        left: canvas.width / 2,
-                        top: canvas.height / 2,
-                        originX: 'center',
-                        originY: 'center',
-                        cornerColor: 'rgba(102, 153, 255, 0.5)',
-                        borderColor: 'rgba(102, 153, 255, 0.7)',
-                        transparentCorners: false,
-                    });
-                    tattooImg.scaleToWidth(canvas.width / 2);
-
-                    canvas.add(tattooImg);
-                    canvas.setActiveObject(tattooImg);
-                    canvas.renderAll();
-                    console.log("DEBUG: Tattoo image added to canvas.");
-
-                    document.getElementById('drawingSection').style.display = 'block';
-                    document.getElementById('drawingSection').scrollIntoView({ behavior: 'smooth' });
-                    drawing.setupEventListeners();
-                    console.log("DEBUG: Drawing section displayed and listeners set up.");
-
-                    const sizeSlider = document.getElementById('sizeSlider');
-                    const sizeValue = document.getElementById('sizeValue');
-                    if (sizeSlider && sizeValue) {
-                        const initialScale = tattooImg.scaleX;
-                        sizeSlider.value = Math.round(initialScale * 100);
-                        sizeValue.textContent = `${Math.round(initialScale * 100)}%`;
-                    }
-                };
-                tattooImgElement.onerror = () => {
-                    console.error("DEBUG: Failed to load tattoo image element from src.");
-                };
-                console.log("DEBUG: Setting tattoo image src.");
-                tattooImgElement.src = tattooImageUrl;
-            };
-            skinImgElement.onerror = () => {
-                console.error("DEBUG: Failed to load skin image element from src.");
-            };
-            console.log("DEBUG: Setting skin image src.");
-            skinImgElement.src = skinImageUrl;
-
-        } catch (error) {
-            console.error("DEBUG: A critical error occurred in drawing.init:", error);
+        // --- Renderer & Scene ---
+        const canvas = document.getElementById('drawingCanvas');
+        if (!canvas) {
+            console.error("DEBUG: drawingCanvas not found!");
+            return;
         }
+        drawing.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+        drawing.renderer.setSize(600, 450); // Initial size, will be adjusted
+        drawing.scene = new THREE.Scene();
+        drawing.scene.background = new THREE.Color(0xeeeeee);
+
+        // --- Camera & Light ---
+        drawing.camera = new THREE.PerspectiveCamera(75, 600 / 450, 0.1, 1000);
+        drawing.camera.position.z = 100;
+        drawing.scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+
+        // --- Skin & Tattoo meshes ---
+        drawing.skinMesh = new THREE.Mesh(
+            new THREE.PlaneGeometry(100, 100),
+            new THREE.MeshBasicMaterial({ color: 0xcccccc, side: THREE.DoubleSide })
+        );
+        drawing.scene.add(drawing.skinMesh);
+
+        drawing.tattooMesh = new THREE.Mesh(
+            new THREE.PlaneGeometry(50, 50),
+            new THREE.MeshBasicMaterial({ transparent: true, opacity: 1, side: THREE.DoubleSide })
+        );
+        drawing.tattooMesh.visible = false;
+        drawing.tattooMesh.position.z = 1; // Ensure tattoo is in front of skin
+        drawing.scene.add(drawing.tattooMesh);
+
+        // --- Load Textures ---
+        drawing.loadTexture(skinImageUrl, (tex, img) => {
+            const ar = img.width / img.height;
+            const canvasWidth = 600;
+            const canvasHeight = canvasWidth / ar;
+
+            drawing.renderer.setSize(canvasWidth, canvasHeight);
+            drawing.camera.aspect = canvasWidth / canvasHeight;
+            drawing.camera.updateProjectionMatrix();
+
+            // Adjust camera position to fit image
+            const vFOV = THREE.MathUtils.degToRad(drawing.camera.fov);
+            const height = 2 * Math.tan(vFOV / 2) * 100;
+            const width = height * drawing.camera.aspect;
+
+            drawing.skinMesh.geometry.dispose();
+            drawing.skinMesh.geometry = new THREE.PlaneGeometry(width, height);
+            drawing.skinMesh.material.map = tex;
+            drawing.skinMesh.material.color.set(0xffffff);
+            drawing.skinMesh.material.needsUpdate = true;
+        });
+
+        drawing.loadTexture(tattooImageUrl, (tex, img) => {
+            const ar = img.width / img.height;
+            const tattooHeight = 50; // Base size
+            const tattooWidth = tattooHeight * ar;
+
+            drawing.tattooMesh.geometry.dispose();
+            drawing.tattooMesh.geometry = new THREE.PlaneGeometry(tattooWidth, tattooHeight);
+            drawing.tattooMesh.material.map = tex;
+            drawing.tattooMesh.visible = true;
+            drawing.tattooMesh.material.needsUpdate = true;
+        });
+
+        // --- Animation loop ---
+        drawing.renderer.setAnimationLoop(() => drawing.renderer.render(drawing.scene, drawing.camera));
+
+        document.getElementById('drawingSection').style.display = 'block';
+        document.getElementById('drawingSection').scrollIntoView({ behavior: 'smooth' });
+
+        drawing.setupEventListeners();
+    },
+
+    loadTexture: (url, cb) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => {
+            const tex = new THREE.Texture(img);
+            tex.colorSpace = THREE.SRGBColorSpace;
+            tex.needsUpdate = true;
+            cb(tex, img);
+        };
+        img.src = url;
     },
 
     setupEventListeners: () => {
+        const canvas = drawing.renderer.domElement;
         const rotationSlider = document.getElementById('rotationSlider');
         const sizeSlider = document.getElementById('sizeSlider');
         const rotationValue = document.getElementById('rotationValue');
         const sizeValue = document.getElementById('sizeValue');
 
+        // Sliders
         rotationSlider.addEventListener('input', (e) => {
-            if (drawing.tattooImage) {
-                const angle = parseInt(e.target.value, 10);
-                drawing.tattooImage.set({ angle }).setCoords();
-                drawing.fabricCanvas.renderAll();
-                rotationValue.textContent = `${angle}°`;
-            }
+            const angle = parseInt(e.target.value, 10);
+            drawing.tattooMesh.rotation.z = THREE.MathUtils.degToRad(angle);
+            rotationValue.textContent = `${angle}°`;
         });
-
         sizeSlider.addEventListener('input', (e) => {
-            if (drawing.tattooImage) {
-                const scale = parseInt(e.target.value, 10) / 100;
-                drawing.tattooImage.scale(scale).setCoords();
-                drawing.fabricCanvas.renderAll();
-                sizeValue.textContent = `${Math.round(scale * 100)}%`;
-            }
+            const scale = parseFloat(e.target.value) / 100;
+            drawing.tattooMesh.scale.set(scale, scale, scale);
+            sizeValue.textContent = `${Math.round(scale * 100)}%`;
         });
 
-        if (drawing.fabricCanvas) {
-            drawing.fabricCanvas.on('object:modified', () => {
-                if (drawing.tattooImage) {
-                    const angle = Math.round(drawing.tattooImage.angle);
-                    rotationSlider.value = angle;
-                    rotationValue.textContent = `${angle}°`;
+        // Dragging
+        canvas.addEventListener('pointerdown', drawing.onPointerDown);
+        canvas.addEventListener('pointermove', drawing.onPointerMove);
+        canvas.addEventListener('pointerup', drawing.onPointerUp);
+        canvas.addEventListener('pointerleave', drawing.onPointerUp);
+    },
 
-                    const scale = drawing.tattooImage.scaleX;
-                    sizeSlider.value = Math.round(scale * 100);
-                    sizeValue.textContent = `${Math.round(scale * 100)}%`;
-                }
-            });
+    onPointerDown: (event) => {
+        if (event.button !== 0) return;
+        const pointer = drawing.pointer;
+        pointer.x = (event.offsetX / drawing.renderer.domElement.clientWidth) * 2 - 1;
+        pointer.y = -(event.offsetY / drawing.renderer.domElement.clientHeight) * 2 + 1;
+
+        drawing.raycaster.setFromCamera(pointer, drawing.camera);
+        const intersects = drawing.raycaster.intersectObject(drawing.tattooMesh);
+
+        if (intersects.length > 0) {
+            drawing.isDragging = true;
+            const intersectPoint = intersects[0].point;
+            drawing.dragOffset.copy(intersectPoint).sub(drawing.tattooMesh.position);
         }
     },
 
+    onPointerMove: (event) => {
+        if (!drawing.isDragging) return;
+        const pointer = drawing.pointer;
+        pointer.x = (event.offsetX / drawing.renderer.domElement.clientWidth) * 2 - 1;
+        pointer.y = -(event.offsetY / drawing.renderer.domElement.clientHeight) * 2 + 1;
+
+        drawing.raycaster.setFromCamera(pointer, drawing.camera);
+        const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -drawing.tattooMesh.position.z);
+        const intersect = new THREE.Vector3();
+
+        if (drawing.raycaster.ray.intersectPlane(plane, intersect)) {
+            drawing.tattooMesh.position.copy(intersect).sub(drawing.dragOffset);
+        }
+    },
+
+    onPointerUp: () => {
+        drawing.isDragging = false;
+    },
+
     updateMask: () => {
-        return new Promise((resolve, reject) => {
-            if (!drawing.fabricCanvas || !drawing.tattooImage || !drawing.originalImage) {
-                console.error('DEBUG: Cannot generate mask: canvas or images not initialized.');
-                return reject('Canvas not ready');
+        return new Promise((resolve) => {
+            console.log("DEBUG: updateMask started.");
+            if (!drawing.renderer || !drawing.scene || !drawing.camera || !drawing.skinMesh) {
+                console.error("DEBUG: Cannot generate mask: Three.js components not initialized.");
+                return resolve();
             }
 
-            const originalWidth = drawing.originalImage.width;
-            const originalHeight = drawing.originalImage.height;
-            const displayWidth = drawing.fabricCanvas.width;
-            const scaleRatio = originalWidth / displayWidth;
+            const { width, height } = drawing.skinMesh.geometry.parameters;
 
-            const maskCanvas = new fabric.StaticCanvas(null, {
-                width: originalWidth,
-                height: originalHeight,
-                backgroundColor: 'black'
-            });
+            // 1. Create an orthographic camera that looks at the scene from the front
+            const orthoCamera = new THREE.OrthographicCamera(-width / 2, width / 2, height / 2, -height / 2, 1, 1000);
+            orthoCamera.position.z = 100;
 
-            const tattoo = drawing.tattooImage;
-            const tattooClone = new fabric.Image(tattoo.getElement(), {
-                left: tattoo.left * scaleRatio,
-                top: tattoo.top * scaleRatio,
-                angle: tattoo.angle,
-                scaleX: tattoo.scaleX * scaleRatio,
-                scaleY: tattoo.scaleY * scaleRatio,
-                originX: 'center',
-                originY: 'center'
-            });
+            // 2. Create a temporary scene for mask rendering
+            const maskScene = new THREE.Scene();
+            maskScene.background = new THREE.Color(0x000000); // Black background
 
-            tattooClone.filters.push(new fabric.Image.filters.BlendColor({
-                color: '#FFFFFF',
-                mode: 'tint',
-                alpha: 1
-            }));
-            tattooClone.applyFilters();
+            // 3. Clone the tattoo mesh and give it a pure white material
+            const maskTattoo = drawing.tattooMesh.clone();
+            maskTattoo.material = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
-            maskCanvas.add(tattooClone);
-            maskCanvas.renderAll();
+            // 4. Ensure the clone's transformations are up to date
+            maskTattoo.position.copy(drawing.tattooMesh.position);
+            maskTattoo.rotation.copy(drawing.tattooMesh.rotation);
+            maskTattoo.scale.copy(drawing.tattooMesh.scale);
 
-            drawing.selectedArea = maskCanvas.toDataURL({ format: 'png' });
-            maskCanvas.dispose();
-            console.log('DEBUG: Mask generated and stored.');
+            maskScene.add(maskTattoo);
+
+            // 5. Render the mask scene
+            const currentRenderTarget = drawing.renderer.getRenderTarget();
+            const renderTarget = new THREE.WebGLRenderTarget(width, height);
+            drawing.renderer.setRenderTarget(renderTarget);
+            drawing.renderer.render(maskScene, orthoCamera);
+
+            // 6. Get the data URL
+            const gl = drawing.renderer.getContext();
+            const pixels = new Uint8Array(gl.drawingBufferWidth * gl.drawingBufferHeight * 4);
+            gl.readPixels(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+            // Create a 2D canvas to transfer the pixels to
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = gl.drawingBufferWidth;
+            tempCanvas.height = gl.drawingBufferHeight;
+            const ctx = tempCanvas.getContext('2d');
+            const imageData = new ImageData(new Uint8ClampedArray(pixels.buffer), tempCanvas.width, tempCanvas.height);
+            ctx.putImageData(imageData, 0, 0);
+
+            // The image is flipped vertically, so we need to flip it back
+            ctx.globalCompositeOperation = 'copy';
+            ctx.scale(1, -1);
+            ctx.translate(0, -tempCanvas.height);
+            ctx.drawImage(tempCanvas, 0, 0);
+
+            drawing.selectedArea = tempCanvas.toDataURL('image/png');
+            console.log("DEBUG: Mask generated and stored.");
+
+            // 7. Clean up and restore original state
+            drawing.renderer.setRenderTarget(currentRenderTarget);
+            renderTarget.dispose();
+
             resolve();
         });
     },
 
     clearCanvas: () => {
-        if (drawing.fabricCanvas) {
-            drawing.fabricCanvas.dispose();
-            drawing.fabricCanvas = null;
+        if (drawing.renderer) {
+            drawing.renderer.setAnimationLoop(null);
+            drawing.renderer.dispose();
+            drawing.renderer = null;
         }
-        drawing.tattooImage = null;
-        drawing.originalImage = null;
+        drawing.scene = null;
+        drawing.camera = null;
+        drawing.skinMesh = null;
+        drawing.tattooMesh = null;
         drawing.selectedArea = null;
-        
-        const rotationSlider = document.getElementById('rotationSlider');
-        const sizeSlider = document.getElementById('sizeSlider');
-        if(rotationSlider) rotationSlider.value = 0;
-        if(sizeSlider) sizeSlider.value = 100;
-        const rotationValue = document.getElementById('rotationValue');
-        const sizeValue = document.getElementById('sizeValue');
-        if(rotationValue) rotationValue.textContent = '0°';
-        if(sizeValue) sizeValue.textContent = '100%';
-    },
-
-    getMaskDataURL: () => {
-        return drawing.selectedArea;
     }
 };
 

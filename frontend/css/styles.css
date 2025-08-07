@@ -1,907 +1,648 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SkinTip - AI Tattoo Visualization</title>
-    <link rel="stylesheet" href="css/styles.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/jwt-decode/build/jwt-decode.js"></script>
-    <script type="importmap">
-{
-  "imports": {
-    "three": "https://unpkg.com/three@0.165.0/build/three.module.js",
-    "three/": "https://unpkg.com/three@0.165.0/"
-  }
+/* General body and typography */
+body {
+    font-family: 'Inter', sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #f8f9fa; /* Light background */
+    color: #343a40; /* Darker text */
+    line-height: 1.6;
 }
-</script>
-</head>
-<body>
-    <nav class="navbar">
-        <div class="container">
-            <div class="nav-brand">
-                <h1>SkinTip</h1>
-                <span class="tagline">Try b4 you Dye</span> </div>
-            <div class="nav-menu">
-                <span id="userInfo" class="user-info"></span>
-                <button id="logoutBtn" class="btn btn-outline" style="display:none;">Logout</button>
-            </div>
-        </div>
-    </nav>
-
-    <main class="main-content">
-        <div class="container">
-            <section id="tattooDesignUploadSection" class="section">
-                <div class="section-header">
-                    <h2>Upload Your Tattoo Design</h2>
-                    <p>Choose the tattoo image you want to visualize</p>
-                </div>
-                
-                <div class="upload-area" id="tattooDesignUploadArea">
-                    <input type="file" id="tattooDesignFileInput" accept="image/jpeg,image/png,image/webp" hidden>
-                    <div class="upload-placeholder">
-                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                            <polyline points="17 8 12 3 7 8"></polyline>
-                            <line x1="12" y1="3" x2="12" y2="15"></line>
-                        </svg>
-                        <p>Click to upload or drag and drop</p>
-                        <span>PNG or JPG with transparent background preferred (max. 5MB)</span>
-                    </div>
-                </div>
-
-                <div id="tattooDesignPreview" class="image-preview" style="display: none;">
-                    <img id="tattooDesignPreviewImg" src="" alt="Tattoo Design Preview">
-                    <button id="changeTattooDesignBtn" class="btn btn-outline btn-sm">Change Design</button>
-                </div>
-
-                <div class="external-idea-guidance">
-                    <div class="prompt-tip-box">
-                        <p class="prompt-tip-header">💡 Pro Tip for AI Generators:</p>
-                        <p class="prompt-tip-content">
-                            Ask for a sketch on a **transparent background**, **NOT** a tattoo on skin. <br>
-                            For example: <br>
-                            "legendary king snake sketch black and white. no background. .png file"
-                        </p>
-                    </div>
-                </div>
-
-                <button id="continueToSkinPhotoBtn" class="btn btn-primary" style="margin-top: 2rem; display: none; margin-left: auto; margin-right: auto;">Continue to Skin Photo</button>
-            </section>
-            
-            <section id="skinPhotoUploadSection" class="section" style="display: none;">
-                <div class="section-header">
-                    <h2>Upload Your Photo</h2>
-                    <p>Choose a photo where you want the tattoo</p>
-                </div>
-                
-                <div class="upload-area" id="skinUploadArea">
-                    <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp" hidden>
-                    <div class="upload-placeholder">
-                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                            <polyline points="17 8 12 3 7 8"></polyline>
-                            <line x1="12" y1="3" x2="12" y2="15"></line>
-                        </svg>
-                        <p>Click to upload or drag and drop</p>
-                        <span>PNG, JPG or WebP (max. 5MB)</span>
-                    </div>
-                </div>
-
-                <div id="imagePreview" class="image-preview" style="display: none;">
-                    <img id="previewImg" src="" alt="Skin Photo Preview">
-                    <button id="changeImageBtn" class="btn btn-outline btn-sm">Change Image</button>
-                </div>
-            </section>
-
-            <section id="drawingSection" class="section" style="display: none;">
-                <div class="section-header">
-                    <h2>Mark Tattoo Area</h2>
-                    <p>Use the sliders to adjust the tattoo placement and size</p>
-                </div>
-                
-                <div class="canvas-wrapper">
-                    <div class="drawing-container">
-                        <canvas id="main3DCanvas" style="width:100%; height:auto; display:block; touch-action: none;"></canvas>
-                        <div class="drawing-tools">
-                            <div id="tattooControls" style="display: none; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 1rem; background: rgba(0,0,0,0.6); padding: 10px; border-radius: 8px;">
-                                <div id="angleBox" style="display:flex; align-items:center; gap:6px;">
-                                    <label for="angleSlider" style="background:none; padding:0; color:white;">Angle:</label>
-                                    <input type="range" id="angleSlider" min="-180" max="180" value="0" style="width:100px;">
-                                    <input type="number" id="angleInput" min="-180" max="180" value="0" style="width:50px;">
-                                </div>
-                                <div id="sizeBox" style="display:flex; align-items:center; gap:6px;">
-                                    <label for="sizeSlider" style="background:none; padding:0; color:white;">Size:</label>
-                                    <input type="range" id="sizeSlider" min="0.1" max="3" step="0.01" value="1" style="width:100px;">
-                                    <input type="number" id="sizeInput" min="0.1" max="3" step="0.01" value="1">
-                                </div>
-                                <button id="resetTattooTransformBtn" class="btn btn-outline btn-sm">Reset Transform</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <button id="captureMaskBtn" class="btn btn-primary" style="margin-top: 2rem; display: block; margin-left: auto; margin-right: auto;">Generate Tattoo on Skin</button>
-            </section>
-            
-            <section id="designSection" class="section" style="display: none;">
-                <div class="section-header">
-                    <h2>Refine & Generate</h2>
-                    <p>Final adjustments for placement</p>
-                </div>
-
-                <div class="credits-info">
-                    <span id="creditsRemaining"></span>
-                </div>
-
-                <div id="socialShare" style="margin-top: 1rem; display: none;">
-                    <button id="shareToInstagramBtn" class="btn btn-secondary">Share to Instagram</button>
-                </div>
-            </section>
-
-            <section id="resultsSection" class="section" style="display: none;">
-                <div class="section-header">
-                    <h2>Your Tattoo Designs</h2>
-                    <p>Here are your AI-generated tattoo previews</p>
-                </div>
-
-                <div class="results-grid">
-                </div>
-
-                <div class="results-actions">
-                    <button id="downloadAllBtn" class="btn btn-primary">Download All</button>
-                    <button id="newDesignBtn" class="btn btn-outline">Start New Design</button>
-                </div>
-            </section>
-            
-            <section id="artistsSection" class="section" style="display: none;">
-                <div class="section-header">
-                    <h2>Find Your Artist</h2>
-                    <p>Connect with talented tattoo artists who can bring your design to life</p>
-                </div>
-
-                <div class="filters">
-                    <select id="locationFilter" class="filter-select">
-                        <option value="">All Locations</option>
-                        <option value="Los Angeles, CA">Los Angeles, CA</option>
-                        <option value="New York, NY">New York, NY</option>
-                        <option value="Austin, TX">Austin, TX</option>
-                        <option value="Miami, FL">Miami, FL</option>
-                        <option value="Seattle, WA">Seattle, WA</option>
-                        <option value="Denver, CO">Denver, CO</option>
-                        <option value="Portland, OR">Portland, OR</option>
-                        <option value="Chicago, IL">Chicago, IL</option>
-                    </select>
-                    <select id="styleFilter" class="filter-select">
-                        <option value="">All Styles</option>
-                        <option value="Traditional">Traditional</option>
-                        <option value="Neo-Traditional">Neo-Traditional</option>
-                        <option value="Realism">Realism</option>
-                        <option value="Blackwork">Blackwork</option>
-                        <option value="Watercolor">Watercolor</option>
-                        <option value="Japanese">Japanese</option>
-                        <option value="Minimalist">Minimalist</option>
-                        <option value="Geometric">Geometric</option>
-                        <option value="Fine Line">Fine Line</option>
-                        <option value="Tribal">Tribal</option>
-                    </select>
-                </div>
-
-                <div id="artistsGrid" class="artists-grid">
-                </div>
-            </section>
-        </div>
-        <div id="statusMessage" style="position: fixed; top: 10px; left: 10px; background: rgba(0,0,0,0.7); padding: 8px 12px; border-radius: 5px; font-size: 14px; z-index: 999; color: white;"></div>
-        <div id="instructions" style="position: fixed; top: 50px; left: 10px; background: rgba(0,0,0,0.7); padding: 8px 12px; border-radius: 5px; font-size: 13px; max-width: 250px; z-index: 999; color: white;">
-            **Instructions:**<br>
-            1. Upload Your Tattoo Design.<br>
-            2. Upload Your Photo.<br>
-            3. Use **Angle Slider** for 2D rotation of tattoo content.<br>
-            4. Use **Size Slider** for overall tattoo size.<br>
-            5. **Drag** tattoo to move.<br>
-            6. **Shift + Drag** tattoo to scale.<br>
-            7. Click "Generate Tattoo on Skin".
-        </div>
-    </main>
-
-    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
-        <div class="loading-content">
-            <div class="spinner"></div>
-            <p id="loadingText">Generating your tattoo designs...</p>
-        </div>
-    </div>
-    
-    <footer class="footer">
-        <div class="container">
-            <div class="footer-content">
-                <div class="footer-section">
-                    <h3>SkinTip</h3>
-                    <p>AI-powered tattoo visualization platform</p>
-                </div>
-                <div class="footer-section">
-                    <h4>Features</h4>
-                    <ul>
-                        <li>AI Tattoo Generation</li>
-                        <li>20+ Tattoo Styles</li>
-                        <li>Artist Discovery</li>
-                        <li>Direct WhatsApp Contact</li>
-                    </ul>
-                </div>
-                <div class="footer-section">
-                    <h4>Coming Soon</h4>
-                    <ul>
-                        <li>Real AI Generation</li>
-                        <li>Payment Integration</li>
-                        <li>Artist Profiles</li>
-                        <li>Mobile App</li>
-                    </ul>
-                </div>
-            </div>
-            <div class="footer-bottom">
-                <p>&copy; 2024 SkinTip. Made with ❤️ by itayash@gmail.com</p>
-            </div>
-        </div>
-    </footer>
-    <script>console.log('Loading config.js...');</script>
-    <script src="js/config.js"></script>
-    <script>console.log('Loading auth.js...');</script>
-    <script src="js/auth.js"></script>
-    <script>console.log('Loading drawing.js...');</script>
-    <script type="module" src="js/drawing.js"></script>
-    <script>
-        console.log('Main inline script starting...');
-
-        /**
-         * Resizes an image Data URL to a maximum width/height while maintaining aspect ratio.
-         * Returns a Promise that resolves with the new Data URL.
-         * @param {string} dataURL The input image data URL.
-         * @param {string} originalMimeType The original MIME type of the file (e.g., 'image/png').
-         * @param {number} maxWidth Max width for the resized image.
-         * @param {number} maxHeight Max height for the resized image.
-         * @param {number} quality JPEG compression quality (0-1), ignored for PNG.
-         * @returns {Promise<string>} Promise resolving with the resized image Data URL.
-         */
-        function resizeImage(dataURL, originalMimeType, maxWidth, maxHeight, quality = 0.9) {
-            return new Promise((resolve) => {
-                const img = new Image();
-                img.onload = () => {
-                    let width = img.width;
-                    let height = img.height;
-
-                    // Calculate new dimensions
-                    if (width > height) {
-                        if (width > maxWidth) {
-                            height *= maxWidth / width;
-                            width = maxWidth;
-                        }
-                    } else {
-                        if (height > maxHeight) {
-                            width *= maxHeight / height;
-                            height = maxHeight;
-                        }
-                    }
-
-                    const canvas = document.createElement('canvas');
-                    canvas.width = width;
-                    canvas.height = height;
-                    const ctx = canvas.getContext('2d');
-
-                    // Crucial for transparency: Clear canvas to transparent black
-                    ctx.clearRect(0, 0, canvas.width, canvas.height); // Clears to transparent black
-
-                    ctx.drawImage(img, 0, 0, width, height);
-
-                    // If original was PNG or WebP, aim for PNG output to preserve transparency, otherwise JPEG
-                    const outputMimeType = (originalMimeType === 'image/png' || originalMimeType === 'image/webp') ? 'image/png' : 'image/jpeg';
-                    const outputQuality = outputMimeType === 'image/jpeg' ? quality : undefined;
-
-                    resolve(canvas.toDataURL(outputMimeType, outputQuality));
-                };
-                img.src = dataURL;
-            });
-        }
-
-
-        // --- Artist Loading and Filtering Functions (MOVED TO GLOBAL SCOPE) ---
-        let allArtists = []; // Declare in a scope accessible by filterArtists and displayArtists
-
-        // Function definitions for contactArtist, changePortfolioImage, loadDemoArtistsWithFilter,
-        // displayArtists, and filterArtists are assigned to window for global accessibility
-        window.contactArtist = function(whatsapp, name) {
-            const message = `Hi ${name}, I'm interested in getting a tattoo! Can you help me visualize this? (from SkinTip.AI)`;
-            window.open(`https://wa.me/${whatsapp}?text=${encodeURIComponent(message)}`, '_blank');
-        };
-
-        window.changePortfolioImage = function(button, direction) {
-            const gallery = button.closest('.portfolio-gallery');
-            const images = Array.from(gallery.querySelectorAll('.portfolio-image'));
-            let currentIndex = images.findIndex(img => img.classList.contains('active'));
-
-            images[currentIndex].style.display = 'none';
-            images[currentIndex].classList.remove('active');
-
-            currentIndex = (currentIndex + direction + images.length) % images.length;
-
-            images[currentIndex].style.display = 'block';
-            images[currentIndex].classList.add('active');
-        };
-
-        window.loadDemoArtistsWithFilter = function() {
-            allArtists = [
-                {
-                    name: 'Sarah Martinez',
-                    location: 'Los Angeles, CA',
-                    styles: ['Fine Line', 'Minimalist', 'Geometric'],
-                    bio: 'Specializing in delicate designs with 10+ years experience',
-                    likes: 234,
-                    whatsapp: '+1234567890',
-                    portfolio: [
-                        'https://images.unsplash.com/photo-1611501275019-9b5cda994e8d',
-                        'https://images.unsplash.com/photo-1598371839696-5c5bb00bdc28',
-                        'https://images.unsplash.com/photo-1567406889330-43e4639e8d4f',
-                        'https://images.unsplash.com/photo-1475695752828-6d2b0a83cf8a'
-                    ]
-                },
-                {
-                    name: 'Mike Chen',
-                    location: 'New York, NY',
-                    styles: ['Japanese', 'Neo-Traditional'],
-                    bio: 'Award-winning traditional Japanese artist',
-                    likes: 189,
-                    whatsapp: '+0987654321',
-                    portfolio: [
-                        'https://images.unsplash.com/photo-1565058379802-bbe93b2f703a',
-                        'https://images.unsplash.com/photo-1540202403-b7abd6747a18',
-                        'https://images.unsplash.com/photo-1582736317441-e6937f84b6b3',
-                        'https://images.unsplash.com/photo-1552627019-947c3789ffb5'
-                    ]
-                },
-                {
-                    name: 'Emma Thompson',
-                    location: 'Austin, TX',
-                    styles: ['Watercolor', 'Abstract'],
-                    bio: 'Creating unique watercolor tattoos since 2015',
-                    likes: 156,
-                    whatsapp: '+1122334455',
-                    portfolio: [
-                        'https://images.unsplash.com/photo-1598371839696-5c5bb00bdc28',
-                        'https://images.unsplash.com/photo-1604881991720-f91add269bed',
-                        'https://images.unsplash.com/photo-1590736969955-71cc94901144',
-                        'https://images.unsplash.com/photo-1611501275019-9b5cda994e8d'
-                    ]
-                },
-                {
-                    name: 'Carlos Rodriguez',
-                    location: 'Miami, FL',
-                    styles: ['Blackwork', 'Geometric', 'Tribal'],
-                    bio: 'Bold designs with precision and passion',
-                    likes: 298,
-                    whatsapp: '+9988776655',
-                    portfolio: [
-                        'https://images.unsplash.com/photo-1590736969955-71cc94901144',
-                        'https://images.unsplash.com/photo-1568515045052-f9a854d70bfd',
-                        'https://images.unsplash.com/photo-1582731478949-884de7283343',
-                        'https://images.unsplash.com/photo-1604881991720-f91add269bed'
-                ]
-                }
-            ]; // Correctly closing allArtists array
-            window.displayArtists(allArtists);
-        };
-
-        window.displayArtists = function(artists) {
-            const artistsGrid = document.getElementById('artistsGrid');
-            if (artists.length === 0) {
-                artistsGrid.innerHTML = '<div class="empty-state"><p>No artists found matching your criteria</p></div>';
-                return;
-            }
-            artistsGrid.innerHTML = artists.map(artist => {
-                let portfolioImages = '';
-                if (Array.isArray(artist.portfolio)) {
-                    portfolioImages = artist.portfolio.map((img, index) =>
-                        `<img src="${img}" alt="${artist.name} work ${index + 1}"
-                             class="portfolio-image ${index === 0 ? 'active' : ''}"
-                             style="display: ${index === 0 ? 'block' : 'none'}">`
-                    ).join('');
-                } else {
-                    portfolioImages = `<img src="${artist.portfolio}" alt="${artist.name}" class="portfolio-image active" style="display: block">`;
-                }
-                const stylesHTML = artist.styles.map(style =>
-                    `<span class="style-tag">${style}</span>`
-                ).join('');
-                return `
-                    <div class="artist-card">
-                        <div class="portfolio-gallery">
-                            ${portfolioImages}
-                            <button class="gallery-prev" onclick="changePortfolioImage(this, -1)">‹</button>
-                            <button class="gallery-next" onclick="changePortfolioImage(this, 1)">›</button>
-                        </div>
-                        <div class="artist-info">
-                            <h3>${artist.name}</h3>
-                            <p class="artist-location">📍 ${artist.location}</p>
-                            <p class="artist-bio">${artist.bio}</p>
-                            <div class="artist-styles">
-                                ${stylesHTML}
-                            </div>
-                            <div class="artist-footer">
-                                <span class="artist-likes">❤️ ${artist.likes}</span>
-                                <button class="btn btn-primary btn-sm" onclick="contactArtist('${artist.whatsapp}', '${artist.name}')">
-                                    Contact via WhatsApp
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        };
-
-        window.filterArtists = function() {
-            const locationFilter = document.getElementById('locationFilter');
-            const styleFilter = document.getElementById('styleFilter');
-            const selectedLocation = locationFilter ? locationFilter.value : '';
-            const selectedStyle = styleFilter ? styleFilter.value : '';
-
-            const filtered = allArtists.filter(artist => {
-                const matchesLocation = !selectedLocation || artist.location === selectedLocation;
-                const matchesStyle = !selectedStyle || artist.styles.includes(selectedStyle);
-                return matchesLocation && matchesStyle;
-            });
-            window.displayArtists(filtered);
-        };
-        // --- END ARTIST FUNCTIONS GLOBAL SCOPE ---
-
-
-        document.addEventListener('DOMContentLoaded', () => {
-            console.log('🎨 SkinTip initializing (DOMContentLoaded)!');
-
-            // Initialize auth module (handles redirection for authenticated users)
-            if (typeof auth !== 'undefined' && auth.init) {
-                auth.init();
-            } else {
-                console.error("Auth module not loaded or 'auth.init' is not defined.");
-            }
-
-            // --- UI Element References ---
-            const tattooDesignUploadSection = document.getElementById('tattooDesignUploadSection');
-            const tattooDesignUploadArea = document.getElementById('tattooDesignUploadArea');
-            const tattooDesignFileInput = document.getElementById('tattooDesignFileInput');
-            const tattooDesignPreview = document.getElementById('tattooDesignPreview');
-            const tattooDesignPreviewImg = document.getElementById('tattooDesignPreviewImg');
-            const changeTattooDesignBtn = document.getElementById('changeTattooDesignBtn');
-            const continueToSkinPhotoBtn = document.getElementById('continueToSkinPhotoBtn');
-
-            const skinPhotoUploadSection = document.getElementById('skinPhotoUploadSection');
-            const skinUploadArea = document.getElementById('skinUploadArea');
-            const fileInput = document.getElementById('fileInput');
-            const imagePreview = document.getElementById('imagePreview');
-            const previewImg = document.getElementById('previewImg');
-            const changeImageBtn = document.getElementById('changeImageBtn');
-
-            const drawingSection = document.getElementById('drawingSection');
-            const continueBtn = document.getElementById('continueBtn'); // This is now "Generate Tattoo on Skin"
-
-            const designSection = document.getElementById('designSection'); // This section will be hidden/removed
-            const creditsRemainingDisplay = document.getElementById('creditsRemaining'); // Keep for token display
-            const socialShareDiv = document.getElementById('socialShare');
-            const shareToInstagramBtn = document.getElementById('shareToInstagramBtn');
-            const resultsSection = document.getElementById('resultsSection');
-            const artistsSection = document.getElementById('artistsSection');
-
-
-            // --- Core Logic & State Management ---
-
-            // Initial UI setup and reset function
-            function resetUI() {
-                tattooDesignUploadSection.style.display = 'block';
-                tattooDesignPreview.style.display = 'none';
-                tattooDesignUploadArea.style.display = 'flex';
-                continueToSkinPhotoBtn.style.display = 'none';
-
-                skinPhotoUploadSection.style.display = 'none';
-                imagePreview.style.display = 'none';
-                skinUploadArea.style.display = 'flex';
-
-                drawingSection.style.display = 'none';
-                designSection.style.display = 'none'; // Ensure this is hidden
-                resultsSection.style.display = 'none';
-                artistsSection.style.display = 'none';
-                socialShareDiv.style.display = 'none';
-
-                tattooDesignFileInput.value = '';
-                fileInput.value = '';
-
-                if (window.drawing && drawing.clearCanvas) {
-                    drawing.clearCanvas();
-                }
-                STATE.uploadedTattooDesignBase64 = null;
-                STATE.currentImage = null;
-                STATE.currentMask = null;
-                STATE.generatedImages = [];
-
-                utils.updateTokenDisplay();
-            }
-
-            resetUI(); 
-
-            // --- START Desktop Inactivity Auto-Logout Logic ---
-            let inactivityTimeout; // Holds the timer reference
-
-            // Function to reset the timer (called on user activity)
-            function resetInactivityTimer() {
-                clearTimeout(inactivityTimeout); // Clear any existing timer
-                // Only set a new timer if the user is logged in AND it's likely a desktop device
-                // This heuristic roughly defines desktop vs mobile by checking for touch support.
-                const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (navigator.msMaxTouchPoints > 0);
-                
-                if (!isTouchDevice) { // Apply auto-logout ONLY if NOT a touch device (assumed desktop)
-                    if (STATE.user && STATE.token) { // Only auto-logout if user is currently logged in
-                        inactivityTimeout = setTimeout(handleInactivityLogout, CONFIG.DESKTOP_INACTIVITY_TIMEOUT_MS);
-                        console.log(`Inactivity timer reset. Auto-logout in ${CONFIG.DESKTOP_INACTIVITY_TIMEOUT_MS / 1000 / 60} minutes.`);
-                    } else {
-                        console.log("User not logged in or mobile device, inactivity timer not started/reset.");
-                    }
-                }
-            }
-
-            // Function to be called when inactivity timeout is reached
-            function handleInactivityLogout() {
-                console.log("User inactive for too long. Forcing logout.");
-                utils.showError('You have been logged out due to inactivity.');
-                // Call the unified logout function from auth.js
-                if (typeof auth !== 'undefined' && auth.forceLogoutAndShowModal) {
-                    auth.forceLogoutAndShowModal();
-                } else {
-                    // Fallback for simple logout if auth.js function isn't found
-                    localStorage.removeItem('token');
-                    localStorage.removeItem('user');
-                    STATE.user = null;
-                    STATE.token = null;
-                    utils.updateTokenDisplay();
-                    // window.location.reload(); // Or redirect to login page
-                }
-            }
-
-            // Set up event listeners for user activity across the document
-            const activityEvents = ['mousemove', 'keydown', 'click', 'scroll'];
-            activityEvents.forEach(event => {
-                document.addEventListener(event, resetInactivityTimer);
-            });
-
-            // Initial call to set up the timer when the page finishes loading (if logged in)
-            resetInactivityTimer();
-
-            // --- END Desktop Inactivity Auto-Logout Logic ---
-
-            // --- START Main Event Listeners Block (Correctly placed) ---
-
-            // Tattoo Design Upload
-            tattooDesignUploadArea?.addEventListener('click', () => {
-                console.log("MARKER: Tattoo upload area clicked.");
-                tattooDesignFileInput.click();
-            });
-
-            tattooDesignFileInput?.addEventListener('change', async (e) => {
-                console.log("MARKER: Tattoo file input changed.");
-                if (e.target.files.length > 0) {
-                    await handleTattooDesignFile(e.target.files[0]);
-                }
-            });
-
-            changeTattooDesignBtn?.addEventListener('click', () => {
-                console.log("MARKER: Change tattoo design button clicked.");
-                tattooDesignUploadArea.style.display = 'flex';
-                tattooDesignPreview.style.display = 'none';
-                tattooDesignFileInput.value = '';
-                STATE.uploadedTattooDesignBase64 = null;
-                continueToSkinPhotoBtn.style.display = 'none';
-            });
-
-            async function handleTattooDesignFile(file) {
-                if (!CONFIG.ALLOWED_FILE_TYPES.includes(file.type)) {
-                    utils.showError('Please upload a JPEG, PNG, or WebP image for your tattoo design.');
-                    return;
-                }
-                if (file.size > CONFIG.MAX_FILE_SIZE) {
-                    utils.showError('Tattoo design file size must be less than 5MB.');
-                    return;
-                }
-                // Snippet for index.html - to be pasted INSIDE handleTattooDesignFile function
-
-        // --- NEW: PNG Preference Message ---
-        // If the file is not a PNG, display a warning.
-        if (file.type !== 'image/png') {
-            utils.showError('Heads up! PNG files with transparent backgrounds typically yield the best results for your tattoo design. For optimal realism, consider using a tool like Sora (or similar AI art generators) to create a transparent PNG, or a background removal tool before uploading.');
-            // We still proceed with processing the image, but the user is warned.
-        }
-        // End of snippet
-
-                utils.showLoading('Processing tattoo design...');
-                const reader = new FileReader();
-                reader.onload = async (e) => {
-                    const originalDataURL = e.target.result;
-                    // Pass original file type to resizeImage
-                    const resizedDataURL = await resizeImage(originalDataURL, file.type, 768, 768, 0.9);
-                    STATE.uploadedTattooDesignBase64 = resizedDataURL;
-
-                    tattooDesignUploadArea.style.display = 'none';
-                    tattooDesignPreview.style.display = 'block';
-                    tattooDesignPreviewImg.src = resizedDataURL;
-                    continueToSkinPhotoBtn.style.display = 'block';
-                    utils.hideLoading();
-                };
-                reader.readAsDataURL(file);
-            }
-
-            // Continue to Skin Photo
-            continueToSkinPhotoBtn?.addEventListener('click', () => {
-                console.log("MARKER: Continue to skin photo button clicked.");
-                if (!STATE.uploadedTattooDesignBase64) {
-                    utils.showError('Please upload a tattoo design first.');
-                    return;
-                }
-                tattooDesignUploadSection.style.display = 'none';
-                skinPhotoUploadSection.style.display = 'block';
-                skinPhotoUploadSection.scrollIntoView({ behavior: 'smooth' });
-            });
-
-
-            // Skin Photo Upload 
-            skinUploadArea?.addEventListener('click', () => {
-                console.log("MARKER: Skin upload area clicked.");
-                fileInput.click();
-            });
-
-            fileInput?.addEventListener('change', async (e) => {
-                console.log("MARKER: Skin file input changed.");
-                if (e.target.files.length > 0) {
-                    await handleSkinPhotoFile(e.target.files[0]);
-                }
-            });
-
-            changeImageBtn?.addEventListener('click', () => {
-                console.log("MARKER: Change skin image button clicked.");
-                skinUploadArea.style.display = 'flex';
-                imagePreview.style.display = 'none';
-                fileInput.value = '';
-                STATE.currentImage = null;
-                if (window.drawing && drawing.clearCanvas) {
-                    drawing.clearCanvas();
-                }
-                skinPhotoUploadSection.style.display = 'none';
-                tattooDesignUploadSection.style.display = 'block';
-                tattooDesignUploadSection.scrollIntoView({ behavior: 'smooth' });
-            });
-
-            async function handleSkinPhotoFile(file) {
-                if (!CONFIG.ALLOWED_FILE_TYPES.includes(file.type)) {
-                    utils.showError('Please upload a JPEG, PNG, or WebP image for your skin photo.');
-                    return;
-                }
-                if (file.size > CONFIG.MAX_FILE_SIZE) {
-                    utils.showError('Skin photo file size must be less than 5MB.');
-                    return;
-                }
-
-                utils.showLoading('Processing skin photo...');
-                const reader = new FileReader();
-                reader.onload = async (e) => {
-                    const originalDataURL = e.target.result;
-                    // Pass original file type to resizeImage
-                    const resizedDataURL = await resizeImage(originalDataURL, file.type, 768, 768, 0.8);
-                    
-                    const resizedFile = await (await fetch(resizedDataURL)).blob();
-                    Object.defineProperty(resizedFile, 'name', { value: file.name });
-                    Object.defineProperty(resizedFile, 'type', { value: file.type }); // Use original file type here!
-                    STATE.currentImage = resizedFile;
-
-                    skinUploadArea.style.display = 'none';
-                    imagePreview.style.display = 'block';
-                    previewImg.src = resizedDataURL;
-
-                    if (window.drawing && drawing.init) {
-                        await drawing.init(resizedDataURL);
-                        if (STATE.uploadedTattooDesignBase64) {
-                            const tattooBlob = await (await fetch(STATE.uploadedTattooDesignBase64)).blob();
-                            drawing.handleTattooUpload(tattooBlob);
-                        }
-                    } else {
-                        console.error("drawing.js module not loaded correctly or 'drawing' object not exposed.");
-                    }
-                    utils.hideLoading();
-                };
-                reader.readAsDataURL(file);
-            }
-
-            // Continue from Drawing to Design (NOW DIRECTLY GENERATES)
-            const generateTattooBtn = document.getElementById('captureMaskBtn');
-            generateTattooBtn?.addEventListener('click', async () => {
-                // Combined logic from previous generateBtn here
-                // Ensure user is logged in
-                if (!STATE.user || !STATE.token) {
-                    utils.showError('You must be logged in to generate tattoos.');
-                    auth.showModal(); // Call auth modal (now in welcome.html)
-                    return;
-                }
-
-                if (!STATE.userTokens || STATE.userTokens < CONFIG.TOKEN_COSTS.FLUX_PLACEMENT) {
-                    utils.showError(`Not enough tokens! This action costs ${CONFIG.TOKEN_COSTS.FLUX_PLACEMENT} tokens. You have ${STATE.userTokens || 0}.`);
-                    return;
-                }
-                if (!STATE.uploadedTattooDesignBase64) {
-                    utils.showError('Please upload a tattoo design first.');
-                    return;
-                }
-                if (!STATE.currentImage) {
-                    utils.showError('Please upload your skin photo first.');
-                    return;
-                }
-                // Call captureMask to generate the mask and update the STATE object
-                try {
-                    await drawing.captureMask();
-                } catch (error) {
-                    console.error("Error capturing mask:", error);
-                    utils.showError("Failed to capture tattoo placement. Please ensure both images are uploaded.");
-                    return;
-                }
-                // The mask is now in `window.STATE.currentMask`
-
-
-                utils.showLoading('Generating your tattoo designs...');
-
-                try {
-                    const formData = new FormData();
-                    formData.append('skinImage', STATE.currentImage);
-                    const tattooDesignBlob = await (await fetch(STATE.uploadedTattooDesignBase64)).blob();
-                    // Crucial fix: Use the correct original file type, not hardcoded 'image/jpeg'
-                    // Ensure the name also suggests PNG if the type is PNG
-                    const tattooDesignFileName = tattooDesignBlob.type === 'image/png' ? 'tattoo_design.png' : 'tattoo_design.jpeg';
-                    Object.defineProperty(tattooDesignBlob, 'name', { value: tattooDesignFileName });
-                    Object.defineProperty(tattooDesignBlob, 'type', { value: tattooDesignBlob.type }); // Retain the type from the blob (which comes from toDataURL)
-                    formData.append('tattooDesignImage', tattooDesignBlob);
-                    
-                    let maskToSend = STATE.currentMask;
-                    if (maskToSend && typeof maskToSend === 'string' && maskToSend.startsWith('data:')) {
-                        maskToSend = maskToSend.split(',')[1];
-                    }
-                    formData.append('mask', maskToSend);
-                    formData.append('prompt', '');
-
-                    const response = await fetch(`${CONFIG.API_URL}/generate-final-tattoo`, {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${STATE.token}`
-                        },
-                        body: formData
-                    });
-
-                    if (!response.ok) {
-                        const errorData = await response.json(); // Renamed 'error' to 'errorData' for clarity
-
-                        // --- START Mobile-specific JWT expired handling ---
-                        // Check for 401 status and if the error message includes 'jwt expired'
-                        if (response.status === 401 && (errorData.error && errorData.error.includes('jwt expired'))) {
-                            utils.showError('Your session has expired. Please log in again.');
-                            // Call the dedicated logout function (from auth.js)
-                            if (typeof auth !== 'undefined' && auth.forceLogoutAndShowModal) {
-                                auth.forceLogoutAndShowModal();
-                            }
-                            return; // Important: Stop execution here after handling the specific error
-                        }
-                        // --- END Mobile-specific JWT expired handling ---
-
-                        // If it's not a JWT expired error, then throw the general error
-                        throw new Error(errorData.error || 'Failed to generate tattoo');
-                    }
-
-                    const data = await response.json();
-                    console.log('=== API RESPONSE ===');
-                    console.log('Generated image URLs:', data.images);
-
-                    if (typeof data.tokens_remaining === 'number') {
-                        STATE.userTokens = data.tokens_remaining;
-                    }
-                    utils.updateTokenDisplay();
-
-                    utils.hideLoading();
-
-                    STATE.generatedImages = data.images;
-                    const resultsGrid = document.querySelector('.results-grid');
-                    resultsGrid.innerHTML = STATE.generatedImages.map((imageUrl, index) => `
-                        <div class="result-item">
-                            <img src="${imageUrl}" alt="Generated tattoo ${index + 1}">
-                            <div class="result-actions">
-                                <button class="btn btn-sm btn-outline" onclick="window.open('${imageUrl}', '_blank')">View Full Size</button>
-                            </div>
-                        </div>
-                    `).join('');
-
-                    resultsSection.style.display = 'block';
-                    artistsSection.style.display = 'block';
-                    resultsSection.scrollIntoView({behavior: 'smooth'}); // Scroll to results section
-                    socialShareDiv.style.display = 'block';
-                    window.loadDemoArtistsWithFilter(); // Call global loadDemoArtistsWithFilter
-                    
-                } catch (error) {
-                    console.error('Generation error:', error);
-                    utils.hideLoading();
-                    // --- START Robust Logout for Generic Fetch Errors ---
-                    // If it's a TypeError (like 'Failed to fetch') or other unhandled network/API error,
-                    // assume session might be the issue and force logout.
-                    if (error.message.includes('Failed to fetch') || (error instanceof TypeError)) {
-                         utils.showError('There was a network or server issue. Your session might have expired. Please log in again.');
-                         if (typeof auth !== 'undefined' && auth.forceLogoutAndShowModal) {
-                             auth.forceLogoutAndShowModal();
-                         }
-                    } else if (!error.message.includes('Your session has expired')) { // Avoid double message if already handled above
-                         utils.showError(`Tattoo generation failed: ${error.message}`);
-                    } else { // Fallback for any other unhandled errors.
-                         utils.showError(`Tattoo generation failed: ${error.message}`);
-                    }
-                    // --- END Robust Logout for Generic Fetch Errors ---
-                }
-            });
-
-
-            // Social Share to Instagram
-            shareToInstagramBtn?.addEventListener('click', () => {
-                if (!STATE.generatedImages || STATE.generatedImages.length === 0) {
-                    utils.showError('No images generated yet to share.');
-                    return;
-                }
-                alert('To share to Instagram:\n1. Right-click (or long-press on mobile) on the image(s) below to save them to your device.\n2. Open the Instagram app and upload the saved image(s) as a new post.');
-            });
-
-
-            // Download All button
-            document.getElementById('downloadAllBtn')?.addEventListener('click', async () => {
-                if (!STATE.generatedImages || STATE.generatedImages.length === 0) {
-                    utils.showError('No images generated to download.');
-                    return;
-                }
-                utils.showLoading('Preparing images for download...');
-                for (const imageUrl of STATE.generatedImages) {
-                    try {
-                        const response = await fetch(imageUrl);
-                        const blob = await response.blob();
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        // IMPORTANT: Set download filename based on the actual image type, which should be PNG now
-                        // Infer extension from blob.type, or assume PNG if that's what backend returns
-                        const filenameExtension = blob.type.split('/')[1] || 'png';
-                        a.download = `skintip_tattoo_${Date.now()}.${filenameExtension}`;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        URL.revokeObjectURL(url);
-                    } catch (error) {
-                        console.error('Failed to download image:', imageUrl, error);
-                        utils.showError('Failed to download one or more images.');
-                        break;
-                    }
-                }
-                utils.hideLoading();
-            });
-
-
-            // --- General Navigation & Artist Loading ---
-
-            // New Design button
-                document.getElementById('newDesignBtn')?.addEventListener('click', () => {
-                    resetUI();
-                    tattooDesignUploadSection.scrollIntoView({ behavior: 'smooth' });
-                });
-
-            // The filter event listeners for artists:
-            const locationFilter = document.getElementById('locationFilter');
-            const styleFilter = document.getElementById('styleFilter');
-            locationFilter?.addEventListener('input', window.filterArtists);
-            styleFilter?.addEventListener('change', window.filterArtists);
-
-            console.log('✅ SkinTip ready!');
-        });
-        console.log('Main inline script finished.');
-    </script>
-</body>
-</html>
+
+.container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0 1rem;
+}
+
+/* Navbar */
+.navbar {
+    background-color: #343a40; /* Dark background */
+    color: white;
+    padding: 1rem 0;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.navbar .container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.nav-brand h1 {
+    margin: 0;
+    font-size: 1.8rem;
+    font-weight: 700;
+}
+
+.nav-brand .tagline {
+    font-size: 0.8rem;
+    opacity: 0.8;
+}
+
+.nav-menu {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.user-info {
+    color: #e0e7ff; /* Light blueish for user info */
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+/* Buttons */
+.btn {
+    padding: 0.6rem 1.2rem;
+    border-radius: 0.3rem;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 500;
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+.btn-primary {
+    background-color: #6366f1; /* Indigo */
+    color: white;
+    border: 1px solid #6366f1;
+}
+
+.btn-primary:hover {
+    background-color: #4f46e5; /* Darker indigo */
+}
+
+.btn-outline {
+    background-color: transparent;
+    color: #6366f1;
+    border: 1px solid #6366f1;
+}
+
+.btn-outline:hover {
+    background-color: #e0e7ff; /* Light indigo */
+}
+
+.btn-secondary {
+    background-color: #6b7280; /* Gray */
+    color: white;
+    border: 1px solid #6b7280;
+}
+
+.btn-secondary:hover {
+    background-color: #4b5563; /* Darker gray */
+}
+
+.btn-sm {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.875rem;
+}
+
+.btn-lg {
+    padding: 0.8rem 1.6rem;
+    font-size: 1.1rem;
+}
+
+/* Modals (Auth) */
+.modal {
+    display: none; /* Hidden by default */
+    position: fixed; /* Stay in place */
+    z-index: 1000; /* Sit on top */
+    left: 0;
+    top: 0;
+    width: 100%; /* Full width */
+    height: 100%; /* Full height */
+    overflow: auto; /* Enable scroll if needed */
+    background-color: rgba(0, 0, 0, 0.6); /* Black w/ opacity */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.modal-content {
+    background-color: #fefefe;
+    padding: 2rem;
+    border-radius: 0.5rem;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    max-width: 400px;
+    width: 90%;
+    position: relative;
+    box-sizing: border-box; /* Ensure padding is included in width */
+}
+
+.auth-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* Centers horizontally */
+    text-align: center; /* Centers text within block elements like h2, p */
+}
+
+.auth-container h2 {
+    margin-top: 0;
+    margin-bottom: 1.5rem;
+    color: #343a40;
+    font-size: 1.75rem;
+}
+
+.auth-container form {
+    width: 100%; /* Take full width of its flex container */
+    max-width: 300px; /* Limit the max width of the form itself */
+    margin: 0 auto; /* Center the form if it's narrower than its container */
+    display: flex; /* Make form a flex container */
+    flex-direction: column; /* Stack form groups vertically */
+    align-items: center; /* Center items within the form */
+}
+
+.auth-container .form-group {
+    width: 100%; /* Ensure form groups take full width within the form */
+    margin-bottom: 1rem;
+    text-align: left; /* Align labels/inputs to left within their group */
+}
+
+.auth-container .form-group label {
+    display: block; /* Make label a block element to push input to next line */
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: #4b5563;
+}
+
+.auth-container .form-group input {
+    width: 100%; /* Inputs take full width of their group */
+    padding: 0.75rem;
+    border: 1px solid #ced4da;
+    border-radius: 0.3rem;
+    font-size: 1rem;
+    box-sizing: border-box; /* Include padding/border in element's total width */
+}
+
+.auth-container .form-group input:focus {
+    outline: none;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 0.2rem rgba(99, 102, 241, 0.25);
+}
+
+.auth-container button[type="submit"] {
+    width: 100%; /* Make submit button full width within the form */
+    max-width: 200px; /* Limit its max width */
+    margin-top: 1rem;
+}
+
+.auth-container .auth-switch {
+    margin-top: 1rem;
+    font-size: 0.9rem;
+    color: #6c757d;
+}
+
+.auth-container .auth-switch a {
+    color: #6366f1;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.auth-container .auth-switch a:hover {
+    text-decoration: underline;
+}
+
+.auth-container .error-message {
+    color: #dc3545; /* Red for errors */
+    font-size: 0.875rem;
+    margin-top: 1rem;
+}
+
+
+/* Main content sections */
+.main-content {
+    padding: 2rem 0;
+}
+
+.section {
+    background-color: white;
+    border-radius: 0.5rem;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+}
+
+.section-header {
+    text-align: center;
+    margin-bottom: 1.5rem;
+}
+
+.section-header h2 {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+    color: #343a40;
+}
+
+.section-header p {
+    color: #6c757d;
+    font-size: 1rem;
+}
+
+/* Upload Area styles (Applies to both tattoo and skin upload) */
+.upload-area {
+    border: 2px dashed #ced4da;
+    border-radius: 0.5rem;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center; /* Centers horizontally */
+    text-align: center; /* Centers text within placeholder */
+    cursor: pointer; /* Indicates clickable area */
+    transition: border-color 0.3s ease;
+}
+
+.upload-area:hover {
+    border-color: #6366f1;
+    cursor: pointer; /* Ensure pointer cursor on hover */
+}
+
+.upload-placeholder svg {
+    color: #6366f1;
+    margin-bottom: 1rem;
+}
+
+.upload-placeholder p {
+    margin: 0 0 0.5rem 0;
+    font-weight: 500;
+    color: #495057;
+}
+
+.upload-placeholder span {
+    font-size: 0.875rem;
+    color: #6c757d;
+}
+
+/* Image Preview */
+.image-preview {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 1.5rem;
+}
+
+.image-preview img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 0.5rem;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    margin-bottom: 1rem;
+}
+
+/* Prompt Tip Box (for AI idea generator guidance) */
+.external-idea-guidance {
+    margin-top: 2rem;
+    padding: 1.5rem;
+    background-color: #f8f9fa; /* Light grey background */
+    border-radius: 0.5rem;
+    border: 1px solid #e9ecef;
+    text-align: center; /* Center content within this block */
+}
+
+.external-idea-guidance p {
+    margin-bottom: 1rem;
+    color: #495057;
+    font-size: 0.95rem;
+}
+
+.external-idea-guidance a.btn {
+    margin-top: 0.5rem;
+    display: inline-flex; /* Align icon and text */
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.external-idea-guidance .prompt-tip-box {
+    background-color: #f0f9ff; /* Light blue background */
+    border-left: 4px solid #3b82f6; /* Blue left border */
+    padding: 1rem;
+    margin-top: 1.5rem;
+    border-radius: 0.375rem; /* Rounded corners */
+    color: #1f2937; /* Darker text for readability */
+    font-size: 0.9rem;
+    line-height: 1.5;
+    text-align: left; /* Align text within tip box to left for readability */
+}
+
+.prompt-tip-box .prompt-tip-header {
+    font-weight: 600; /* Semi-bold header */
+    color: #1e40af; /* Darker blue for header */
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+}
+
+.prompt-tip-box .prompt-tip-header::before {
+    content: '💡'; /* Lightbulb icon */
+    margin-right: 0.5rem;
+}
+
+.prompt-tip-box .prompt-tip-content {
+    margin: 0;
+}
+
+
+/* Drawing Canvas Section */
+.drawing-container {
+    position: relative;
+    width: 100%;
+    max-width: 600px; /* Limit canvas width for display */
+    margin: 0 auto 1.5rem auto;
+    border: 1px solid #dee2e6;
+    border-radius: 0.5rem;
+    overflow: hidden; /* Hide any overflow from drawing */
+}
+
+#drawingCanvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    background-color: #e9ecef; /* Fallback background for canvas */
+    touch-action: none; /* Prevent browser touch gestures on canvas */
+}
+
+.drawing-tools {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+/* Credits/Tokens Display */
+.credits-info {
+    text-align: center;
+    margin-bottom: 1.5rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #495057;
+}
+
+/* Results Grid */
+.results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.result-item {
+    background-color: #ffffff;
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.result-item img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    border-top-left-radius: 0.5rem;
+    border-top-right-radius: 0.5rem;
+}
+
+.result-actions {
+    padding: 1rem;
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.results-actions {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+}
+
+/* Artist Grid */
+.filters {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+}
+
+.filter-select {
+    padding: 0.6rem 1rem;
+    border: 1px solid #ced4da;
+    border-radius: 0.3rem;
+    font-size: 1rem;
+    color: #495057;
+    background-color: white;
+}
+
+.artists-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 2rem;
+}
+
+.artist-card {
+    background-color: white;
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.portfolio-gallery {
+    position: relative;
+    width: 100%;
+    height: 200px; /* Fixed height for portfolio images */
+    overflow: hidden;
+}
+
+.portfolio-gallery .portfolio-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: none; /* Hide all but active */
+}
+
+.portfolio-gallery .portfolio-image.active {
+    display: block; /* Show active image */
+}
+
+.gallery-prev, .gallery-next {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background-color: rgba(0, 0, 0, 0.5);
+    color: white;
+    border: none;
+    padding: 0.5rem 0.8rem;
+    cursor: pointer;
+    font-size: 1.5rem;
+    border-radius: 0.3rem;
+    z-index: 10;
+}
+
+.gallery-prev {
+    left: 0.5rem;
+}
+
+.gallery-next {
+    right: 0.5rem;
+}
+
+.artist-info {
+    padding: 1.5rem;
+    flex-grow: 1; /* Allow info section to grow */
+    display: flex;
+    flex-direction: column;
+}
+
+.artist-info h3 {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+    color: #343a40;
+    font-size: 1.5rem;
+}
+
+.artist-location {
+    font-size: 0.9rem;
+    color: #6c757d;
+    margin-bottom: 0.5rem;
+}
+
+.artist-bio {
+    font-size: 0.95rem;
+    color: #495057;
+    margin-bottom: 1rem;
+    flex-grow: 1; /* Allow bio to take available space */
+}
+
+.artist-styles {
+    margin-top: 0.5rem;
+    margin-bottom: 1rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.style-tag {
+    background-color: #e0e7ff;
+    color: #3b82f6;
+    padding: 0.3rem 0.6rem;
+    border-radius: 0.25rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.artist-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1rem;
+    border-top: 1px solid #e9ecef;
+    padding-top: 1rem;
+}
+
+.artist-likes {
+    font-size: 0.9rem;
+    color: #6c757d;
+}
+
+
+/* Footer */
+.footer {
+    background-color: #343a40; /* Dark background */
+    color: white;
+    padding: 2rem 0;
+    font-size: 0.9rem;
+    margin-top: 3rem;
+}
+
+.footer .container {
+    display: flex;
+    flex-direction: column; /* Stack content vertically */
+    align-items: center; /* Center content horizontally */
+}
+
+.footer-content {
+    display: flex;
+    flex-wrap: wrap; /* Allow wrapping on smaller screens */
+    justify-content: center; /* Centers content horizontally */
+    text-align: center; /* Centers text within flex items */
+    gap: 2rem; /* Space between sections */
+    width: 100%; /* Ensure content takes full width for centering */
+    margin-bottom: 2rem;
+}
+
+.footer-section {
+    flex: 1; /* Allow sections to grow */
+    min-width: 180px; /* Minimum width for each section before wrapping */
+    max-width: 300px; /* Max width to prevent sections from becoming too wide on large screens */
+    margin-bottom: 1rem; /* Space between sections when wrapped */
+}
+
+.footer-section h3, .footer-section h4 {
+    color: white;
+    margin-top: 0;
+    margin-bottom: 1rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.footer-section p, .footer-section ul {
+    color: rgba(255, 255, 255, 0.7);
+    margin-bottom: 0.5rem;
+}
+
+.footer-section ul {
+    list-style: none;
+    padding: 0;
+}
+
+.footer-section ul li {
+    margin-bottom: 0.3rem;
+}
+
+.footer-bottom {
+    text-align: center; /* Center the copyright text */
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.2); /* A subtle separator */
+    width: 100%; /* Ensure full width for border */
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .navbar .container {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    .nav-brand {
+        text-align: center;
+    }
+    .nav-menu {
+        width: 100%;
+        justify-content: center;
+    }
+    .hero-section h2 {
+        font-size: 2rem;
+    }
+    .hero-section .hero-tagline {
+        font-size: 1rem;
+    }
+    .steps-grid {
+        grid-template-columns: 1fr;
+    }
+    .artists-grid {
+        grid-template-columns: 1fr;
+    }
+    .footer-content {
+        flex-direction: column;
+        align-items: center;
+    }
+}

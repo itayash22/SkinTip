@@ -751,7 +751,6 @@
                 }
                 formData.append('mask', maskToSend);
                 formData.append('prompt', '');
-                formData.append('tattooAngle', STATE.tattooAngle); // NEW: Send the rotation angle
 
                 const response = await fetch(`${CONFIG.API_URL}/generate-final-tattoo`, {
                     method: 'POST',

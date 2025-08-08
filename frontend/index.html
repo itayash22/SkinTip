@@ -751,6 +751,7 @@
                 }
                 formData.append('mask', maskToSend);
                 formData.append('prompt', '');
+                formData.append('tattooAngle', 0); // Send a default angle of 0
 
                 const response = await fetch(`${CONFIG.API_URL}/generate-final-tattoo`, {
                     method: 'POST',

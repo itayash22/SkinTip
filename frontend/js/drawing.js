@@ -213,6 +213,7 @@ const drawing = {
 
                 drawing.selectedArea = tempCanvas.toDataURL('image/png');
                 console.log("DEBUG: Mask with transformed texture generated and stored.");
+                console.log(`DEBUG: Generated Mask Data URL: ${drawing.selectedArea}`);
 
                 drawing.renderer.setRenderTarget(currentRenderTarget);
                 renderTarget.dispose();

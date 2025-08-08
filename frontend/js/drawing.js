@@ -191,9 +191,9 @@ const drawing = {
             const maskTattoo = drawing.tattooMesh.clone();
             maskTattoo.material = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
-            // 4. Manually copy transformations to the clone
+            // 4. Manually copy transformations to the clone (but not rotation)
             maskTattoo.position.copy(drawing.tattooMesh.position);
-            maskTattoo.rotation.copy(drawing.tattooMesh.rotation);
+            maskTattoo.rotation.set(0, 0, 0);
             maskTattoo.scale.copy(drawing.tattooMesh.scale);
 
             maskScene.add(maskTattoo);

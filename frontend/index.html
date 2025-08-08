@@ -751,10 +751,7 @@
                 }
                 formData.append('mask', maskToSend);
                 formData.append('prompt', '');
-                const rotationSlider = document.getElementById('rotationSlider');
-                const angle = rotationSlider.value;
-                console.log(`DEBUG: Appending tattooAngle to form data: ${angle}`);
-                formData.append('tattooAngle', angle);
+                console.log("DEBUG: All transformation data is now baked into the mask.");
 
                 const response = await fetch(`${CONFIG.API_URL}/generate-final-tattoo`, {
                     method: 'POST',

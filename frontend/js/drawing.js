@@ -191,10 +191,15 @@ const drawing = {
             const maskTattoo = drawing.tattooMesh.clone();
             maskTattoo.material = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
+            console.log(`DEBUG: Interactive tattoo rotation (rad): ${drawing.tattooMesh.rotation.z}`);
+            console.log(`DEBUG: Mask tattoo rotation before copy: ${maskTattoo.rotation.z}`);
+
             // 4. Manually copy transformations to the clone (but not rotation)
             maskTattoo.position.copy(drawing.tattooMesh.position);
             maskTattoo.rotation.set(0, 0, 0);
             maskTattoo.scale.copy(drawing.tattooMesh.scale);
+
+            console.log(`DEBUG: Mask tattoo rotation after setting to 0: ${maskTattoo.rotation.z}`);
 
             maskScene.add(maskTattoo);
 

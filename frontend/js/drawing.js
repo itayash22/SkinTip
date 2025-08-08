@@ -169,68 +169,51 @@ const drawing = {
                 return resolve();
             }
 
-            // Get the dimensions of the plane in the 3D scene
             const planeWidth = drawing.skinMesh.geometry.parameters.width;
             const planeHeight = drawing.skinMesh.geometry.parameters.height;
-
-            // Get the dimensions of the original (resized) skin image
             const maskWidth = drawing.originalImage.width;
             const maskHeight = drawing.originalImage.height;
 
             console.log(`DEBUG: Generating mask with dimensions: ${maskWidth}x${maskHeight}`);
 
-            // 1. Create an orthographic camera that looks at the 3D plane
             const orthoCamera = new THREE.OrthographicCamera(-planeWidth / 2, planeWidth / 2, planeHeight / 2, -planeHeight / 2, 1, 1000);
             orthoCamera.position.z = 100;
 
-            // 2. Create a temporary scene for mask rendering
             const maskScene = new THREE.Scene();
-            maskScene.background = new THREE.Color(0x000000); // Black background
+            maskScene.background = new THREE.Color(0x000000);
 
-            // 3. Clone the tattoo mesh and give it a pure white material
+            // Clone the tattoo mesh, but use its original material (with the texture)
             const maskTattoo = drawing.tattooMesh.clone();
-            maskTattoo.material = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
-            console.log(`DEBUG: Interactive tattoo rotation (rad): ${drawing.tattooMesh.rotation.z}`);
-            console.log(`DEBUG: Mask tattoo rotation before copy: ${maskTattoo.rotation.z}`);
-
-            // 4. Manually copy transformations to the clone (but not rotation)
+            // Manually copy transformations to the clone
             maskTattoo.position.copy(drawing.tattooMesh.position);
-            maskTattoo.rotation.set(0, 0, 0);
+            maskTattoo.rotation.copy(drawing.tattooMesh.rotation);
             maskTattoo.scale.copy(drawing.tattooMesh.scale);
-
-            console.log(`DEBUG: Mask tattoo rotation after setting to 0: ${maskTattoo.rotation.z}`);
 
             maskScene.add(maskTattoo);
 
-            // 5. Render the mask scene to a render target of the correct size
             const currentRenderTarget = drawing.renderer.getRenderTarget();
             const renderTarget = new THREE.WebGLRenderTarget(maskWidth, maskHeight);
             drawing.renderer.setRenderTarget(renderTarget);
             drawing.renderer.render(maskScene, orthoCamera);
 
-            // 6. Read the pixels from the render target
             const pixels = new Uint8Array(maskWidth * maskHeight * 4);
             drawing.renderer.readRenderTargetPixels(renderTarget, 0, 0, maskWidth, maskHeight, pixels);
 
-            // Create a 2D canvas to transfer the pixels to
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = maskWidth;
             tempCanvas.height = maskHeight;
             const ctx = tempCanvas.getContext('2d');
             const imageData = new ImageData(new Uint8ClampedArray(pixels.buffer), maskWidth, maskHeight);
 
-            // The image is flipped vertically from WebGL, so we need to flip it back
             createImageBitmap(imageData).then(bitmap => {
                 ctx.scale(1, -1);
                 ctx.translate(0, -maskHeight);
                 ctx.drawImage(bitmap, 0, 0);
 
-                // 7. Get the final Data URL
                 drawing.selectedArea = tempCanvas.toDataURL('image/png');
-                console.log("DEBUG: Mask generated and stored.");
+                console.log("DEBUG: Mask with transformed texture generated and stored.");
 
-                // 8. Clean up and restore original state
                 drawing.renderer.setRenderTarget(currentRenderTarget);
                 renderTarget.dispose();
 

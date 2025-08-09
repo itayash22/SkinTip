@@ -185,10 +185,10 @@ const drawing = {
             // Clone the tattoo mesh, but use its original material (with the texture)
             const maskTattoo = drawing.tattooMesh.clone();
 
-            // Manually copy transformations to the clone
+            // Manually copy transformations to the clone, but not scale or rotation
             maskTattoo.position.copy(drawing.tattooMesh.position);
-            maskTattoo.rotation.copy(drawing.tattooMesh.rotation);
-            maskTattoo.scale.copy(drawing.tattooMesh.scale);
+            maskTattoo.rotation.set(0, 0, 0);
+            maskTattoo.scale.set(1, 1, 1);
 
             maskScene.add(maskTattoo);
 

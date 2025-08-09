@@ -737,7 +737,17 @@
             try {
                 const formData = new FormData();
                 formData.append('skinImage', STATE.currentImage);
-                const tattooDesignBlob = await (await fetch(STATE.uploadedTattooDesignBase64)).blob();
+
+                // --- NEW: Generate and use the scaled tattoo data ---
+                const scaledTattooDataUrl = await window.drawing.getScaledTattooData();
+                if (!scaledTattooDataUrl) {
+                    utils.showError('Could not generate the scaled tattoo image. Please try again.');
+                    utils.hideLoading();
+                    return;
+                }
+                const tattooDesignBlob = await (await fetch(scaledTattooDataUrl)).blob();
+                // --- END NEW ---
+
                 // Crucial fix: Use the correct original file type, not hardcoded 'image/jpeg'
                 // Ensure the name also suggests PNG if the type is PNG
                 const tattooDesignFileName = tattooDesignBlob.type === 'image/png' ? 'tattoo_design.png' : 'tattoo_design.jpeg';

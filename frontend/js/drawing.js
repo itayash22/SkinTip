@@ -19,7 +19,7 @@ const drawing = {
             console.error("DEBUG: drawingCanvas not found!");
             return;
         }
-        drawing.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+        drawing.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true, alpha: true });
         drawing.renderer.setSize(600, 450); // Initial size, will be adjusted
         drawing.scene = new THREE.Scene();
         drawing.scene.background = new THREE.Color(0xeeeeee);
@@ -180,7 +180,7 @@ const drawing = {
             orthoCamera.position.z = 100;
 
             const maskScene = new THREE.Scene();
-            maskScene.background = new THREE.Color(0x000000);
+            // The background is intentionally left transparent
 
             // Clone the tattoo mesh, but use its original material (with the texture)
             const maskTattoo = drawing.tattooMesh.clone();
@@ -195,6 +195,11 @@ const drawing = {
             const currentRenderTarget = drawing.renderer.getRenderTarget();
             const renderTarget = new THREE.WebGLRenderTarget(maskWidth, maskHeight);
             drawing.renderer.setRenderTarget(renderTarget);
+
+            // Clear the render target to transparent before rendering
+            drawing.renderer.setClearColor(0x000000, 0);
+            drawing.renderer.clear();
+
             drawing.renderer.render(maskScene, orthoCamera);
 
             const pixels = new Uint8Array(maskWidth * maskHeight * 4);

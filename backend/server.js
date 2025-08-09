@@ -332,73 +332,57 @@ app.post('/api/generate-final-tattoo',
             }
 
             const tokensRequired = process.env.NODE_ENV === 'development' ? 0 : 15;
+            const hasEnoughTokens = await tokenService.checkTokens(userId, 'FLUX_PLACEMENT', tokensRequired);
+            if (!hasEnoughTokens) {
+                return res.status(402).json({ error: `Insufficient tokens. This action costs ${tokensRequired} tokens.` });
+            }
 
-            // --- ATOMIC TRANSACTION: Deduct tokens BEFORE calling the expensive API ---
-            await tokenService.deductTokens(userId, 'FLUX_PLACEMENT', tokensRequired, `Tattoo placement for user ${userId}`);
-            console.log(`Tokens deducted for user ${userId}. Proceeding with FLUX API call.`);
+            const skinImageBuffer = skinImageFile.buffer;
+            const tattooDesignImageBase64 = tattooDesignImageFile.buffer.toString('base64');
 
-            let generatedImageUrls;
+            if (!isValidBase64(tattooDesignImageBase64) || !isValidBase64(mask)) {
+                console.error('Server: Invalid Base64 data detected for tattoo design or mask. Returning 400.');
+                return res.status(400).json({ error: 'Invalid image data detected during processing.' });
+            }
+
+            let skinImageDimensions, tattooDesignDimensions, maskDimensions;
             try {
-                const skinImageBuffer = skinImageFile.buffer;
-                const tattooDesignImageBase64 = tattooDesignImageFile.buffer.toString('base64');
+                skinImageDimensions = sizeOf(skinImageBuffer);
+                tattooDesignDimensions = sizeOf(Buffer.from(tattooDesignImageBase64, 'base64'));
+                maskDimensions = sizeOf(Buffer.from(mask, 'base64'));
 
-                if (!isValidBase64(tattooDesignImageBase64) || !isValidBase64(mask)) {
-                    console.error('Server: Invalid Base64 data detected for tattoo design or mask. Returning 400.');
-                    throw new Error('Invalid image data detected during processing.');
+                console.log(`Skin Image Dims: ${skinImageDimensions.width}x${skinImageDimensions.height}`);
+                console.log(`Tattoo Design Dims: ${tattooDesignDimensions.width}x${tattooDesignDimensions.height}`);
+                console.log(`Mask Dims: ${maskDimensions.width}x${maskDimensions.height}`);
+
+                if (skinImageDimensions.width !== maskDimensions.width || skinImageDimensions.height !== maskDimensions.height) {
+                    console.error('Skin image and Mask dimensions do NOT match!');
+                    return res.status(400).json({ error: 'Skin image and mask dimensions must be identical.' });
                 }
-
-                let skinImageDimensions, tattooDesignDimensions, maskDimensions;
-                try {
-                    skinImageDimensions = sizeOf(skinImageBuffer);
-                    tattooDesignDimensions = sizeOf(Buffer.from(tattooDesignImageBase64, 'base64'));
-                    maskDimensions = sizeOf(Buffer.from(mask, 'base64'));
-
-                    console.log(`Skin Image Dims: ${skinImageDimensions.width}x${skinImageDimensions.height}`);
-                    console.log(`Tattoo Design Dims: ${tattooDesignDimensions.width}x${tattooDesignDimensions.height}`);
-                    console.log(`Mask Dims: ${maskDimensions.width}x${maskDimensions.height}`);
-
-                    if (skinImageDimensions.width !== maskDimensions.width || skinImageDimensions.height !== maskDimensions.height) {
-                        console.error('Skin image and Mask dimensions do NOT match!');
-                        throw new Error('Skin image and mask dimensions must be identical.');
-                    }
-                } catch (dimError) {
-                    console.error('Error getting image/mask dimensions:', dimError.message);
-                    throw new Error('Failed to read image dimensions for validation.');
-                }
-
-                generatedImageUrls = await fluxKontextHandler.placeTattooOnSkin(
-                    skinImageBuffer,
-                    tattooDesignImageBase64,
-                    mask,
-                    userId,
-                    3,
-                    process.env.FLUX_API_KEY,
-                    parseInt(tattooAngle)
-                );
-            } catch (fluxError) {
-                // If the FLUX call or any pre-processing fails, refund the tokens.
-                console.error(`FLUX process failed for user ${userId}. Refunding tokens. Error:`, fluxError.message);
-                await tokenService.addTokens(userId, tokensRequired, `Refund for failed FLUX call: ${fluxError.message}`);
-                // Re-throw the error to be caught by the main catch block and sent to the user.
-                throw fluxError;
+            } catch (dimError) {
+                console.error('Error getting image/mask dimensions:', dimError.message);
+                return res.status(500).json({ error: 'Failed to read image dimensions for validation.' });
             }
 
-            // --- END ATOMIC TRANSACTION ---
+            // --- CRITICAL FIX HERE: ARGUMENT ORDER ---
+            // The 'prompt: userPromptText' from req.body is no longer passed to fluxKontextHandler.placeTattooOnSkin
+            const generatedImageUrls = await fluxKontextHandler.placeTattooOnSkin(
+                skinImageBuffer,
+                tattooDesignImageBase64,
+                mask,
+                userId,          // Corresponds to 'userId' in fluxPlacementHandler.js
+                3,               // Corresponds to 'numVariations' in fluxPlacementHandler.js
+                process.env.FLUX_API_KEY, // Corresponds to 'fluxApiKey' in fluxPlacementHandler.js
+                parseInt(tattooAngle)
+            );
+            // --- END CRITICAL FIX ---
 
-            // Fetch the new token balance to return to the user
-            const { data: user, error: userError } = await supabase
-                .from('users')
-                .select('tokens_remaining')
-                .eq('id', userId)
-                .single();
-
-            if (userError || !user) {
-                console.error('Failed to fetch final token balance for user, but the operation was successful.');
-            }
+            const newTokens = await tokenService.deductTokens(userId, 'FLUX_PLACEMENT', tokensRequired, `Tattoo placement for user ${userId}`);
+            console.log('Tokens deducted successfully. New balance:', newTokens);
 
             res.json({
                 images: generatedImageUrls,
-                tokens_remaining: user ? user.tokens_remaining : req.user.tokens_remaining - tokensRequired // Fallback
+                tokens_remaining: newTokens
             });
 
         } catch (error) {

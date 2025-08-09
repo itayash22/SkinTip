@@ -219,10 +219,6 @@ let tattooForPlacement;
 try {
     tattooForPlacement = await sharp(tattooDesignPngWithRemovedBackground) // Use the background-removed PNG buffer
         .rotate(tattooAngle) // NEW: Rotate the image here based on the angle
-        .resize(maskBoundingBox.width, maskBoundingBox.height, {
-            fit: 'contain',
-            background: { r: 0, g: 0, b: 0, alpha: 0 } // Ensures transparent background if tattoo is smaller than bounding box
-        })
         .toBuffer();
             console.log(`Tattoo design resized specifically for mask bounding box: ${maskBoundingBox.width}x${maskBoundingBox.height}.`);
         } catch (error) {

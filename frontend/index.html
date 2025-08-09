@@ -756,11 +756,6 @@
                 console.log(`DEBUG: Inverting angle. Appending tattooAngle to form data: ${angle}`);
                 formData.append('tattooAngle', angle);
 
-                const sizeSlider = document.getElementById('sizeSlider');
-                const scale = parseFloat(sizeSlider.value) / 100;
-                console.log(`DEBUG: Appending tattooScale to form data: ${scale}`);
-                formData.append('tattooScale', scale);
-
                 const response = await fetch(`${CONFIG.API_URL}/generate-final-tattoo`, {
                     method: 'POST',
                     headers: {

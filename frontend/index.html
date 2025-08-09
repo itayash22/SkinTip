@@ -122,7 +122,7 @@
                 <div class="drawing-tools">
                     <div class="rotation-control">
                         <label for="rotationSlider">Rotate Tattoo: <span id="rotationValue">0°</span></label>
-                        <input type="range" id="rotationSlider" min="-45" max="45" value="0">
+                        <input type="range" id="rotationSlider" min="-180" max="180" value="0">
                     </div>
                     <div class="size-control" style="margin-left: 1rem;">
                         <label for="sizeSlider">Resize Tattoo: <span id="sizeValue">100%</span></label>
@@ -755,6 +755,11 @@
                 const angle = -rotationSlider.value; // Invert the angle for the backend
                 console.log(`DEBUG: Inverting angle. Appending tattooAngle to form data: ${angle}`);
                 formData.append('tattooAngle', angle);
+
+                const sizeSlider = document.getElementById('sizeSlider');
+                const scale = parseFloat(sizeSlider.value) / 100;
+                console.log(`DEBUG: Appending tattooScale to form data: ${scale}`);
+                formData.append('tattooScale', scale);
 
                 const response = await fetch(`${CONFIG.API_URL}/generate-final-tattoo`, {
                     method: 'POST',

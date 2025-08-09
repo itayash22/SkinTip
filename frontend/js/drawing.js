@@ -228,6 +228,43 @@ const drawing = {
         });
     },
 
+    getScaledTattooData: () => {
+        return new Promise((resolve) => {
+            console.log("DEBUG: getScaledTattooData started.");
+            if (!drawing.renderer || !drawing.tattooMesh) {
+                console.error("DEBUG: Cannot generate scaled tattoo: components not initialized.");
+                return resolve(null);
+            }
+
+            const tattoo = drawing.tattooMesh;
+            const texture = tattoo.material.map;
+            if (!texture || !texture.image) {
+                console.error("DEBUG: Tattoo texture not loaded.");
+                return resolve(null);
+            }
+
+            // Get original texture dimensions
+            const originalWidth = texture.image.width;
+            const originalHeight = texture.image.height;
+
+            // Apply the mesh's scale to the dimensions
+            const scaledWidth = originalWidth * tattoo.scale.x;
+            const scaledHeight = originalHeight * tattoo.scale.y;
+
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = scaledWidth;
+            tempCanvas.height = scaledHeight;
+            const ctx = tempCanvas.getContext('2d');
+
+            // Draw the original image onto the canvas at the new scaled size
+            ctx.drawImage(texture.image, 0, 0, scaledWidth, scaledHeight);
+
+            const dataUrl = tempCanvas.toDataURL('image/png');
+            console.log("DEBUG: Scaled tattoo data generated.");
+            resolve(dataUrl);
+        });
+    },
+
     clearCanvas: () => {
         if (drawing.renderer) {
             drawing.renderer.setAnimationLoop(null);

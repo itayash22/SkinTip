@@ -752,8 +752,8 @@
                 formData.append('mask', maskToSend);
                 formData.append('prompt', '');
                 const rotationSlider = document.getElementById('rotationSlider');
-                const angle = rotationSlider.value;
-                console.log(`DEBUG: Appending tattooAngle to form data: ${angle}`);
+                const angle = -rotationSlider.value; // Invert the angle for the backend
+                console.log(`DEBUG: Inverting angle. Appending tattooAngle to form data: ${angle}`);
                 formData.append('tattooAngle', angle);
 
                 const response = await fetch(`${CONFIG.API_URL}/generate-final-tattoo`, {

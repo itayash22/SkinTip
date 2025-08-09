@@ -737,17 +737,7 @@
             try {
                 const formData = new FormData();
                 formData.append('skinImage', STATE.currentImage);
-
-                // --- NEW: Generate and use the scaled tattoo data ---
-                const scaledTattooDataUrl = await window.drawing.getScaledTattooData();
-                if (!scaledTattooDataUrl) {
-                    utils.showError('Could not generate the scaled tattoo image. Please try again.');
-                    utils.hideLoading();
-                    return;
-                }
-                const tattooDesignBlob = await (await fetch(scaledTattooDataUrl)).blob();
-                // --- END NEW ---
-
+                const tattooDesignBlob = await (await fetch(STATE.uploadedTattooDesignBase64)).blob();
                 // Crucial fix: Use the correct original file type, not hardcoded 'image/jpeg'
                 // Ensure the name also suggests PNG if the type is PNG
                 const tattooDesignFileName = tattooDesignBlob.type === 'image/png' ? 'tattoo_design.png' : 'tattoo_design.jpeg';
@@ -765,6 +755,10 @@
                 const angle = -rotationSlider.value; // Invert the angle for the backend
                 console.log(`DEBUG: Inverting angle. Appending tattooAngle to form data: ${angle}`);
                 formData.append('tattooAngle', angle);
+
+                const sizeSlider = document.getElementById('sizeSlider');
+                const scale = parseFloat(sizeSlider.value) / 100;
+                formData.append('tattooScale', scale);
 
                 const response = await fetch(`${CONFIG.API_URL}/generate-final-tattoo`, {
                     method: 'POST',

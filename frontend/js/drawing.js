@@ -19,7 +19,7 @@ const drawing = {
             console.error("DEBUG: drawingCanvas not found!");
             return;
         }
-        drawing.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true, alpha: true });
+        drawing.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
         drawing.renderer.setSize(600, 450); // Initial size, will be adjusted
         drawing.scene = new THREE.Scene();
         drawing.scene.background = new THREE.Color(0xeeeeee);
@@ -180,7 +180,7 @@ const drawing = {
             orthoCamera.position.z = 100;
 
             const maskScene = new THREE.Scene();
-            // The background is intentionally left transparent
+            maskScene.background = new THREE.Color(0x000000);
 
             // Clone the tattoo mesh, but use its original material (with the texture)
             const maskTattoo = drawing.tattooMesh.clone();
@@ -195,11 +195,6 @@ const drawing = {
             const currentRenderTarget = drawing.renderer.getRenderTarget();
             const renderTarget = new THREE.WebGLRenderTarget(maskWidth, maskHeight);
             drawing.renderer.setRenderTarget(renderTarget);
-
-            // Clear the render target to transparent before rendering
-            drawing.renderer.setClearColor(0x000000, 0);
-            drawing.renderer.clear();
-
             drawing.renderer.render(maskScene, orthoCamera);
 
             const pixels = new Uint8Array(maskWidth * maskHeight * 4);
@@ -225,43 +220,6 @@ const drawing = {
 
                 resolve();
             });
-        });
-    },
-
-    getScaledTattooData: () => {
-        return new Promise((resolve) => {
-            console.log("DEBUG: getScaledTattooData started.");
-            if (!drawing.renderer || !drawing.tattooMesh) {
-                console.error("DEBUG: Cannot generate scaled tattoo: components not initialized.");
-                return resolve(null);
-            }
-
-            const tattoo = drawing.tattooMesh;
-            const texture = tattoo.material.map;
-            if (!texture || !texture.image) {
-                console.error("DEBUG: Tattoo texture not loaded.");
-                return resolve(null);
-            }
-
-            // Get original texture dimensions
-            const originalWidth = texture.image.width;
-            const originalHeight = texture.image.height;
-
-            // Apply the mesh's scale to the dimensions
-            const scaledWidth = originalWidth * tattoo.scale.x;
-            const scaledHeight = originalHeight * tattoo.scale.y;
-
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = scaledWidth;
-            tempCanvas.height = scaledHeight;
-            const ctx = tempCanvas.getContext('2d');
-
-            // Draw the original image onto the canvas at the new scaled size
-            ctx.drawImage(texture.image, 0, 0, scaledWidth, scaledHeight);
-
-            const dataUrl = tempCanvas.toDataURL('image/png');
-            console.log("DEBUG: Scaled tattoo data generated.");
-            resolve(dataUrl);
         });
     },
 

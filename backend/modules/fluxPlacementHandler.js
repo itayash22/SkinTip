@@ -216,36 +216,52 @@ const fluxPlacementHandler = {
         // --- Step 2.3: Resize the tattoo design to fit the mask's bounding box and prepare for placement ---
         // --- Step 2.3: Resize the tattoo design to fit the mask's bounding box and prepare for placement ---
 let tattooForPlacement;
+let scaledTattooWidth;
 try {
-    const originalTattooWidth = tattooMeta.width;
-    const newWidth = Math.round(originalTattooWidth * tattooScale);
-
-    tattooForPlacement = await sharp(tattooDesignPngWithRemovedBackground) // Use the background-removed PNG buffer
-        .rotate(tattooAngle) // NEW: Rotate the image here based on the angle
-        .resize(newWidth) // Resize based on scale, maintaining aspect ratio
+    scaledTattooWidth = Math.round(tattooMeta.width * tattooScale);
+    tattooForPlacement = await sharp(tattooDesignPngWithRemovedBackground)
+        .rotate(tattooAngle)
+        .resize(scaledTattooWidth) // Resize based on scale, maintaining aspect ratio
         .toBuffer();
-    console.log(`Tattoo design resized with scale factor ${tattooScale} to width: ${newWidth}.`);
+    console.log(`Tattoo design resized with scale factor ${tattooScale} to width: ${scaledTattooWidth}.`);
 } catch (error) {
     console.error('Error resizing tattoo design for placement:', error);
     throw new Error('Failed to resize tattoo design for placement within mask area.');
 }
 
-        // 3. **Manual Composition with Sharp (Hybrid Approach Step 1)**
-        let compositedImageBuffer;
-        try {
-            compositedImageBuffer = await sharp(skinImageBuffer)
-                .composite([
-                    {
-                        input: tattooForPlacement,
-                        blend: 'over',
-                        tile: false,
-                        left: maskBoundingBox.minX,
-                        top: maskBoundingBox.minY,
-                        mask: maskBuffer // Apply the drawn mask here
-                    }
-                ])
-                .png() // Output as PNG to preserve transparency for subsequent steps/display!
-                .toBuffer();
+// 3. **Manual Composition with Sharp (Hybrid Approach Step 1)**
+let compositedImageBuffer;
+try {
+    // Create a new transparent canvas of the same size as the skin image
+    const positionedTattooCanvas = await sharp({
+        create: {
+            width: skinMetadata.width,
+            height: skinMetadata.height,
+            channels: 4,
+            background: { r: 0, g: 0, b: 0, alpha: 0 }
+        }
+    })
+    .composite([
+        {
+            input: tattooForPlacement,
+            left: maskBoundingBox.minX,
+            top: maskBoundingBox.minY
+        }
+    ])
+    .png()
+    .toBuffer();
+
+    // Composite the positioned tattoo canvas onto the skin image, using the mask
+    compositedImageBuffer = await sharp(skinImageBuffer)
+        .composite([
+            {
+                input: positionedTattooCanvas,
+                blend: 'over',
+                mask: maskBuffer // Apply the drawn mask here
+            }
+        ])
+        .png() // Output as PNG to preserve transparency for subsequent steps/display!
+        .toBuffer();
             console.log('Tattoo manually composited onto skin image with correct sizing, positioning, and clipping. Output format: PNG.');
 
             // --- DEBUGGING STEP: UPLOAD AND LOG INTERMEDIATE IMAGE ---

@@ -72,7 +72,7 @@ const fluxPlacementHandler = {
         try {
             console.log('Calling Remove.bg API for background removal...');
             const formData = new FormData();
-            // NOTE: Keep existing approach as-is (only relevant changes elsewhere)
+            // Keep as-is (relevant changes are elsewhere)
             formData.append('image_file', new Blob([imageBuffer], { type: 'image/png' }), 'tattoo_design.png'); // Send as PNG
             formData.append('size', 'auto');
             formData.append('format', 'png'); // Request PNG output from remove.bg
@@ -145,7 +145,7 @@ const fluxPlacementHandler = {
      * Uploads an image buffer to Supabase Storage and returns its public URL.
      */
     uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '', contentType = 'image/jpeg') => {
-        // Fix: Ensure correct path construction without double slashes
+        // Ensure correct path construction without double slashes
         const filePath = folder ? `${userId}/${folder}/${fileName}` : `${userId}/${fileName}`;
         const { data, error } = await supabase.storage
             .from(SUPABASE_STORAGE_BUCKET)
@@ -207,7 +207,7 @@ const fluxPlacementHandler = {
         const skinHeight = skinMetadata.height;
         console.log(`Skin image meta: format=${skinMetadata.format}, channels=${skinMetadata.channels}, hasAlpha=${skinMetadata.hasAlpha}`);
 
-        // --- CHANGE: Normalize mask -> skin size for consistent coordinates ---
+        // --- Normalize mask -> skin size for consistent coordinates ---
         const maskPngSameAsSkin = await sharp(originalMaskBuffer)
             .resize({ width: skinWidth, height: skinHeight })
             .grayscale()
@@ -220,7 +220,7 @@ const fluxPlacementHandler = {
             throw new Error('Drawn mask area is too small or empty. Please draw a visible area.');
         }
 
-        // --- CHANGE: Recompute bbox in skin-space using scale factors ---
+        // --- Recompute bbox in skin-space using scale factors ---
         const scaleX = skinWidth / maskMetadata.width;
         const scaleY = skinHeight / maskMetadata.height;
         const bboxSkin = {
@@ -240,7 +240,7 @@ const fluxPlacementHandler = {
             console.log(`LOG: tattooAngle=${tattooAngle}, tattooScale=${tattooScale}`);
             console.log(`LOG: BBOX (skin space): x=${bboxSkin.minX}, y=${bboxSkin.minY}, w=${bboxSkin.width}, h=${bboxSkin.height}`);
 
-            // --- CHANGE: Remove arbitrary magnification; rely on tattooScale and bbox size only ---
+            // Remove arbitrary magnification; rely on tattooScale and bbox size only
             const targetWidth = Math.round(bboxSkin.width * tattooScale);
             const targetHeight = Math.round(bboxSkin.height * tattooScale);
 
@@ -251,7 +251,7 @@ const fluxPlacementHandler = {
                     height: targetHeight,
                     fit: sharp.fit.inside,
                     withoutEnlargement: false,
-                    kernel: sharp.kernel.lanczos3 // crisp; swap to sharp.kernel.nearest for very line-art designs
+                    kernel: sharp.kernel.lanczos3 // swap to sharp.kernel.nearest for very line-art designs
                 })
                 .toBuffer();
             const resizedMeta = await sharp(resizedTattooBuffer).metadata();
@@ -269,6 +269,10 @@ const fluxPlacementHandler = {
             placementLeft = Math.round(bboxSkin.minX + (bboxSkin.width - rotatedMeta.width) / 2);
             placementTop = Math.round(bboxSkin.minY + (bboxSkin.height - rotatedMeta.height) / 2);
 
+            // --- Clamp placement to ensure some overlap with the canvas (prevents total cut-away) ---
+            placementLeft = Math.max(-rotatedMeta.width, Math.min(placementLeft, skinWidth));
+            placementTop  = Math.max(-rotatedMeta.height, Math.min(placementTop, skinHeight));
+
             console.log(`LOG: FINAL PLACEMENT: top=${placementTop}, left=${placementLeft}`);
             console.log(`--- TATTOO TRANSFORM DEBUG END ---`);
 
@@ -277,7 +281,7 @@ const fluxPlacementHandler = {
             throw new Error('Failed to resize tattoo design for placement within the mask area.');
         }
 
-        // --- CHANGE: Deterministic composition with proper masking and premultiplication ---
+        // --- Deterministic composition with proper masking and premultiplication ---
         let compositedImageBuffer;
         try {
             // 1) Place the rotated tattoo on a transparent full-size canvas
@@ -305,8 +309,54 @@ const fluxPlacementHandler = {
                 .png()
                 .toBuffer();
 
+            // --- AUTO-RECOVERY: detect inverted/empty mask and retry with inverted mask if needed ---
+            let needInvert = false;
+            const metaMasked = await sharp(tattooMasked).metadata();
+            if (metaMasked.channels === 4) {
+                const raw = await sharp(tattooMasked).ensureAlpha().raw().toBuffer();
+                let alphaSum = 0;
+                for (let i = 3; i < raw.length; i += 4) alphaSum += raw[i];
+                const alphaAvg = alphaSum / (metaMasked.width * metaMasked.height);
+                if (alphaAvg < 1) {
+                    console.warn('Mask likely inverted or empty. Alpha average ≈ 0 after dest-in. Will try inverted mask.');
+                    needInvert = true;
+                }
+            }
+
+            let tattooMaskedFixed = tattooMasked;
+            if (needInvert) {
+                const invertedMask = await sharp(maskPngSameAsSkin)
+                    .linear(-1, 255) // invert grayscale: new = -old + 255
+                    .png()
+                    .toBuffer();
+
+                tattooMaskedFixed = await sharp(tattooCanvas)
+                    .composite([{ input: invertedMask, blend: 'dest-in' }])
+                    .png()
+                    .toBuffer();
+
+                // Sanity check again (log only)
+                const raw2 = await sharp(tattooMaskedFixed).ensureAlpha().raw().toBuffer();
+                let alphaSum2 = 0;
+                for (let i = 3; i < raw2.length; i += 4) alphaSum2 += raw2[i];
+                const alphaAvg2 = alphaSum2 / (metaMasked.width * metaMasked.height);
+                console.log(`Alpha avg after inverted dest-in: ${alphaAvg2.toFixed(2)}`);
+
+                // Optional: upload debug layers
+                try {
+                    const maskUrl = await fluxPlacementHandler.uploadToSupabaseStorage(maskPngSameAsSkin, `debug_mask_${uuidv4()}.png`, userId, 'debug', 'image/png');
+                    const invUrl  = await fluxPlacementHandler.uploadToSupabaseStorage(invertedMask, `debug_mask_inverted_${uuidv4()}.png`, userId, 'debug', 'image/png');
+                    const canvasUrl = await fluxPlacementHandler.uploadToSupabaseStorage(tattooCanvas, `debug_tattoo_canvas_${uuidv4()}.png`, userId, 'debug', 'image/png');
+                    console.log('DEBUG URLs:', { maskUrl, invUrl, canvasUrl });
+                } catch (e) {
+                    console.warn('DEBUG upload failed:', e.message);
+                }
+            }
+
             // 3) Optional micro-sharpen to keep edges from getting mushy after rotations/resizes
-            const tattooMaskedSharp = await sharp(tattooMasked).sharpen(0.5).toBuffer();
+            const tattooMaskedSharp = await sharp(needInvert ? tattooMaskedFixed : tattooMasked)
+                .sharpen(0.5)
+                .toBuffer();
 
             // 4) Over-composite onto the skin with premultiplied alpha to avoid halos
             compositedImageBuffer = await sharp(skinImageBuffer)
@@ -340,7 +390,7 @@ const fluxPlacementHandler = {
         // 4. Prepare for multiple Flux API calls
         const generatedImageUrls = [];
 
-        // --- CHANGE: Tightened prompt to preserve silhouette; add negative prompt; lower guidance; disable upsampling
+        // Tightened prompt to preserve silhouette; add negative prompt; lower guidance; disable upsampling
         const basePrompt =
             "Preserve the exact silhouette, linework, proportions and interior details of the tattoo. Only relight and blend the existing tattoo into the skin. Add realistic lighting, micro-shadowing, slight ink diffusion, and subtle skin texture. Do not redraw or restyle.";
         const negativePrompt =
@@ -353,15 +403,15 @@ const fluxPlacementHandler = {
 
             const fluxPayload = {
                 prompt: basePrompt,
-                negative_prompt: negativePrompt,                 // <-- CHANGE: discourage redraw
+                negative_prompt: negativePrompt,
                 input_image: compositedImageBuffer.toString('base64'),
-                // --- CHANGE: ensure mask matches input_image size (skin size) ---
+                // ensure mask matches input_image size (skin size)
                 mask_image: maskPngSameAsSkin.toString('base64'),
                 n: 1,
                 output_format: 'png',
                 fidelity: 0.8,
-                guidance_scale: 2.2,                            // <-- CHANGE: lower to reduce creative drift
-                prompt_upsampling: false,                       // <-- CHANGE: prevent model from amplifying/rewriting
+                guidance_scale: 2.2,              // lower to reduce creative drift
+                prompt_upsampling: false,         // prevent model from amplifying/rewriting
                 safety_tolerance: 2,
                 seed: currentSeed
             };

@@ -216,14 +216,15 @@ const fluxPlacementHandler = {
         // --- Step 2.3: Resize the tattoo design to fit the mask's bounding box and prepare for placement ---
         // --- Step 2.3: Resize the tattoo design to fit the mask's bounding box and prepare for placement ---
 let tattooForPlacement;
-let scaledTattooWidth;
 try {
-    scaledTattooWidth = Math.round(tattooMeta.width * tattooScale);
+    const originalTattooWidth = tattooMeta.width;
+    const newWidth = Math.round(originalTattooWidth * tattooScale);
+
     tattooForPlacement = await sharp(tattooDesignPngWithRemovedBackground)
         .rotate(tattooAngle)
-        .resize(scaledTattooWidth) // Resize based on scale, maintaining aspect ratio
+        .resize(newWidth) // Resize based on scale, maintaining aspect ratio
         .toBuffer();
-    console.log(`Tattoo design resized with scale factor ${tattooScale} to width: ${scaledTattooWidth}.`);
+    console.log(`Tattoo design resized with scale factor ${tattooScale} to width: ${newWidth}.`);
 } catch (error) {
     console.error('Error resizing tattoo design for placement:', error);
     throw new Error('Failed to resize tattoo design for placement within mask area.');
@@ -257,7 +258,7 @@ try {
             {
                 input: positionedTattooCanvas,
                 blend: 'over',
-                mask: maskBuffer // Apply the drawn mask here
+                mask: maskBuffer // The raw pixel mask is used for blending
             }
         ])
         .png() // Output as PNG to preserve transparency for subsequent steps/display!

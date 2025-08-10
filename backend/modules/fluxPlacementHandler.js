@@ -331,7 +331,7 @@ try {
                 n: 1,
                 output_format: 'png',
                 // Re-introduced as they were working previously:
-                fidelity: 0.6,
+                fidelity: 0.8,
                 guidance_scale: 8.0,
                 // New parameters from Flux API bot:
                 prompt_upsampling: true,

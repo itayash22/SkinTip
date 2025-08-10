@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-08-10_DIAG_V1');
+console.log('FLUX_HANDLER_VERSION: 2025-08-10_DIAG_V2_ALPHA_FIX');
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -99,76 +99,102 @@ async function dilateHardMask(hardMaskPng, radiusPx) {
   return sharp(summed).resize({ width: meta.width, height: meta.height, fit: 'fill' }).png().toBuffer();
 }
 
-/** Build a smart hard mask (0/255), choose ALPHA vs LUMA automatically & polarity by area.
- *  Also returns diagnostics.
+/** Build a smart hard mask (0/255), prefer ALPHA; fallback to LUMA with safe polarity.
+ *  If LUMA is extreme (all black/white), fall back to ALPHA even if sparse.
  */
 async function buildSmartMask(maskBuffer, skinW, skinH) {
   const meta = await sharp(maskBuffer).metadata();
   console.log(`[MASK] Input meta: ${meta.width}x${meta.height}, hasAlpha=${!!meta.hasAlpha}, channels=${meta.channels}`);
 
-  // Try ALPHA path if alpha exists
-  let chosen = null;
-  let strategy = 'none';
+  const EXT_LOW = 0.00001;   // 0.001% of image
+  const EXT_HIGH = 0.995;    // 99.5%
+
+  // 1) Try ALPHA path first if present
   if (meta.hasAlpha) {
-    const alpha = await sharp(maskBuffer).extractChannel('alpha')
+    const alphaRaw = await sharp(maskBuffer).extractChannel('alpha')
       .resize({ width: skinW, height: skinH, fit: 'fill', kernel: sharp.kernel.nearest })
       .raw()
       .toBuffer();
-    let sum = 0, nz = 0, minA = 255, maxA = 0;
-    for (let i = 0; i < alpha.length; i++) {
-      const v = alpha[i];
+
+    let nz = 0, sum = 0, minA = 255, maxA = 0;
+    for (let i = 0; i < alphaRaw.length; i++) {
+      const v = alphaRaw[i];
       sum += v;
       if (v > 0) nz++;
       if (v < minA) minA = v;
       if (v > maxA) maxA = v;
     }
-    const mean = sum / alpha.length;
-    const percentNonZero = nz / alpha.length;
-    console.log(`[MASK] Alpha stats: mean=${mean.toFixed(2)} nz%=${(percentNonZero*100).toFixed(2)} min=${minA} max=${maxA}`);
+    const mean = sum / alphaRaw.length;
+    const nzRatio = nz / alphaRaw.length;
 
-    // If alpha is informative (not ~0% and not ~100% everywhere), use it.
-    if (percentNonZero > 0.01 && percentNonZero < 0.95) {
-      chosen = await sharp(maskBuffer)
+    console.log(`[MASK] Alpha stats: mean=${mean.toFixed(2)} nz%=${(nzRatio*100).toFixed(4)} min=${minA} max=${maxA}`);
+
+    // Treat alpha as informative if it's not empty and not full (very low threshold supports thin strokes)
+    if (nzRatio >= EXT_LOW && nzRatio <= EXT_HIGH) {
+      const hard = await sharp(maskBuffer)
         .extractChannel('alpha')
         .resize({ width: skinW, height: skinH, fit: 'fill', kernel: sharp.kernel.nearest })
         .threshold(8)
         .png()
         .toBuffer();
-      strategy = 'alpha';
+      const soft = await featherMask(hard, 0.3);
+
+      const { raw, width, height } = await toRawGray(hard);
+      const { A, P } = areaPerimeterFromRaw({ raw, width, height });
+      const t = thicknessFromAP(A, P);
+      const areaRatio = A / (skinW * skinH);
+
+      console.log(`[MASK] Strategy=alpha | A=${A} areaRatio=${areaRatio.toFixed(6)} t=${t.toFixed(4)}`);
+      return { hard, soft, A, P, t, areaRatio, width, height, strategy: 'alpha' };
     } else {
-      console.log('[MASK] Alpha not informative → falling back to luminance.');
+      console.log('[MASK] Alpha not informative (empty or full) → try luminance.');
     }
   }
 
-  // LUMA path (if we didn’t pick alpha)
-  if (!chosen) {
-    const gray = await sharp(maskBuffer)
-      .resize({ width: skinW, height: skinH, fit: 'fill', kernel: sharp.kernel.nearest })
-      .grayscale()
-      .toBuffer();
-    const bin = await sharp(gray).threshold(128).png().toBuffer();
-    const inv = await sharp(gray).linear(-1, 255).threshold(128).png().toBuffer();
-    const a1 = await areaFromMaskPng(bin);
-    const a2 = await areaFromMaskPng(inv);
-    const areaImg = skinW * skinH;
-    const r1 = a1 / areaImg;
-    const r2 = a2 / areaImg;
+  // 2) LUMA path
+  const gray = await sharp(maskBuffer)
+    .resize({ width: skinW, height: skinH, fit: 'fill', kernel: sharp.kernel.nearest })
+    .grayscale()
+    .toBuffer();
+  const bin = await sharp(gray).threshold(128).png().toBuffer();
+  const inv = await sharp(gray).linear(-1, 255).threshold(128).png().toBuffer();
 
-    // Prefer the polarity with smaller but non-trivial area (avoid "all white" or "all black")
-    const pickInv = (r2 <= 0.90 && r2 >= 0.00005 && (r2 < r1 || r1 > 0.90 || r1 < 0.00005));
-    chosen = pickInv ? inv : bin;
-    strategy = `luma${pickInv ? '-inv' : ''}`;
-    console.log(`[MASK] Luma areas: r1=${r1.toFixed(6)} r2=${r2.toFixed(6)} → strategy=${strategy}`);
+  const areaImg = skinW * skinH;
+  const a1 = await areaFromMaskPng(bin);
+  const a2 = await areaFromMaskPng(inv);
+  const r1 = a1 / areaImg;
+  const r2 = a2 / areaImg;
+  console.log(`[MASK] Luma areas: r1=${r1.toFixed(6)} r2=${r2.toFixed(6)}`);
+
+  // If luminance is extreme (all black or all white), and alpha exists, fall back to alpha-sparse
+  if (meta.hasAlpha && (r1 <= EXT_LOW || r1 >= EXT_HIGH || r2 <= EXT_LOW || r2 >= EXT_HIGH)) {
+    console.log('[MASK] Luma extreme. Falling back to alpha-sparse.');
+    const hard = await sharp(maskBuffer)
+      .extractChannel('alpha')
+      .resize({ width: skinW, height: skinH, fit: 'fill', kernel: sharp.kernel.nearest })
+      .threshold(8)
+      .png()
+      .toBuffer();
+    const soft = await featherMask(hard, 0.3);
+    const { raw, width, height } = await toRawGray(hard);
+    const { A, P } = areaPerimeterFromRaw({ raw, width, height });
+    const t = thicknessFromAP(A, P);
+    const areaRatio = A / (skinW * skinH);
+    console.log(`[MASK] Strategy=alpha-sparse | A=${A} areaRatio=${areaRatio.toFixed(6)} t=${t.toFixed(4)}`);
+    return { hard, soft, A, P, t, areaRatio, width, height, strategy: 'alpha-sparse' };
   }
 
-  const hard = chosen;
-  const soft = await featherMask(hard, 0.3);
+  // Normal luminance choice: prefer area inside sane range and smaller of the two
+  const ok1 = r1 >= EXT_LOW && r1 <= 0.95;
+  const ok2 = r2 >= EXT_LOW && r2 <= 0.95;
+  let hard = (ok1 && (!ok2 || r1 <= r2)) ? bin : inv;
+  let strategy = (hard === bin) ? 'luma' : 'luma-inv';
 
+  const soft = await featherMask(hard, 0.3);
   const { raw, width, height } = await toRawGray(hard);
   const { A, P } = areaPerimeterFromRaw({ raw, width, height });
   const t = thicknessFromAP(A, P);
   const areaRatio = A / (skinW * skinH);
-
   console.log(`[MASK] Strategy=${strategy} | A=${A} areaRatio=${areaRatio.toFixed(6)} t=${t.toFixed(4)}`);
 
   return { hard, soft, A, P, t, areaRatio, width, height, strategy };
@@ -231,7 +257,7 @@ const fluxPlacementHandler = {
   },
 
   /**
-   * Diagnostic-first, geometry-safe pipeline.
+   * Diagnostic-first, geometry-safe pipeline (unchanged except mask builder fix).
    */
   placeTattooOnSkin: async (
     skinImageBuffer,
@@ -251,7 +277,7 @@ const fluxPlacementHandler = {
     const maskOriginal = Buffer.from(maskBase64, 'base64');
     await uploadDebug(maskOriginal, `mask_original_${uuidv4()}.png`, userId);
 
-    // Build smart mask (logs inside)
+    // Smart mask (now alpha-sparse aware)
     const { hard: maskHardPngSkinSize, soft: maskSoftPngSkinSize, A, P, t, areaRatio, width: mw, height: mh, strategy } =
       await buildSmartMask(maskOriginal, skinW, skinH);
     await uploadDebug(maskHardPngSkinSize, `mask_hard_${strategy}_${uuidv4()}.png`, userId);
@@ -333,11 +359,10 @@ const fluxPlacementHandler = {
     await uploadDebug(originalSilhouette, `original_silhouette_${uuidv4()}.png`, userId);
 
     // --- Build input image for the model (prefill & line art) ---
-    // Prefill strength: if model mask covers a lot (>10%), drop prefill to avoid global darkening
     const prefillOpacity = areaModel > 0.10 ? 0.0 : 0.8;
     console.log(`[PREFILL] areaModel=${(areaModel*100).toFixed(2)}% opacity=${prefillOpacity}`);
 
-    let inputImageForModel = skinImageBuffer;
+    let inputImageForModel;
     if (prefillOpacity > 0) {
       const prefill = await sharp({ create: { width: skinW, height: skinH, channels: 4, background: { r: 26, g: 26, b: 26, alpha: 1 } } })
         .png()
@@ -353,7 +378,6 @@ const fluxPlacementHandler = {
         .png()
         .toBuffer();
     } else {
-      // no prefill – still include line art within model mask
       const tattooWithinModelMask = await sharp(tattooCanvasPlaced).composite([{ input: maskForModelSoft, blend: 'dest-in' }]).png().toBuffer();
       inputImageForModel = await sharp(skinImageBuffer)
         .composite([{ input: tattooWithinModelMask, blend: 'over', opacity: 0.95 }])
@@ -362,7 +386,7 @@ const fluxPlacementHandler = {
     }
     await uploadDebug(inputImageForModel, `input_for_model_${uuidv4()}.png`, userId);
 
-    // --- FLUX calls (constrained) ---
+    // --- FLUX calls (constrained, unchanged) ---
     const generatedImageUrls = [];
     const basePrompt =
       "Preserve the exact silhouette, linework, proportions and interior details of the tattoo. Only relight and blend the existing tattoo into the skin. Add realistic lighting, micro-shadowing, slight ink diffusion, and subtle skin texture. Do not redraw or restyle.";

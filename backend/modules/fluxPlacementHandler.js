@@ -223,9 +223,10 @@ const fluxPlacementHandler = {
             console.log(`LOG: tattooAngle=${tattooAngle}, tattooScale=${tattooScale}`);
             console.log(`LOG: MASK BBOX DIMS: width=${maskBoundingBox.width}, height=${maskBoundingBox.height}`);
 
-            // Target dimensions based on mask and scale
-            const targetWidth = Math.round(maskBoundingBox.width * tattooScale);
-            const targetHeight = Math.round(maskBoundingBox.height * tattooScale);
+            // Target dimensions based on mask and scale, with a hardcoded magnification factor as requested.
+            const magnificationFactor = 2.0; // Magnify by 100%
+            const targetWidth = Math.round(maskBoundingBox.width * tattooScale * magnificationFactor);
+            const targetHeight = Math.round(maskBoundingBox.height * tattooScale * magnificationFactor);
 
             // Step 1: Resize the tattoo to fit inside the target dims (maintaining aspect ratio).
             const resizedTattooBuffer = await sharp(tattooDesignPngWithRemovedBackground)

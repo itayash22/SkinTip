@@ -224,7 +224,7 @@ const fluxPlacementHandler = {
             console.log(`LOG: MASK BBOX DIMS: width=${maskBoundingBox.width}, height=${maskBoundingBox.height}`);
 
             // Target dimensions based on mask and scale, with a hardcoded magnification factor as requested.
-            const magnificationFactor = 2.0; // Magnify by 100%
+            const magnificationFactor = 1.8; // Magnify by 80%
             const targetWidth = Math.round(maskBoundingBox.width * tattooScale * magnificationFactor);
             const targetHeight = Math.round(maskBoundingBox.height * tattooScale * magnificationFactor);
 

@@ -72,6 +72,7 @@ const fluxPlacementHandler = {
         try {
             console.log('Calling Remove.bg API for background removal...');
             const formData = new FormData();
+            // NOTE: Keep existing approach as-is (only relevant changes elsewhere)
             formData.append('image_file', new Blob([imageBuffer], { type: 'image/png' }), 'tattoo_design.png'); // Send as PNG
             formData.append('size', 'auto');
             formData.append('format', 'png'); // Request PNG output from remove.bg
@@ -176,14 +177,14 @@ const fluxPlacementHandler = {
      * Handles all image preprocessing (resizing, mask inversion, watermarking, storage).
      * Now makes multiple Flux API calls to get multiple variations.
      */
-    placeTattooOnSkin: async (skinImageBuffer, tattooDesignImageBase64, maskBase64, userId, numVariations, fluxApiKey, tattooAngle = 0, tattooScale = 1.0) => {        // 1. Convert tattoo design Base64 to Buffer.
+    placeTattooOnSkin: async (skinImageBuffer, tattooDesignImageBase64, maskBase64, userId, numVariations, fluxApiKey, tattooAngle = 0, tattooScale = 1.0) => {
+        // 1. Convert tattoo design Base64 to Buffer.
         let tattooDesignOriginalBuffer = Buffer.from(tattooDesignImageBase64, 'base64');
         let tattooMeta = await sharp(tattooDesignOriginalBuffer).metadata();
         console.log(`Original tattoo design input meta: format=${tattooMeta.format}, channels=${tattooMeta.channels}, hasAlpha=${tattooMeta.hasAlpha}`);
 
         // --- Step 2.2: Perform Background Removal using Remove.bg API (always outputs PNG with alpha) ---
         let tattooDesignPngWithRemovedBackground = await fluxPlacementHandler.removeImageBackground(tattooDesignOriginalBuffer);
-
 
         // 2. Prepare Mask Buffer. Frontend mask is white for tattoo area, black elsewhere.
         const originalMaskBuffer = Buffer.from(maskBase64, 'base64');
@@ -206,12 +207,28 @@ const fluxPlacementHandler = {
         const skinHeight = skinMetadata.height;
         console.log(`Skin image meta: format=${skinMetadata.format}, channels=${skinMetadata.channels}, hasAlpha=${skinMetadata.hasAlpha}`);
 
+        // --- CHANGE: Normalize mask -> skin size for consistent coordinates ---
+        const maskPngSameAsSkin = await sharp(originalMaskBuffer)
+            .resize({ width: skinWidth, height: skinHeight })
+            .grayscale()
+            .png()
+            .toBuffer();
 
-        // --- Step 2.1: Determine the bounding box of the drawn mask area ---
+        // --- Step 2.1: Determine the bounding box of the drawn mask area (original coords) ---
         const maskBoundingBox = await getMaskBoundingBox(maskBuffer, maskMetadata.width, maskMetadata.height);
         if (maskBoundingBox.isEmpty) {
             throw new Error('Drawn mask area is too small or empty. Please draw a visible area.');
         }
+
+        // --- CHANGE: Recompute bbox in skin-space using scale factors ---
+        const scaleX = skinWidth / maskMetadata.width;
+        const scaleY = skinHeight / maskMetadata.height;
+        const bboxSkin = {
+            minX: Math.round(maskBoundingBox.minX * scaleX),
+            minY: Math.round(maskBoundingBox.minY * scaleY),
+            width: Math.round(maskBoundingBox.width * scaleX),
+            height: Math.round(maskBoundingBox.height * scaleY)
+        };
 
         // --- Step 2.3: Resize, Rotate, and Position the tattoo to match frontend preview ---
         let tattooForPlacement;
@@ -221,21 +238,26 @@ const fluxPlacementHandler = {
         try {
             console.log(`--- TATTOO TRANSFORM DEBUG START ---`);
             console.log(`LOG: tattooAngle=${tattooAngle}, tattooScale=${tattooScale}`);
-            console.log(`LOG: MASK BBOX DIMS: width=${maskBoundingBox.width}, height=${maskBoundingBox.height}`);
+            console.log(`LOG: BBOX (skin space): x=${bboxSkin.minX}, y=${bboxSkin.minY}, w=${bboxSkin.width}, h=${bboxSkin.height}`);
 
-            // Target dimensions based on mask and scale, with a hardcoded magnification factor as requested.
-            const magnificationFactor = 1.8; // Magnify by 80%
-            const targetWidth = Math.round(maskBoundingBox.width * tattooScale * magnificationFactor);
-            const targetHeight = Math.round(maskBoundingBox.height * tattooScale * magnificationFactor);
+            // --- CHANGE: Remove arbitrary magnification; rely on tattooScale and bbox size only ---
+            const targetWidth = Math.round(bboxSkin.width * tattooScale);
+            const targetHeight = Math.round(bboxSkin.height * tattooScale);
 
-            // Step 1: Resize the tattoo to fit inside the target dims (maintaining aspect ratio).
+            // Step 1: Resize the tattoo (single high-quality resize)
             const resizedTattooBuffer = await sharp(tattooDesignPngWithRemovedBackground)
-                .resize({ width: targetWidth, height: targetHeight, fit: sharp.fit.inside, withoutEnlargement: false })
+                .resize({
+                    width: targetWidth,
+                    height: targetHeight,
+                    fit: sharp.fit.inside,
+                    withoutEnlargement: false,
+                    kernel: sharp.kernel.lanczos3 // crisp; swap to sharp.kernel.nearest for very line-art designs
+                })
                 .toBuffer();
             const resizedMeta = await sharp(resizedTattooBuffer).metadata();
             console.log(`LOG: RESIZED (pre-rotation): ${resizedMeta.width}x${resizedMeta.height}`);
 
-            // Step 2: Rotate the resized tattoo. This expands the canvas.
+            // Step 2: Rotate the resized tattoo (expand canvas)
             const rotatedTattooBuffer = await sharp(resizedTattooBuffer)
                 .rotate(tattooAngle, { background: { r: 0, g: 0, b: 0, alpha: 0 } })
                 .toBuffer();
@@ -243,13 +265,9 @@ const fluxPlacementHandler = {
             tattooForPlacement = rotatedTattooBuffer;
             console.log(`LOG: ROTATED (final): ${rotatedMeta.width}x${rotatedMeta.height}`);
 
-            // Step 3: Calculate final position. Start with centering the *un-rotated* tattoo,
-            // then adjust for the canvas expansion caused by rotation.
-            const centeredLeft = maskBoundingBox.minX + (maskBoundingBox.width - resizedMeta.width) / 2;
-            const centeredTop = maskBoundingBox.minY + (maskBoundingBox.height - resizedMeta.height) / 2;
-
-            placementLeft = Math.round(centeredLeft - (rotatedMeta.width - resizedMeta.width) / 2);
-            placementTop = Math.round(centeredTop - (rotatedMeta.height - resizedMeta.height) / 2);
+            // Step 3: Calculate final position in skin-space (center within bbox)
+            placementLeft = Math.round(bboxSkin.minX + (bboxSkin.width - rotatedMeta.width) / 2);
+            placementTop = Math.round(bboxSkin.minY + (bboxSkin.height - rotatedMeta.height) / 2);
 
             console.log(`LOG: FINAL PLACEMENT: top=${placementTop}, left=${placementLeft}`);
             console.log(`--- TATTOO TRANSFORM DEBUG END ---`);
@@ -259,40 +277,44 @@ const fluxPlacementHandler = {
             throw new Error('Failed to resize tattoo design for placement within the mask area.');
         }
 
-// 3. **Manual Composition with Sharp (Hybrid Approach Step 1)**
-let compositedImageBuffer;
-try {
-    // Create a new transparent canvas of the same size as the skin image
-    const positionedTattooCanvas = await sharp({
-        create: {
-            width: skinMetadata.width,
-            height: skinMetadata.height,
-            channels: 4,
-            background: { r: 0, g: 0, b: 0, alpha: 0 }
-        }
-    })
-    .composite([
-        {
-            input: tattooForPlacement, // The correctly resized tattoo
-            left: placementLeft,       // The correctly calculated centered left position
-            top: placementTop          // The correctly calculated centered top position
-        }
-    ])
-    .png()
-    .toBuffer();
+        // --- CHANGE: Deterministic composition with proper masking and premultiplication ---
+        let compositedImageBuffer;
+        try {
+            // 1) Place the rotated tattoo on a transparent full-size canvas
+            const tattooCanvas = await sharp({
+                create: {
+                    width: skinWidth,
+                    height: skinHeight,
+                    channels: 4,
+                    background: { r: 0, g: 0, b: 0, alpha: 0 }
+                }
+            })
+                .composite([
+                    {
+                        input: tattooForPlacement,
+                        left: placementLeft,
+                        top: placementTop
+                    }
+                ])
+                .png()
+                .toBuffer();
 
-    // Composite the positioned tattoo canvas onto the skin image, using the mask
-    compositedImageBuffer = await sharp(skinImageBuffer)
-        .composite([
-            {
-                input: positionedTattooCanvas,
-                blend: 'over',
-                mask: maskBuffer // The raw pixel mask is used for blending
-            }
-        ])
-        .png() // Output as PNG to preserve transparency for subsequent steps/display!
-        .toBuffer();
-            console.log('Tattoo manually composited onto skin image with correct sizing, positioning, and clipping. Output format: PNG.');
+            // 2) Punch the canvas with the (resized) mask so the tattoo is confined to the user-painted region
+            const tattooMasked = await sharp(tattooCanvas)
+                .composite([{ input: maskPngSameAsSkin, blend: 'dest-in' }]) // keep only where mask is white
+                .png()
+                .toBuffer();
+
+            // 3) Optional micro-sharpen to keep edges from getting mushy after rotations/resizes
+            const tattooMaskedSharp = await sharp(tattooMasked).sharpen(0.5).toBuffer();
+
+            // 4) Over-composite onto the skin with premultiplied alpha to avoid halos
+            compositedImageBuffer = await sharp(skinImageBuffer)
+                .composite([{ input: tattooMaskedSharp, blend: 'over', premultiplied: true }])
+                .png()
+                .toBuffer();
+
+            console.log('Tattoo deterministically composited onto skin with correct sizing, positioning, and clipping. Output format: PNG.');
 
             // --- DEBUGGING STEP: UPLOAD AND LOG INTERMEDIATE IMAGE ---
             try {
@@ -311,13 +333,18 @@ try {
             // --- END DEBUGGING STEP ---
 
         } catch (error) {
-            console.error('Error during manual image composition (Phase 1) with positioning:', error);
+            console.error('Error during deterministic image composition with positioning:', error);
             throw new Error(`Failed to composite tattoo onto skin with correct positioning: ${error.message}`);
         }
 
         // 4. Prepare for multiple Flux API calls
         const generatedImageUrls = [];
-        const basePrompt = `Make the tattoo look naturally placed on the skin, blend seamlessly on curved skin area, adjust lighting and shadows for realism. Realistic photo, professional tattoo photography, high detail.`; // UserPrompt removed
+
+        // --- CHANGE: Tightened prompt to preserve silhouette; add negative prompt; lower guidance; disable upsampling
+        const basePrompt =
+            "Preserve the exact silhouette, linework, proportions and interior details of the tattoo. Only relight and blend the existing tattoo into the skin. Add realistic lighting, micro-shadowing, slight ink diffusion, and subtle skin texture. Do not redraw or restyle.";
+        const negativePrompt =
+            "re-sketch, new lines, restyle, warp, change shape, extra elements, glow, blur, smoothing edges, color shift";
 
         console.log(`Making ${numVariations} calls to Flux API...`);
 
@@ -326,16 +353,16 @@ try {
 
             const fluxPayload = {
                 prompt: basePrompt,
+                negative_prompt: negativePrompt,                 // <-- CHANGE: discourage redraw
                 input_image: compositedImageBuffer.toString('base64'),
-                mask_image: maskBase64,
+                // --- CHANGE: ensure mask matches input_image size (skin size) ---
+                mask_image: maskPngSameAsSkin.toString('base64'),
                 n: 1,
                 output_format: 'png',
-                // Re-introduced as they were working previously:
                 fidelity: 0.8,
-                guidance_scale: 8.0,
-                // New parameters from Flux API bot:
-                prompt_upsampling: true,
-                safety_tolerance: 2, // As requested, set to 'low' for less strict filtering
+                guidance_scale: 2.2,                            // <-- CHANGE: lower to reduce creative drift
+                prompt_upsampling: false,                       // <-- CHANGE: prevent model from amplifying/rewriting
+                safety_tolerance: 2,
                 seed: currentSeed
             };
 
@@ -354,11 +381,10 @@ try {
                         timeout: 90000
                     }
                 );
-                console.log(`DEBUG: Initial Flux POST response status for variation ${i+1}: ${fluxResponse.status}`);
-                console.log(`DEBUG: Initial Flux POST response data for variation ${i+1}:`, JSON.stringify(fluxResponse.data, null, 2));
+                console.log(`DEBUG: Initial Flux POST response status for variation ${i + 1}: ${fluxResponse.status}`);
+                console.log(`DEBUG: Initial Flux POST response data for variation ${i + 1}:`, JSON.stringify(fluxResponse.data, null, 2));
 
             } catch (error) {
-                // ADDED IMPROVED ERROR LOGGING HERE
                 const errorDetail = error.response?.data ? JSON.stringify(error.response.data) : error.message;
                 console.error(`Flux API call for variation ${i + 1} failed:`, errorDetail);
                 console.warn(`Skipping variation ${i + 1} due to API call failure.`);
@@ -392,7 +418,7 @@ try {
 
                 if (result.data.status === 'Content Moderated') {
                     const moderationReason = result.data.details && result.data.details['Moderation Reasons'] ?
-                                            result.data.details['Moderation Reasons'].join(', ') : 'Unknown reason';
+                        result.data.details['Moderation Reasons'].join(', ') : 'Unknown reason';
                     console.error(`Flux API Polling terminated for Task ${taskId}: Content Moderated. Reason: ${moderationReason}`);
                     console.warn(`Skipping variation ${i + 1} due to content moderation.`);
                     currentImageReady = true;

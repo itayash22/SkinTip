@@ -251,14 +251,54 @@ const fluxPlacementHandler = {
     }
   },
 
+  /**
+   * UPDATED: verifies public URL; if not reachable, returns a signed URL fallback.
+   * Nothing else changed here.
+   */
   uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '', contentType = 'image/jpeg') => {
     const path = folder ? `${userId}/${folder}/${fileName}` : `${userId}/${fileName}`;
-    const { error } = await supabase.storage.from(SUPABASE_STORAGE_BUCKET).upload(path, imageBuffer, { contentType, upsert: false });
-    if (error) throw new Error(`Supabase upload failed: ${error.message}`);
-    const { data } = supabase.storage.from(SUPABASE_STORAGE_BUCKET).getPublicUrl(path);
-    if (!data?.publicUrl) throw new Error('No public URL from Supabase.');
-    console.log('[UPLOAD] →', data.publicUrl);
-    return data.publicUrl;
+
+    const { error: upErr } = await supabase.storage
+      .from(SUPABASE_STORAGE_BUCKET)
+      .upload(path, imageBuffer, {
+        contentType,
+        upsert: false,
+        cacheControl: '3600',
+      });
+
+    if (upErr) {
+      console.error('Supabase upload error:', upErr);
+      throw new Error(`Failed to upload image to storage: ${upErr.message}`);
+    }
+
+    // Get the nominal public URL
+    const { data: pub } = supabase.storage
+      .from(SUPABASE_STORAGE_BUCKET)
+      .getPublicUrl(path);
+
+    let url = pub?.publicUrl || null;
+    console.log('[UPLOAD] tentative publicUrl:', url);
+
+    // Verify reachability; if not 2xx, create a signed URL fallback
+    try {
+      if (!url) throw new Error('No publicUrl returned');
+      const head = await axios.head(url, { validateStatus: () => true });
+      if (head.status < 200 || head.status >= 300) {
+        throw new Error(`HEAD ${head.status}`);
+      }
+    } catch (e) {
+      console.warn('[UPLOAD] publicUrl not accessible → creating signed URL fallback:', e.message);
+      const { data: signed, error: signErr } = await supabase.storage
+        .from(SUPABASE_STORAGE_BUCKET)
+        .createSignedUrl(path, 60 * 60 * 24 * 30); // 30 days
+      if (signErr || !signed?.signedUrl) {
+        throw new Error(`Failed to create signed URL: ${signErr?.message || 'unknown error'}`);
+      }
+      url = signed.signedUrl;
+    }
+
+    console.log('[UPLOAD] final URL for client:', url);
+    return url;
   },
 
   /**

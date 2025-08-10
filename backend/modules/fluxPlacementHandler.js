@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-08-10_DIAG_V2_ALPHA_FIX');
+console.log('FLUX_HANDLER_VERSION: 2025-08-10_DIAG_V3_ENGINE_FLAG');
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -12,6 +12,10 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generated-tattoos';
+
+// ---- Engine flag ----
+// kontext (default) | fill
+const FLUX_ENGINE = (process.env.FLUX_ENGINE || 'kontext').toLowerCase();
 
 // Debug uploads toggle (default ON)
 const DEBUG_UPLOADS = (process.env.DEBUG_UPLOADS ?? '1') !== '0';
@@ -167,7 +171,8 @@ async function buildSmartMask(maskBuffer, skinW, skinH) {
   console.log(`[MASK] Luma areas: r1=${r1.toFixed(6)} r2=${r2.toFixed(6)}`);
 
   // If luminance is extreme (all black or all white), and alpha exists, fall back to alpha-sparse
-  if (meta.hasAlpha && (r1 <= EXT_LOW || r1 >= EXT_HIGH || r2 <= EXT_LOW || r2 >= EXT_HIGH)) {
+  const meta2 = await sharp(maskBuffer).metadata();
+  if (meta2.hasAlpha && (r1 <= EXT_LOW || r1 >= EXT_HIGH || r2 <= EXT_LOW || r2 >= EXT_HIGH)) {
     console.log('[MASK] Luma extreme. Falling back to alpha-sparse.');
     const hard = await sharp(maskBuffer)
       .extractChannel('alpha')
@@ -257,7 +262,7 @@ const fluxPlacementHandler = {
   },
 
   /**
-   * Diagnostic-first, geometry-safe pipeline (unchanged except mask builder fix).
+   * Diagnostic-first, geometry-safe pipeline + FLUX engine flag with fallback.
    */
   placeTattooOnSkin: async (
     skinImageBuffer,
@@ -269,6 +274,8 @@ const fluxPlacementHandler = {
     tattooAngle = 0,
     tattooScale = 1.0
   ) => {
+    console.log(`[ENGINE] Selected via env FLUX_ENGINE=${FLUX_ENGINE}`);
+
     // --- Canonicalize inputs ---
     const skinMeta = await sharp(skinImageBuffer).metadata();
     const skinW = skinMeta.width, skinH = skinMeta.height;
@@ -277,7 +284,7 @@ const fluxPlacementHandler = {
     const maskOriginal = Buffer.from(maskBase64, 'base64');
     await uploadDebug(maskOriginal, `mask_original_${uuidv4()}.png`, userId);
 
-    // Smart mask (now alpha-sparse aware)
+    // Smart mask (alpha-first with safe fallbacks)
     const { hard: maskHardPngSkinSize, soft: maskSoftPngSkinSize, A, P, t, areaRatio, width: mw, height: mh, strategy } =
       await buildSmartMask(maskOriginal, skinW, skinH);
     await uploadDebug(maskHardPngSkinSize, `mask_hard_${strategy}_${uuidv4()}.png`, userId);
@@ -386,46 +393,111 @@ const fluxPlacementHandler = {
     }
     await uploadDebug(inputImageForModel, `input_for_model_${uuidv4()}.png`, userId);
 
-    // --- FLUX calls (constrained, unchanged) ---
-    const generatedImageUrls = [];
-    const basePrompt =
-      "Preserve the exact silhouette, linework, proportions and interior details of the tattoo. Only relight and blend the existing tattoo into the skin. Add realistic lighting, micro-shadowing, slight ink diffusion, and subtle skin texture. Do not redraw or restyle.";
-    const negativePrompt =
-      "re-sketch, new lines, restyle, warp, change shape, extra elements, animals, octopus, figurative art, glow, blur, smoothing edges, color shift";
+    // --- Engine-specific POST helper with fallback ---
+    async function postWithEngine(engine, fluxApiKey, inputImgBase64, maskBase64, seed, i) {
+      const headers = { 'Content-Type': 'application/json', 'x-key': fluxApiKey };
 
-    console.log(`[FLUX] Calling ${numVariations}×, each n=3`);
+      // Shared prompts
+      const basePrompt =
+        "Preserve the exact silhouette, linework, proportions and interior details of the tattoo. Only relight and blend the existing tattoo into the skin. Add realistic lighting, micro-shadowing, slight ink diffusion, and subtle skin texture. Do not redraw or restyle.";
+      const negativePrompt =
+        "re-sketch, new lines, restyle, warp, change shape, extra elements, animals, octopus, figurative art, glow, blur, smoothing edges, color shift";
 
-    for (let i = 0; i < numVariations; i++) {
-      const currentSeed = Date.now() + i;
+      if (engine === 'fill') {
+        // Try Fill payload #1 (image/mask)
+        const payload1 = {
+          prompt: basePrompt,
+          negative_prompt: negativePrompt,
+          image: inputImgBase64,
+          mask: maskBase64,
+          n: 3,
+          output_format: 'png',
+          guidance_scale: 3.0,
+          safety_tolerance: 2,
+          seed
+        };
+        try {
+          const r1 = await axios.post('https://api.bfl.ai/v1/flux-pro-1.0-fill', payload1, { headers, timeout: 120000 });
+          console.log(`[FLUX][FILL] POST#${i} payload1 ok:`, r1.status);
+          return r1.data;
+        } catch (e1) {
+          const status = e1.response?.status;
+          const dataStr = e1.response?.data ? JSON.stringify(e1.response.data).slice(0, 200) : e1.message;
+          console.warn(`[FLUX][FILL] payload1 failed (${status}): ${dataStr}`);
+          // Try Fill payload #2 (input_image/mask_image) in case the API expects kontext-style keys
+          const payload2 = {
+            prompt: basePrompt,
+            negative_prompt: negativePrompt,
+            input_image: inputImgBase64,
+            mask_image: maskBase64,
+            n: 3,
+            output_format: 'png',
+            guidance_scale: 3.0,
+            safety_tolerance: 2,
+            seed
+          };
+          try {
+            const r2 = await axios.post('https://api.bfl.ai/v1/flux-pro-1.0-fill', payload2, { headers, timeout: 120000 });
+            console.log(`[FLUX][FILL] POST#${i} payload2 ok:`, r2.status);
+            return r2.data;
+          } catch (e2) {
+            const status2 = e2.response?.status;
+            const dataStr2 = e2.response?.data ? JSON.stringify(e2.response.data).slice(0, 200) : e2.message;
+            console.warn(`[FLUX][FILL] payload2 failed (${status2}): ${dataStr2}`);
+            // Fall back to KONText for this attempt
+            console.warn('[FLUX][FILL] Falling back to KONText for this request.');
+          }
+        }
+      }
 
-      const payload = {
+      // KONText payload (current default)
+      const payloadKontext = {
         prompt: basePrompt,
         negative_prompt: negativePrompt,
-        input_image: inputImageForModel.toString('base64'),
-        mask_image: (await sharp(maskForModelHard).png().toBuffer()).toString('base64'),
+        input_image: inputImgBase64,
+        // mask_image is ignored by kontext in official docs, but we send it just in case
+        mask_image: maskBase64,
         n: 3,
         output_format: 'png',
         fidelity: 0.8,
         guidance_scale: 3.0,
         prompt_upsampling: false,
         safety_tolerance: 2,
-        seed: currentSeed
+        seed
       };
+      const rK = await axios.post('https://api.bfl.ai/v1/flux-kontext-pro', payloadKontext, { headers, timeout: 120000 });
+      console.log(`[FLUX][KONTEXT] POST#${i} ok:`, rK.status);
+      return rK.data;
+    }
 
-      const headers = { 'Content-Type': 'application/json', 'x-key': fluxApiKey };
-      let post;
+    // --- FLUX calls (engine-flagged) ---
+    const generatedImageUrls = [];
+    console.log(`[FLUX] Engine=${FLUX_ENGINE}. Calling ${numVariations}×, each n=3`);
+
+    for (let i = 0; i < numVariations; i++) {
+      const currentSeed = Date.now() + i;
+
+      // 1) Start task with chosen engine (and automatic fallback inside)
+      let postData;
       try {
-        post = await axios.post('https://api.bfl.ai/v1/flux-kontext-pro', payload, { headers, timeout: 120000 });
-        console.log(`[FLUX] POST status #${i + 1}:`, post.status);
-      } catch (e) {
-        console.error('[FLUX] POST failed:', e.response?.data || e.message);
+        postData = await postWithEngine(
+          FLUX_ENGINE,
+          fluxApiKey,
+          inputImageForModel.toString('base64'),
+          (await sharp(maskForModelHard).png().toBuffer()).toString('base64'),
+          currentSeed,
+          i + 1
+        );
+      } catch (errPost) {
+        console.error('[FLUX] POST failed (after fallback):', errPost.response?.data || errPost.message);
         continue;
       }
 
-      const taskId = post.data?.id;
-      const polling = post.data?.polling_url;
+      const taskId = postData?.id;
+      const polling = postData?.polling_url;
       if (!taskId || !polling) { console.warn('[FLUX] Missing task/polling'); continue; }
 
+      // 2) Poll
       let tries = 0, done = false;
       while (tries < 60 && !done) {
         tries++;

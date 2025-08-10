@@ -269,9 +269,9 @@ const fluxPlacementHandler = {
             placementLeft = Math.round(bboxSkin.minX + (bboxSkin.width - rotatedMeta.width) / 2);
             placementTop = Math.round(bboxSkin.minY + (bboxSkin.height - rotatedMeta.height) / 2);
 
-            // --- Clamp placement to ensure some overlap with the canvas (prevents total cut-away) ---
+            // Clamp placement to ensure some overlap with the canvas (prevents total cut-away)
             placementLeft = Math.max(-rotatedMeta.width, Math.min(placementLeft, skinWidth));
-            placementTop  = Math.max(-rotatedMeta.height, Math.min(placementTop, skinHeight));
+            placementTop  = Math.max(-rotatedMeta.height, Math.min(placementTop,  skinHeight));
 
             console.log(`LOG: FINAL PLACEMENT: top=${placementTop}, left=${placementLeft}`);
             console.log(`--- TATTOO TRANSFORM DEBUG END ---`);
@@ -283,6 +283,7 @@ const fluxPlacementHandler = {
 
         // --- Deterministic composition with proper masking and premultiplication ---
         let compositedImageBuffer;
+        let tattooMaskedSharp; // keep for post-FLUX clamp
         try {
             // 1) Place the rotated tattoo on a transparent full-size canvas
             const tattooCanvas = await sharp({
@@ -354,17 +355,18 @@ const fluxPlacementHandler = {
             }
 
             // 3) Optional micro-sharpen to keep edges from getting mushy after rotations/resizes
-            const tattooMaskedSharp = await sharp(needInvert ? tattooMaskedFixed : tattooMasked)
+            tattooMaskedSharp = await sharp(needInvert ? tattooMaskedFixed : tattooMasked)
                 .sharpen(0.5)
+                .png()
                 .toBuffer();
 
-            // 4) Over-composite onto the skin with premultiplied alpha to avoid halos
+            // 4) Over-composite onto the skin with premultiplied alpha to create the preview input for FLUX
             compositedImageBuffer = await sharp(skinImageBuffer)
                 .composite([{ input: tattooMaskedSharp, blend: 'over', premultiplied: true }])
                 .png()
                 .toBuffer();
 
-            console.log('Tattoo deterministically composited onto skin with correct sizing, positioning, and clipping. Output format: PNG.');
+            console.log('Tattoo deterministically composited onto skin (pre-FLUX). Output format: PNG.');
 
             // --- DEBUGGING STEP: UPLOAD AND LOG INTERMEDIATE IMAGE ---
             try {
@@ -394,7 +396,7 @@ const fluxPlacementHandler = {
         const basePrompt =
             "Preserve the exact silhouette, linework, proportions and interior details of the tattoo. Only relight and blend the existing tattoo into the skin. Add realistic lighting, micro-shadowing, slight ink diffusion, and subtle skin texture. Do not redraw or restyle.";
         const negativePrompt =
-            "re-sketch, new lines, restyle, warp, change shape, extra elements, glow, blur, smoothing edges, color shift";
+            "re-sketch, new lines, restyle, warp, change shape, extra elements, animals, octopus, figurative art, glow, blur, smoothing edges, color shift";
 
         console.log(`Making ${numVariations} calls to Flux API...`);
 
@@ -407,11 +409,11 @@ const fluxPlacementHandler = {
                 input_image: compositedImageBuffer.toString('base64'),
                 // ensure mask matches input_image size (skin size)
                 mask_image: maskPngSameAsSkin.toString('base64'),
-                n: 1,
+                n: 3,                                // <-- restore 3 options per call
                 output_format: 'png',
                 fidelity: 0.8,
-                guidance_scale: 2.2,              // lower to reduce creative drift
-                prompt_upsampling: false,         // prevent model from amplifying/rewriting
+                guidance_scale: 2.2,                 // lower to reduce creative drift
+                prompt_upsampling: false,            // prevent model from amplifying/rewriting
                 safety_tolerance: 2,
                 seed: currentSeed
             };
@@ -477,33 +479,59 @@ const fluxPlacementHandler = {
                     console.warn(`Skipping variation ${i + 1} due to Flux API error during polling.`);
                     currentImageReady = true;
                 } else if (result.data.status === 'Ready') {
-                    const imageUrlFromFlux = result.data.result && result.data.result.sample;
+                    const r = result.data.result || {};
+                    const candidateUrls = [];
 
-                    if (imageUrlFromFlux) {
+                    // Collect whatever the API returns (sample, samples[], images[], output[], etc.)
+                    if (typeof r.sample === 'string') candidateUrls.push(r.sample);
+                    if (Array.isArray(r.samples)) candidateUrls.push(...r.samples.filter(s => typeof s === 'string'));
+                    if (Array.isArray(r.images)) candidateUrls.push(...r.images.filter(s => typeof s === 'string'));
+                    if (Array.isArray(r.output)) candidateUrls.push(...r.output.filter(s => typeof s === 'string'));
+
+                    // Fallback: if nothing recognized, log and skip
+                    if (candidateUrls.length === 0) {
+                        console.warn(`Flux API Ready but no image URLs found for Task ${taskId}.`, r);
+                        currentImageReady = true;
+                        continue;
+                    }
+
+                    // Process each returned image
+                    for (const imageUrlFromFlux of candidateUrls) {
                         let imageBuffer;
                         try {
                             const imageResponse = await axios.get(imageUrlFromFlux, { responseType: 'arraybuffer' });
                             imageBuffer = Buffer.from(imageResponse.data);
-                            console.log(`Successfully downloaded image from Flux URL for Task ${taskId}: ${imageUrlFromFlux.substring(0, 50)}...`);
+                            console.log(`Downloaded image from Flux URL for Task ${taskId}: ${imageUrlFromFlux.substring(0, 80)}...`);
                         } catch (downloadError) {
                             console.error(`Error downloading image from Flux URL for Task ${taskId}:`, imageUrlFromFlux, downloadError.message);
-                            console.warn(`Skipping variation ${i + 1} due to download error.`);
-                            currentImageReady = true;
-                            continue;
+                            continue; // attempt next url
                         }
 
-                        // Watermark it (applyWatermark now ensures PNG output)
-                        const watermarkedBuffer = await fluxPlacementHandler.applyWatermark(imageBuffer);
-                        const fileName = `tattoo-${uuidv4()}.png`; // File extension is now PNG
-                        const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarkedBuffer, fileName, userId, '', 'image/png'); // Content type is now PNG
+                        // ---------- POST-FLUX SILHOUETTE CLAMP ----------
+                        // Keep only pixels within the original tattoo silhouette (pre-FLUX), so geometry cannot drift.
+                        const fluxClampedToShape = await sharp(imageBuffer)
+                            .composite([{ input: tattooMaskedSharp, blend: 'dest-in' }]) // tattooMaskedSharp carries the exact alpha silhouette
+                            .png()
+                            .toBuffer();
+
+                        // Optionally boost line crispness by lightly overlaying the original masked tattoo
+                        const relitPreservingShape = await sharp(skinImageBuffer)
+                            .composite([
+                                { input: fluxClampedToShape, blend: 'over', premultiplied: true },
+                                { input: tattooMaskedSharp, blend: 'overlay', opacity: 0.35 } // keeps fine edges
+                            ])
+                            .png()
+                            .toBuffer();
+                        // -----------------------------------------------
+
+                        // Watermark final composite (PNG)
+                        const watermarkedBuffer = await fluxPlacementHandler.applyWatermark(relitPreservingShape);
+                        const fileName = `tattoo-${uuidv4()}.png`; // PNG
+                        const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarkedBuffer, fileName, userId, '', 'image/png');
                         generatedImageUrls.push(publicUrl);
-                        console.log(`Successfully generated and watermarked 1 image for variation ${i + 1}.`);
-                        currentImageReady = true;
-                    } else {
-                        console.warn(`Flux API for Task ${taskId} returned Ready status but no valid image URL found in "sample".`, result.data);
-                        console.warn(`Skipping variation ${i + 1} due to malformed Flux output.`);
-                        currentImageReady = true;
                     }
+
+                    currentImageReady = true;
                 } else {
                     console.log(`Polling attempt ${attempts}: ${result.data.status} for Task ${taskId}.`);
                 }

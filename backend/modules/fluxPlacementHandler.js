@@ -213,22 +213,43 @@ const fluxPlacementHandler = {
             throw new Error('Drawn mask area is too small or empty. Please draw a visible area.');
         }
 
-        // --- Step 2.3: Resize the tattoo design to fit the mask's bounding box and prepare for placement ---
-        // --- Step 2.3: Resize the tattoo design to fit the mask's bounding box and prepare for placement ---
-let tattooForPlacement;
-try {
-    const originalTattooWidth = tattooMeta.width;
-    const newWidth = Math.round(originalTattooWidth * tattooScale);
+        // --- Step 2.3: Resize the tattoo design to fit the mask's bounding box, apply scaling, and prepare for placement ---
+        let tattooForPlacement;
+        let placementLeft;
+        let placementTop;
 
-    tattooForPlacement = await sharp(tattooDesignPngWithRemovedBackground)
-        .rotate(tattooAngle)
-        .resize(newWidth) // Resize based on scale, maintaining aspect ratio
-        .toBuffer();
-    console.log(`Tattoo design resized with scale factor ${tattooScale} to width: ${newWidth}.`);
-} catch (error) {
-    console.error('Error resizing tattoo design for placement:', error);
-    throw new Error('Failed to resize tattoo design for placement within mask area.');
-}
+        try {
+            // Calculate the target dimensions for the tattoo based on the mask's bounding box and the user's scale factor.
+            const targetWidth = Math.round(maskBoundingBox.width * tattooScale);
+            const targetHeight = Math.round(maskBoundingBox.height * tattooScale);
+
+            console.log(`Mask bounding box dims: ${maskBoundingBox.width}x${maskBoundingBox.height}. Scaled target dims: ${targetWidth}x${targetHeight}.`);
+
+            // Resize the tattoo to fit inside the scaled bounding box, maintaining its aspect ratio.
+            tattooForPlacement = await sharp(tattooDesignPngWithRemovedBackground)
+                .rotate(tattooAngle)
+                .resize({
+                    width: targetWidth,
+                    height: targetHeight,
+                    fit: sharp.fit.inside, // Key change: ensures aspect ratio is maintained and fits within the box
+                    withoutEnlargement: false // Allow enlargement if the user scales up
+                })
+                .toBuffer();
+
+            const resizedTattooMeta = await sharp(tattooForPlacement).metadata();
+            console.log(`Tattoo design resized to fit within scaled box. New actual dims: ${resizedTattooMeta.width}x${resizedTattooMeta.height}.`);
+
+            // Calculate the top-left position to CENTER the newly resized tattoo within the original bounding box area.
+            // This ensures that as the tattoo scales down, it scales towards the center of the drawn area.
+            placementLeft = maskBoundingBox.minX + Math.floor((maskBoundingBox.width - resizedTattooMeta.width) / 2);
+            placementTop = maskBoundingBox.minY + Math.floor((maskBoundingBox.height - resizedTattooMeta.height) / 2);
+
+            console.log(`Calculated placement: top=${placementTop}, left=${placementLeft}.`);
+
+        } catch (error) {
+            console.error('Error resizing or positioning tattoo design:', error);
+            throw new Error('Failed to resize tattoo design for placement within the mask area.');
+        }
 
 // 3. **Manual Composition with Sharp (Hybrid Approach Step 1)**
 let compositedImageBuffer;
@@ -244,9 +265,9 @@ try {
     })
     .composite([
         {
-            input: tattooForPlacement,
-            left: maskBoundingBox.minX,
-            top: maskBoundingBox.minY
+            input: tattooForPlacement, // The correctly resized tattoo
+            left: placementLeft,       // The correctly calculated centered left position
+            top: placementTop          // The correctly calculated centered top position
         }
     ])
     .png()

@@ -213,38 +213,45 @@ const fluxPlacementHandler = {
             throw new Error('Drawn mask area is too small or empty. Please draw a visible area.');
         }
 
-        // --- Step 2.3: Resize the tattoo design to fit the mask's bounding box, apply scaling, and prepare for placement ---
+        // --- Step 2.3: Resize, Rotate, and Position the tattoo to match frontend preview ---
         let tattooForPlacement;
         let placementLeft;
         let placementTop;
 
         try {
-            // Calculate the target dimensions for the tattoo based on the mask's bounding box and the user's scale factor.
+            console.log(`--- TATTOO TRANSFORM DEBUG START ---`);
+            console.log(`LOG: tattooAngle=${tattooAngle}, tattooScale=${tattooScale}`);
+            console.log(`LOG: MASK BBOX DIMS: width=${maskBoundingBox.width}, height=${maskBoundingBox.height}`);
+
+            // Target dimensions based on mask and scale
             const targetWidth = Math.round(maskBoundingBox.width * tattooScale);
             const targetHeight = Math.round(maskBoundingBox.height * tattooScale);
 
-            console.log(`Mask bounding box dims: ${maskBoundingBox.width}x${maskBoundingBox.height}. Scaled target dims: ${targetWidth}x${targetHeight}.`);
-
-            // Resize the tattoo to fit inside the scaled bounding box, maintaining its aspect ratio.
-            tattooForPlacement = await sharp(tattooDesignPngWithRemovedBackground)
-                .rotate(tattooAngle)
-                .resize({
-                    width: targetWidth,
-                    height: targetHeight,
-                    fit: sharp.fit.inside, // Key change: ensures aspect ratio is maintained and fits within the box
-                    withoutEnlargement: false // Allow enlargement if the user scales up
-                })
+            // Step 1: Resize the tattoo to fit inside the target dims (maintaining aspect ratio).
+            const resizedTattooBuffer = await sharp(tattooDesignPngWithRemovedBackground)
+                .resize({ width: targetWidth, height: targetHeight, fit: sharp.fit.inside, withoutEnlargement: false })
                 .toBuffer();
+            const resizedMeta = await sharp(resizedTattooBuffer).metadata();
+            console.log(`LOG: RESIZED (pre-rotation): ${resizedMeta.width}x${resizedMeta.height}`);
 
-            const resizedTattooMeta = await sharp(tattooForPlacement).metadata();
-            console.log(`Tattoo design resized to fit within scaled box. New actual dims: ${resizedTattooMeta.width}x${resizedTattooMeta.height}.`);
+            // Step 2: Rotate the resized tattoo. This expands the canvas.
+            const rotatedTattooBuffer = await sharp(resizedTattooBuffer)
+                .rotate(tattooAngle, { background: { r: 0, g: 0, b: 0, alpha: 0 } })
+                .toBuffer();
+            const rotatedMeta = await sharp(rotatedTattooBuffer).metadata();
+            tattooForPlacement = rotatedTattooBuffer;
+            console.log(`LOG: ROTATED (final): ${rotatedMeta.width}x${rotatedMeta.height}`);
 
-            // Calculate the top-left position to CENTER the newly resized tattoo within the original bounding box area.
-            // This ensures that as the tattoo scales down, it scales towards the center of the drawn area.
-            placementLeft = maskBoundingBox.minX + Math.floor((maskBoundingBox.width - resizedTattooMeta.width) / 2);
-            placementTop = maskBoundingBox.minY + Math.floor((maskBoundingBox.height - resizedTattooMeta.height) / 2);
+            // Step 3: Calculate final position. Start with centering the *un-rotated* tattoo,
+            // then adjust for the canvas expansion caused by rotation.
+            const centeredLeft = maskBoundingBox.minX + (maskBoundingBox.width - resizedMeta.width) / 2;
+            const centeredTop = maskBoundingBox.minY + (maskBoundingBox.height - resizedMeta.height) / 2;
 
-            console.log(`Calculated placement: top=${placementTop}, left=${placementLeft}.`);
+            placementLeft = Math.round(centeredLeft - (rotatedMeta.width - resizedMeta.width) / 2);
+            placementTop = Math.round(centeredTop - (rotatedMeta.height - resizedMeta.height) / 2);
+
+            console.log(`LOG: FINAL PLACEMENT: top=${placementTop}, left=${placementLeft}`);
+            console.log(`--- TATTOO TRANSFORM DEBUG END ---`);
 
         } catch (error) {
             console.error('Error resizing or positioning tattoo design:', error);

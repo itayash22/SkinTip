@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-08-11_SIZE_ENHANCE_V2');
+console.log('FLUX_HANDLER_VERSION: 2025-08-11_SIZE_ENHANCE_V2_ALPHA_OVERLAY_FIX');
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -201,6 +201,31 @@ async function buildSmartMask(maskBuffer, skinW, skinH) {
   console.log(`[MASK] Strategy=${strategy} | A=${A} areaRatio=${areaRatio.toFixed(6)} t=${t.toFixed(4)}`);
 
   return { hard, soft, A, P, t, areaRatio, width, height, strategy };
+}
+
+/**
+ * Make an RGBA overlay whose alpha channel is taken from a grayscale mask,
+ * scaled by `alphaScale` (0..1). The overlay is then usable with blend:'over'.
+ */
+async function makeAlphaOverlay(color, maskPng, alphaScale, width, height) {
+  const baseRGB = await sharp({
+    create: { width, height, channels: 3, background: color }
+  }).png().toBuffer();
+
+  // Build 1-channel alpha from mask luminance and scale its strength
+  const alphaImg = await sharp(maskPng)
+    .resize({ width, height, fit: 'fill', kernel: sharp.kernel.nearest })
+    .removeAlpha()
+    .toColourspace('b-w')      // 1 channel
+    .linear(alphaScale, 0)     // scale 0..255 by alphaScale
+    .toBuffer();
+
+  const overlay = await sharp(baseRGB)
+    .joinChannel(alphaImg)     // → RGBA
+    .png()
+    .toBuffer();
+
+  return overlay;
 }
 
 /* ============================== Core ============================== */
@@ -424,23 +449,30 @@ const fluxPlacementHandler = {
     const prefillOpacity = areaModel > 0.10 ? 0.0 : 0.8;
     console.log(`[PREFILL] areaModel=${(areaModel*100).toFixed(2)}% opacity=${prefillOpacity}`);
 
+    // Mask the tattoo into the editable region (OK to keep dest-in here)
+    const tattooWithinModelMask = await sharp(tattooCanvasPlaced)
+      .composite([{ input: maskForModelSoft, blend: 'dest-in' }])
+      .png()
+      .toBuffer();
+
     let inputImageForModel;
     if (prefillOpacity > 0) {
-      const prefill = await sharp({ create: { width: skinW, height: skinH, channels: 4, background: { r: 26, g: 26, b: 26, alpha: 1 } } })
-        .png()
-        .toBuffer();
-      const prefillShaped = await sharp(prefill).composite([{ input: maskForModelSoft, blend: 'dest-in' }]).png().toBuffer();
-      const tattooWithinModelMask = await sharp(tattooCanvasPlaced).composite([{ input: maskForModelSoft, blend: 'dest-in' }]).png().toBuffer();
+      // NEW: alpha-masked dark overlay so only the masked area is dimmed
+      const prefillOverlay = await makeAlphaOverlay(
+        { r: 26, g: 26, b: 26 },
+        maskForModelSoft,
+        prefillOpacity,
+        skinW, skinH
+      );
 
       inputImageForModel = await sharp(skinImageBuffer)
         .composite([
-          { input: prefillShaped, blend: 'multiply', opacity: prefillOpacity },
+          { input: prefillOverlay, blend: 'over' },                 // alpha limits region
           { input: tattooWithinModelMask, blend: 'over', opacity: 0.95 }
         ])
         .png()
         .toBuffer();
     } else {
-      const tattooWithinModelMask = await sharp(tattooCanvasPlaced).composite([{ input: maskForModelSoft, blend: 'dest-in' }]).png().toBuffer();
       inputImageForModel = await sharp(skinImageBuffer)
         .composite([{ input: tattooWithinModelMask, blend: 'over', opacity: 0.95 }])
         .png()
@@ -448,7 +480,7 @@ const fluxPlacementHandler = {
     }
     await uploadDebug(inputImageForModel, `input_for_model_${uuidv4()}.png`, userId);
 
-    // --- Engine-specific POST helper with fallback (unchanged otherwise) ---
+    // --- Engine-specific POST helper with fallback ---
     async function postWithEngine(engine, fluxApiKey, inputImgBase64, maskBase64, seed, i) {
       const headers = { 'Content-Type': 'application/json', 'x-key': fluxApiKey };
 
@@ -582,15 +614,17 @@ const fluxPlacementHandler = {
                 .png()
                 .toBuffer();
 
-              // base ink floor inside clamp
-              const darkFill = await sharp({ create: { width: skinW, height: skinH, channels: 4, background: { r: 26, g: 26, b: 26, alpha: 1 } } })
-                .png()
-                .toBuffer();
-              const darkFillShaped = await sharp(darkFill).composite([{ input: clampMaskSoft, blend: 'dest-in' }]).png().toBuffer();
+              // NEW: alpha-masked base ink floor only inside clamp
+              const floorOverlay = await makeAlphaOverlay(
+                { r: 26, g: 26, b: 26 },
+                clampMaskSoft,
+                0.65,
+                skinW, skinH
+              );
 
               const finalComp = await sharp(skinImageBuffer)
                 .composite([
-                  { input: darkFillShaped, blend: 'multiply', opacity: 0.65 },
+                  { input: floorOverlay, blend: 'over' },              // only inside clamp region
                   { input: clamped, blend: 'over', premultiplied: true },
                   { input: originalSilhouette, blend: 'overlay', opacity: 0.25 }
                 ])

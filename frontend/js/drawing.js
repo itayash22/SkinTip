@@ -1,5 +1,110 @@
 import * as THREE from 'three';
 
+/* ============================================================
+   Client-side white → alpha knockout for preview
+   - Detects near-uniform white and converts it to transparency
+   - Preserves edges to avoid chewing through linework
+   - Decontaminates RGB to remove white halos
+   Returns a dataURL('image/png')
+   ============================================================ */
+async function knockoutWhiteToAlphaClient(imageOrDataURL, opts = {}) {
+    const soft = opts.soft ?? 235;   // start fading above this
+    const hard = opts.hard ?? 252;   // fully transparent above this
+    const edgeT = opts.edgeT ?? 20;  // edge threshold
+
+    const img = await new Promise((res, rej) => {
+        const im = new Image();
+        im.crossOrigin = 'anonymous';
+        im.onload = () => res(im);
+        im.onerror = rej;
+        im.src = typeof imageOrDataURL === 'string'
+            ? imageOrDataURL
+            : URL.createObjectURL(imageOrDataURL);
+    });
+
+    const w = img.naturalWidth, h = img.naturalHeight;
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0);
+
+    // Quick uniform-white check from the four corners
+    function cornerStats(x, y, size) {
+        const d = ctx.getImageData(x, y, size, size).data;
+        let r=0,g=0,b=0, n = size*size;
+        for (let i=0;i<n;i++){ r+=d[i*4]; g+=d[i*4+1]; b+=d[i*4+2]; }
+        return [r/n, g/n, b/n];
+    }
+    const s = Math.max(4, Math.floor(Math.min(w, h) * 0.05));
+    const c1 = cornerStats(0,0,s), c2 = cornerStats(w-s,0,s),
+          c3 = cornerStats(0,h-s,s), c4 = cornerStats(w-s,h-s,s);
+    const mean = [
+        (c1[0]+c2[0]+c3[0]+c4[0])/4,
+        (c1[1]+c2[1]+c3[1]+c4[1])/4,
+        (c1[2]+c2[2]+c3[2]+c4[2])/4
+    ];
+    const nearWhite = (mean[0] >= 242 && mean[1] >= 242 && mean[2] >= 242);
+
+    // If not near-white, just return original (backend will handle complex cases)
+    if (!nearWhite) {
+        return canvas.toDataURL('image/png');
+    }
+
+    // Pixel buffers
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const d = imgData.data;
+
+    // Build crude edge mask (3x3 Laplacian on luminance) to protect lines
+    const gray = new Uint8ClampedArray(w*h);
+    for (let i=0, p=0; i<gray.length; i++, p+=4) {
+        const R=d[p], G=d[p+1], B=d[p+2];
+        gray[i] = (0.2126*R + 0.7152*G + 0.0722*B) | 0;
+    }
+    const edge = new Uint8ClampedArray(w*h);
+    const k = [0,-1,0,-1,4,-1,0,-1,0];
+    for (let y=1; y<h-1; y++){
+        for (let x=1; x<w-1; x++){
+            let acc=0, idx = y*w+x, i=0;
+            for (let ky=-1; ky<=1; ky++){
+                for (let kx=-1; kx<=1; kx++){
+                    acc += gray[idx + ky*w + kx] * k[i++];
+                }
+            }
+            edge[idx] = acc > edgeT ? 255 : 0;
+        }
+    }
+
+    // Color-to-alpha with decontamination (remove white matte)
+    const ramp = Math.max(1, hard - soft);
+    const bgR = mean[0], bgG = mean[1], bgB = mean[2];
+
+    for (let i=0, p=0; i<w*h; i++, p+=4) {
+        const R=d[p], G=d[p+1], B=d[p+2], A=d[p+3];
+        const wmax = Math.max(R,G,B);
+        let alpha = A;
+
+        if (wmax >= soft) {
+            const cut = Math.max(0, Math.min(1, (wmax - soft) / ramp)); // 0..1
+            alpha = Math.round(A * (1 - cut));
+            if (wmax >= hard) alpha = 0;
+        }
+        // Preserve edges (don’t erase lines)
+        if (edge[i] === 255) alpha = Math.max(alpha, A);
+
+        // Decontaminate RGB from white matte: F=(C-(1-a)*bg)/a
+        if (alpha > 0 && alpha < 255) {
+            const a = alpha / 255;
+            d[p  ] = Math.max(0, Math.min(255, Math.round((R - (1 - a) * bgR) / a)));
+            d[p+1] = Math.max(0, Math.min(255, Math.round((G - (1 - a) * bgG) / a)));
+            d[p+2] = Math.max(0, Math.min(255, Math.round((B - (1 - a) * bgB) / a)));
+        }
+        d[p+3] = alpha;
+    }
+
+    ctx.putImageData(imgData, 0, 0);
+    return canvas.toDataURL('image/png');
+}
+
 const drawing = {
     renderer: null,
     scene: null,
@@ -11,6 +116,7 @@ const drawing = {
     raycaster: new THREE.Raycaster(),
     pointer: new THREE.Vector2(),
     selectedArea: null,
+    originalImage: null,
 
     init: (skinImageUrl, tattooImageUrl) => {
         // --- Renderer & Scene ---
@@ -67,7 +173,8 @@ const drawing = {
             drawing.skinMesh.material.needsUpdate = true;
         });
 
-        drawing.loadTexture(tattooImageUrl, (tex, img) => {
+        // IMPORTANT: for the tattoo we first knock out white → transparent (preview-only)
+        drawing.loadTattooTexture(tattooImageUrl, (tex, img) => {
             const ar = img.width / img.height;
             const tattooHeight = 50; // Base size
             const tattooWidth = tattooHeight * ar;
@@ -98,6 +205,28 @@ const drawing = {
             cb(tex, img);
         };
         img.src = url;
+    },
+
+    // NEW: tattoo loader that runs client-side white→alpha before creating the texture
+    loadTattooTexture: (url, cb) => {
+        (async () => {
+            try {
+                const cleanedDataUrl = await knockoutWhiteToAlphaClient(url);
+                const img = new Image();
+                img.crossOrigin = "anonymous";
+                img.onload = () => {
+                    const tex = new THREE.Texture(img);
+                    tex.colorSpace = THREE.SRGBColorSpace;
+                    tex.needsUpdate = true;
+                    cb(tex, img);
+                };
+                img.src = cleanedDataUrl;
+            } catch (e) {
+                console.warn('CTA preview cleanup failed, using original tattoo image:', e);
+                // Fallback: load original
+                drawing.loadTexture(url, cb);
+            }
+        })();
     },
 
     setupEventListeners: () => {

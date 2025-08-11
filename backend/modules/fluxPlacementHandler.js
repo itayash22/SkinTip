@@ -226,52 +226,65 @@ async function analyzeAlphaPng(pngBuffer) {
   };
 }
 
-/** Sample 4 corner patches to detect a uniform near-white matte. */
+// REPLACE the whole detectUniformWhiteBackground with this safe version
 async function detectUniformWhiteBackground(pngBuffer) {
-  const img = sharp(pngBuffer);
-  const meta = await img.metadata();
-  const { width:w, height:h } = meta;
-  const patch = Math.max(4, Math.floor(Math.min(w, h) * 0.05)); // 5% side
+  const meta = await sharp(pngBuffer).metadata();
+  const w = meta.width | 0, h = meta.height | 0;
+  if (!w || !h) return { isUniformWhite: false, bgColor: [255, 255, 255] };
 
-  async function stats(x, y) {
-    const buf = await img.extract({ left:x, top:y, width:patch, height:patch }).raw().ensureAlpha().toBuffer();
+  // 5% of the shorter side, clamped to [2 .. min(w,h)]
+  let patch = Math.floor(Math.min(w, h) * 0.05);
+  patch = Math.max(2, Math.min(patch, w, h));
+
+  // safe extractor: clamp left/top inside image, build a fresh sharp() per read
+  async function stats(left, top) {
+    const l = Math.max(0, Math.min(left,  w - patch));
+    const t = Math.max(0, Math.min(top,   h - patch));
+    const buf = await sharp(pngBuffer)
+      .extract({ left: l, top: t, width: patch, height: patch })
+      .ensureAlpha()
+      .raw()                   // ensureAlpha BEFORE raw()
+      .toBuffer();
+
     const n = patch * patch;
-    let r=0,g=0,b=0, rr=0, gg=0, bb=0;
-    for (let i=0;i<n;i++){
-      const R = buf[i*4+0], G = buf[i*4+1], B = buf[i*4+2];
+    let r = 0, g = 0, b = 0, rr = 0, gg = 0, bb = 0;
+    for (let i = 0; i < n; i++) {
+      const R = buf[i * 4 + 0], G = buf[i * 4 + 1], B = buf[i * 4 + 2];
       r += R; g += G; b += B;
-      rr += R*R; gg += G*G; bb += B*B;
+      rr += R * R; gg += G * G; bb += B * B;
     }
-    const mean = [r/n, g/n, b/n];
+    const mean = [r / n, g / n, b / n];
     const std = [
-      Math.sqrt(rr/n - mean[0]*mean[0]),
-      Math.sqrt(gg/n - mean[1]*mean[1]),
-      Math.sqrt(bb/n - mean[2]*mean[2])
+      Math.sqrt(rr / n - mean[0] * mean[0]),
+      Math.sqrt(gg / n - mean[1] * mean[1]),
+      Math.sqrt(bb / n - mean[2] * mean[2]),
     ];
     return { mean, std };
   }
 
-  const patches = [
-    await stats(0,0),
-    await stats(w-patch,0),
-    await stats(0,h-patch),
-    await stats(w-patch,h-patch)
+  const s1 = await stats(0, 0);
+  const s2 = await stats(w - patch, 0);
+  const s3 = await stats(0, h - patch);
+  const s4 = await stats(w - patch, h - patch);
+
+  const mean = [
+    (s1.mean[0] + s2.mean[0] + s3.mean[0] + s4.mean[0]) / 4,
+    (s1.mean[1] + s2.mean[1] + s3.mean[1] + s4.mean[1]) / 4,
+    (s1.mean[2] + s2.mean[2] + s3.mean[2] + s4.mean[2]) / 4,
+  ];
+  const std = [
+    (s1.std[0] + s2.std[0] + s3.std[0] + s4.std[0]) / 4,
+    (s1.std[1] + s2.std[1] + s3.std[1] + s4.std[1]) / 4,
+    (s1.std[2] + s2.std[2] + s3.std[2] + s4.std[2]) / 4,
   ];
 
-  // Averages across corners
-  const mean = [0,0,0], std = [0,0,0];
-  for (const p of patches) {
-    mean[0]+=p.mean[0]; mean[1]+=p.mean[1]; mean[2]+=p.mean[2];
-    std[0]+=p.std[0];   std[1]+=p.std[1];   std[2]+=p.std[2];
-  }
-  mean[0]/=4; mean[1]/=4; mean[2]/=4;
-  std[0]/=4;  std[1]/=4;  std[2]/=4;
+  // Near pure white and very low variance across corners
+  const nearWhite   = (mean[0] >= 242 && mean[1] >= 242 && mean[2] >= 242);
+  const lowVariance = (std[0] < 3.5 && std[1] < 3.5 && std[2] < 3.5);
 
-  const nearWhite   = (mean[0] >= 242 && mean[1] >= 242 && mean[2] >= 242); // ~#F2F2F2+
-  const lowVariance = (std[0] < 3.5 && std[1] < 3.5 && std[2] < 3.5);       // very flat
-
-  return { isUniformWhite: nearWhite && lowVariance, bgColor: [mean[0], mean[1], mean[2]] };
+  return { isUniformWhite: nearWhite && lowVariance, bgColor: mean };
 }
+
 
 /**
  * Color-to-Alpha (CTA) for near-white backgrounds, with decontamination and edge protection.

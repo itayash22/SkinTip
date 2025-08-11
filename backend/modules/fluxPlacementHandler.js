@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-08-11_SIZE_ENHANCE_V3_NO_DARKEN');
+console.log('FLUX_HANDLER_VERSION: 2025-08-12_WHITE_BG_CTA_V1');
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -203,30 +203,222 @@ async function buildSmartMask(maskBuffer, skinW, skinH) {
   return { hard, soft, A, P, t, areaRatio, width, height, strategy };
 }
 
+/* ---------- White PNG knockout helpers (uniform-white CTA) ---------- */
+
+/** Analyze alpha: is it useful (both opaque & transparent present)? */
+async function analyzeAlphaPng(pngBuffer) {
+  const meta = await sharp(pngBuffer).metadata();
+  const raw = await sharp(pngBuffer).ensureAlpha().raw().toBuffer(); // RGBA
+  const n = meta.width * meta.height;
+  let opaque = 0, transparent = 0;
+  for (let i = 0; i < n; i++) {
+    const a = raw[i * 4 + 3];
+    if (a >= 250) opaque++;
+    if (a <= 5)   transparent++;
+  }
+  return {
+    width: meta.width,
+    height: meta.height,
+    opaqueRatio: opaque / n,
+    transparentRatio: transparent / n,
+    hasAlpha: !!meta.hasAlpha,
+    alphaUseful: (opaque > 0 && transparent > 0)
+  };
+}
+
+/** Sample 4 corner patches to detect a uniform near-white matte. */
+async function detectUniformWhiteBackground(pngBuffer) {
+  const img = sharp(pngBuffer);
+  const meta = await img.metadata();
+  const { width:w, height:h } = meta;
+  const patch = Math.max(4, Math.floor(Math.min(w, h) * 0.05)); // 5% side
+
+  async function stats(x, y) {
+    const buf = await img.extract({ left:x, top:y, width:patch, height:patch }).raw().ensureAlpha().toBuffer();
+    const n = patch * patch;
+    let r=0,g=0,b=0, rr=0, gg=0, bb=0;
+    for (let i=0;i<n;i++){
+      const R = buf[i*4+0], G = buf[i*4+1], B = buf[i*4+2];
+      r += R; g += G; b += B;
+      rr += R*R; gg += G*G; bb += B*B;
+    }
+    const mean = [r/n, g/n, b/n];
+    const std = [
+      Math.sqrt(rr/n - mean[0]*mean[0]),
+      Math.sqrt(gg/n - mean[1]*mean[1]),
+      Math.sqrt(bb/n - mean[2]*mean[2])
+    ];
+    return { mean, std };
+  }
+
+  const patches = [
+    await stats(0,0),
+    await stats(w-patch,0),
+    await stats(0,h-patch),
+    await stats(w-patch,h-patch)
+  ];
+
+  // Averages across corners
+  const mean = [0,0,0], std = [0,0,0];
+  for (const p of patches) {
+    mean[0]+=p.mean[0]; mean[1]+=p.mean[1]; mean[2]+=p.mean[2];
+    std[0]+=p.std[0];   std[1]+=p.std[1];   std[2]+=p.std[2];
+  }
+  mean[0]/=4; mean[1]/=4; mean[2]/=4;
+  std[0]/=4;  std[1]/=4;  std[2]/=4;
+
+  const nearWhite   = (mean[0] >= 242 && mean[1] >= 242 && mean[2] >= 242); // ~#F2F2F2+
+  const lowVariance = (std[0] < 3.5 && std[1] < 3.5 && std[2] < 3.5);       // very flat
+
+  return { isUniformWhite: nearWhite && lowVariance, bgColor: [mean[0], mean[1], mean[2]] };
+}
+
+/**
+ * Color-to-Alpha (CTA) for near-white backgrounds, with decontamination and edge protection.
+ * - softThreshold: start removing above this RGB
+ * - hardThreshold: fully remove above this RGB
+ * - edgeThresh: Laplacian threshold for edge mask
+ * - feather: gaussian blur on alpha
+ */
+async function colorToAlphaDecontam(pngBuffer, bgRGB = [255,255,255], {
+  softThreshold = parseInt(process.env.WHITE_KNOCKOUT_SOFT || '235', 10),
+  hardThreshold = parseInt(process.env.WHITE_KNOCKOUT_HARD || '252', 10),
+  edgeThresh    = parseInt(process.env.WHITE_KNOCKOUT_EDGE || '20',  10),
+  feather       = parseFloat(process.env.WHITE_KNOCKOUT_FEATHER || '0.5')
+} = {}) {
+
+  const base = sharp(pngBuffer).ensureAlpha();
+  const { width, height } = await base.metadata();
+  const rgba = await base.raw().toBuffer(); // RGBA
+
+  // Edge mask for protection
+  const edgeMaskRaw = await sharp(pngBuffer)
+    .grayscale()
+    .convolve({ width: 3, height: 3, kernel: [0, -1, 0, -1, 4, -1, 0, -1, 0] })
+    .normalize()
+    .threshold(edgeThresh)
+    .raw()
+    .toBuffer(); // 1 channel
+
+  const out = Buffer.allocUnsafe(rgba.length);
+
+  const bgR = bgRGB[0], bgG = bgRGB[1], bgB = bgRGB[2];
+  const ramp = Math.max(1, (hardThreshold - softThreshold));
+
+  const n = width * height;
+  for (let i = 0; i < n; i++) {
+    const R = rgba[i*4+0], G = rgba[i*4+1], B = rgba[i*4+2];
+    const A = rgba[i*4+3];
+
+    // whiteness vs threshold band
+    const w = Math.max(R, G, B);
+    let alpha = A;
+
+    if (w >= softThreshold) {
+      const cut = Math.max(0, Math.min(1, (w - softThreshold) / ramp)); // 0..1
+      const newAlpha = Math.round(A * (1 - cut)); // fade out as it gets whiter
+      alpha = newAlpha;
+      if (w >= hardThreshold) alpha = 0;
+    }
+
+    // Edge protection: keep original alpha where edge detected
+    if (edgeMaskRaw[i] > 0) alpha = Math.max(alpha, A);
+
+    // Decontaminate RGB from bg:  F = (R - (1-a)*bg) / a
+    // (avoid divide-by-zero; if alpha==0, just keep RGB)
+    let FR = R, FG = G, FB = B;
+    if (alpha > 0 && alpha < 255) {
+      const a = alpha / 255;
+      FR = Math.max(0, Math.min(255, Math.round((R - (1 - a) * bgR) / a)));
+      FG = Math.max(0, Math.min(255, Math.round((G - (1 - a) * bgG) / a)));
+      FB = Math.max(0, Math.min(255, Math.round((B - (1 - a) * bgB) / a)));
+    }
+
+    out[i*4+0] = FR;
+    out[i*4+1] = FG;
+    out[i*4+2] = FB;
+    out[i*4+3] = alpha;
+  }
+
+  let outPng = await sharp(out, { raw: { width, height, channels: 4 } }).png().toBuffer();
+
+  if (feather > 0) {
+    const alpha = await sharp(outPng).extractChannel('alpha').blur(feather).toBuffer();
+    outPng = await sharp(outPng).removeAlpha().joinChannel(alpha).png().toBuffer();
+  }
+
+  return outPng;
+}
+
 /* ============================== Core ============================== */
 
 const fluxPlacementHandler = {
 
+  /**
+   * Background removal with robust white-PNG handling:
+   * 1) Try remove.bg if configured.
+   * 2) If alpha not useful → detect uniform white and run CTA with decontam.
+   * 3) If remove.bg disabled/failed → CTA path directly.
+   */
   removeImageBackground: async (imageBuffer) => {
-    if (!REMOVE_BG_API_KEY) {
-      console.warn('[remove.bg] key not set → using original PNG');
-      return sharp(imageBuffer).png().toBuffer();
-    }
-    try {
-      const formData = new FormData();
-      formData.append('image_file', new Blob([imageBuffer], { type: 'image/png' }), 'tattoo_design.png');
-      formData.append('size', 'auto');
-      formData.append('format', 'png');
+    // Always normalize to PNG
+    const originalPng = await sharp(imageBuffer).png().toBuffer();
 
-      const res = await axios.post('https://api.remove.bg/v1.0/removebg', formData, {
-        headers: { 'X-Api-Key': REMOVE_BG_API_KEY, ...formData.getHeaders() },
-        responseType: 'arraybuffer'
-      });
-      if (res.status === 200) return Buffer.from(res.data);
-      throw new Error(`remove.bg ${res.status}`);
-    } catch (e) {
-      console.warn('[remove.bg] failed:', e.message, '— using original PNG');
-      return sharp(imageBuffer).png().toBuffer();
+    // Try remove.bg first if key exists
+    if (REMOVE_BG_API_KEY) {
+      try {
+        console.log('[BG] remove.bg: attempting cutout…');
+        const formData = new FormData();
+        formData.append('image_file', new Blob([originalPng], { type: 'image/png' }), 'tattoo_design.png');
+        formData.append('size', 'auto');
+        formData.append('format', 'png');
+
+        const res = await axios.post('https://api.remove.bg/v1.0/removebg', formData, {
+          headers: { 'X-Api-Key': REMOVE_BG_API_KEY, ...formData.getHeaders() },
+          responseType: 'arraybuffer'
+        });
+
+        if (res.status === 200) {
+          let cut = Buffer.from(res.data);
+          const ana = await analyzeAlphaPng(cut);
+
+          if (ana.alphaUseful && ana.transparentRatio > 0.001) {
+            // Good alpha, use it as-is
+            console.log('[BG] remove.bg returned useful alpha, keeping.');
+            return cut;
+          }
+
+          // Not useful -> check uniform white and CTA
+          const det = await detectUniformWhiteBackground(originalPng);
+          if (det.isUniformWhite) {
+            console.log('[BG] remove.bg opaque; uniform white detected → CTA decontam.');
+            const cta = await colorToAlphaDecontam(originalPng, det.bgColor);
+            return cta;
+          }
+
+          console.log('[BG] remove.bg opaque; non-uniform background → CTA fallback (best effort).');
+          const ctaGeneric = await colorToAlphaDecontam(originalPng);
+          return ctaGeneric;
+        }
+
+        console.warn('[BG] remove.bg non-200; falling back to CTA.');
+        const det2 = await detectUniformWhiteBackground(originalPng);
+        return await colorToAlphaDecontam(originalPng, det2.isUniformWhite ? det2.bgColor : [255,255,255]);
+
+      } catch (error) {
+        console.warn('[BG] remove.bg failed:', error.response?.data?.toString?.() || error.message);
+        // Fall through to CTA path
+      }
+    }
+
+    // No remove.bg or failed: CTA path based on detection
+    const det = await detectUniformWhiteBackground(originalPng);
+    if (det.isUniformWhite) {
+      console.log('[BG] CTA: uniform white detected.');
+      return await colorToAlphaDecontam(originalPng, det.bgColor);
+    } else {
+      console.log('[BG] CTA: non-uniform background; attempting generic CTA.');
+      return await colorToAlphaDecontam(originalPng);
     }
   },
 
@@ -297,7 +489,7 @@ const fluxPlacementHandler = {
   },
 
   /**
-   * Geometry-safe pipeline + engine flag + +20% scale for model.
+   * Geometry-safe pipeline + engine flag + +20% scale for model (no global darkening).
    */
   placeTattooOnSkin: async (
     skinImageBuffer,

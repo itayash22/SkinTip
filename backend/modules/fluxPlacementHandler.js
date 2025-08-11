@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-08-11_SIZE_ENHANCE_V2_ALPHA_OVERLAY_FIX');
+console.log('FLUX_HANDLER_VERSION: 2025-08-11_SIZE_ENHANCE_V3_NO_DARKEN');
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -203,31 +203,6 @@ async function buildSmartMask(maskBuffer, skinW, skinH) {
   return { hard, soft, A, P, t, areaRatio, width, height, strategy };
 }
 
-/**
- * Make an RGBA overlay whose alpha channel is taken from a grayscale mask,
- * scaled by `alphaScale` (0..1). The overlay is then usable with blend:'over'.
- */
-async function makeAlphaOverlay(color, maskPng, alphaScale, width, height) {
-  const baseRGB = await sharp({
-    create: { width, height, channels: 3, background: color }
-  }).png().toBuffer();
-
-  // Build 1-channel alpha from mask luminance and scale its strength
-  const alphaImg = await sharp(maskPng)
-    .resize({ width, height, fit: 'fill', kernel: sharp.kernel.nearest })
-    .removeAlpha()
-    .toColourspace('b-w')      // 1 channel
-    .linear(alphaScale, 0)     // scale 0..255 by alphaScale
-    .toBuffer();
-
-  const overlay = await sharp(baseRGB)
-    .joinChannel(alphaImg)     // → RGBA
-    .png()
-    .toBuffer();
-
-  return overlay;
-}
-
 /* ============================== Core ============================== */
 
 const fluxPlacementHandler = {
@@ -293,7 +268,6 @@ const fluxPlacementHandler = {
       throw new Error(`Failed to upload image to storage: ${upErr.message}`);
     }
 
-    // Get the nominal public URL
     const { data: pub } = supabase.storage
       .from(SUPABASE_STORAGE_BUCKET)
       .getPublicUrl(path);
@@ -301,7 +275,6 @@ const fluxPlacementHandler = {
     let url = pub?.publicUrl || null;
     console.log('[UPLOAD] tentative publicUrl:', url);
 
-    // Verify reachability; if not 2xx, create a signed URL fallback
     try {
       if (!url) throw new Error('No publicUrl returned');
       const head = await axios.head(url, { validateStatus: () => true });
@@ -312,7 +285,7 @@ const fluxPlacementHandler = {
       console.warn('[UPLOAD] publicUrl not accessible → creating signed URL fallback:', e.message);
       const { data: signed, error: signErr } = await supabase.storage
         .from(SUPABASE_STORAGE_BUCKET)
-        .createSignedUrl(path, 60 * 60 * 24 * 30); // 30 days
+        .createSignedUrl(path, 60 * 60 * 24 * 30);
       if (signErr || !signed?.signedUrl) {
         throw new Error(`Failed to create signed URL: ${signErr?.message || 'unknown error'}`);
       }
@@ -445,39 +418,18 @@ const fluxPlacementHandler = {
       .toBuffer();
     await uploadDebug(originalSilhouette, `original_silhouette_${uuidv4()}.png`, userId);
 
-    // --- Build input image for the model (prefill & line art) ---
-    const prefillOpacity = areaModel > 0.10 ? 0.0 : 0.8;
-    console.log(`[PREFILL] areaModel=${(areaModel*100).toFixed(2)}% opacity=${prefillOpacity}`);
-
-    // Mask the tattoo into the editable region (OK to keep dest-in here)
+    // --- Build input image for the model (NO PREFILL DARKENING) ---
     const tattooWithinModelMask = await sharp(tattooCanvasPlaced)
       .composite([{ input: maskForModelSoft, blend: 'dest-in' }])
       .png()
       .toBuffer();
 
-    let inputImageForModel;
-    if (prefillOpacity > 0) {
-      // NEW: alpha-masked dark overlay so only the masked area is dimmed
-      const prefillOverlay = await makeAlphaOverlay(
-        { r: 26, g: 26, b: 26 },
-        maskForModelSoft,
-        prefillOpacity,
-        skinW, skinH
-      );
-
-      inputImageForModel = await sharp(skinImageBuffer)
-        .composite([
-          { input: prefillOverlay, blend: 'over' },                 // alpha limits region
-          { input: tattooWithinModelMask, blend: 'over', opacity: 0.95 }
-        ])
-        .png()
-        .toBuffer();
-    } else {
-      inputImageForModel = await sharp(skinImageBuffer)
-        .composite([{ input: tattooWithinModelMask, blend: 'over', opacity: 0.95 }])
-        .png()
-        .toBuffer();
-    }
+    const inputImageForModel = await sharp(skinImageBuffer)
+      .composite([
+        { input: tattooWithinModelMask, blend: 'over', opacity: 0.95 }
+      ])
+      .png()
+      .toBuffer();
     await uploadDebug(inputImageForModel, `input_for_model_${uuidv4()}.png`, userId);
 
     // --- Engine-specific POST helper with fallback ---
@@ -590,8 +542,8 @@ const fluxPlacementHandler = {
           if (Array.isArray(r.images)) urls.push(...r.images.filter(s => typeof s === 'string'));
           if (Array.isArray(r.output)) urls.push(...r.output.filter(s => typeof s === 'string'));
 
-          // ---- POST-PROCESS (adaptive clamp + base-ink floor) ----
-          const TAU = 0.05; // thinness reference
+          // ---- POST-PROCESS (strict clamp ONLY, no dark floor) ----
+          const TAU = 0.05;
           const r_final = Math.max(1, Math.min(6, Math.round(1 + 10 * Math.max(0, TAU - t))));
           console.log(`[CLAMP] r_final=${r_final} (t=${t.toFixed(4)})`);
 
@@ -614,19 +566,10 @@ const fluxPlacementHandler = {
                 .png()
                 .toBuffer();
 
-              // NEW: alpha-masked base ink floor only inside clamp
-              const floorOverlay = await makeAlphaOverlay(
-                { r: 26, g: 26, b: 26 },
-                clampMaskSoft,
-                0.65,
-                skinW, skinH
-              );
-
+              // final = skin + clamped tattoo ONLY (no dark overlays)
               const finalComp = await sharp(skinImageBuffer)
                 .composite([
-                  { input: floorOverlay, blend: 'over' },              // only inside clamp region
-                  { input: clamped, blend: 'over', premultiplied: true },
-                  { input: originalSilhouette, blend: 'overlay', opacity: 0.25 }
+                  { input: clamped, blend: 'over', premultiplied: true }
                 ])
                 .png()
                 .toBuffer();

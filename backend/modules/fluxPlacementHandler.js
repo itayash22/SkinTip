@@ -27,13 +27,13 @@ const FLUX_API_KEY = process.env.FLUX_API_KEY;
 const ADAPTIVE_SCALE_ENABLED = (process.env.ADAPTIVE_SCALE_ENABLED ?? 'true').toLowerCase() === 'true';
 const ADAPTIVE_ENGINE_ENABLED = (process.env.ADAPTIVE_ENGINE_ENABLED ?? 'true').toLowerCase() === 'true';
 
-// NOTE: this already exists in your code – env var name kept the same.
-const GLOBAL_SCALE_UP = Number(process.env.MODEL_SCALE_UP || '1.0'); // applied always
+// Site-wide multiplier you already had
+const GLOBAL_SCALE_UP = Number(process.env.MODEL_SCALE_UP || '1.0');
 
+// Engine selection default
 const FLUX_ENGINE_DEFAULT = (process.env.FLUX_ENGINE || 'kontext').toLowerCase(); // 'kontext' | 'fill'
 
 // New: small calibration multipliers per engine to counter FLUX’s consistent shrink.
-// Defaults tuned from your datasets; override via env if needed.
 const ENGINE_CAL_BIAS_KONTEXT = Number(process.env.ENGINE_CAL_BIAS_KONTEXT || '1.08');
 const ENGINE_CAL_BIAS_FILL    = Number(process.env.ENGINE_CAL_BIAS_FILL    || '1.02');
 
@@ -46,7 +46,8 @@ async function uploadDebug(imageBuffer, userId, name, contentType = 'image/png',
   try {
     const fileName = `${name}_${uuidv4()}.${contentType.startsWith('image/png') ? 'png' : 'jpg'}`;
     const filePath = `${userId}/${folder}/${fileName}`;
-    const { error } = await supabase.storage.from(SUPABASE_STORAGE_BUCKET)
+    const { error } = await supabase.storage
+      .from(SUPABASE_STORAGE_BUCKET)
       .upload(filePath, imageBuffer, { contentType, upsert: false });
     if (error) throw error;
     const { data: pub } = supabase.storage.from(SUPABASE_STORAGE_BUCKET).getPublicUrl(filePath);
@@ -117,6 +118,7 @@ async function detectUniformWhiteBackground(pngBuffer) {
 }
 
 async function colorToAlphaWhite(buffer) {
+  // soft white→alpha + simple decontamination
   const img = sharp(buffer).ensureAlpha();
   const { width: w, height: h } = await img.metadata();
   const raw = await img.raw().toBuffer();
@@ -150,25 +152,21 @@ async function colorToAlphaWhite(buffer) {
 // Adaptive analysis on tattoo alpha
 // -----------------------------
 async function analyzeTattooAlpha(pngBuffer) {
-  // returns { coverage, thinness, solidity, bbox, width, height }
   const img = sharp(pngBuffer).ensureAlpha();
   const meta = await img.metadata();
   const w = meta.width | 0, h = meta.height | 0;
 
-  // alpha channel only
   const alpha = await img.extractChannel('alpha').raw().toBuffer(); // 1 channel
   const N = w * h;
 
-  // Binary mask (alpha > 128)
-  const mask = new Uint8Array(N);
   let area = 0;
   let minX = w, minY = h, maxX = -1, maxY = -1;
   for (let i = 0; i < N; i++) {
     const v = alpha[i] > 128 ? 1 : 0;
-    mask[i] = v;
     if (v) {
       area++;
-      const y = (i / w) | 0, x = i - y * w;
+      const y = (i / w) | 0;
+      const x = i - y * w;
       if (x < minX) minX = x;
       if (y < minY) minY = y;
       if (x > maxX) maxX = x;
@@ -185,10 +183,10 @@ async function analyzeTattooAlpha(pngBuffer) {
   const coverage = area / N;
   const solidity = bboxArea > 0 ? area / bboxArea : 0;
 
-  // Thinness proxy: average absolute gradient of alpha within bbox
+  // Thinness proxy via simple alpha gradients inside bbox
   let gradAcc = 0, gradCount = 0;
   for (let y = minY + 1; y < maxY; y++) {
-    let row = y * w;
+    const row = y * w;
     for (let x = minX + 1; x < maxX; x++) {
       const i = row + x;
       const gx = Math.abs(alpha[i] - alpha[i - 1]);
@@ -199,11 +197,17 @@ async function analyzeTattooAlpha(pngBuffer) {
   }
   const thinness = gradCount ? (gradAcc / (gradCount * 255)) : 0;
 
-  return { coverage, thinness, solidity, bbox: { minX, minY, maxX, maxY, w: bboxW, h: bboxH }, width: w, height: h };
+  return {
+    coverage,
+    thinness,
+    solidity,
+    bbox: { minX, minY, maxX, maxY, w: bboxW, h: bboxH },
+    width: w,
+    height: h
+  };
 }
 
 function chooseAdaptiveScale(stats) {
-  // Heuristics (softened so we don’t overcorrect when engine bias is applied)
   const cov = stats.coverage;
   const thn = stats.thinness;
   const sol = stats.solidity;
@@ -212,15 +216,13 @@ function chooseAdaptiveScale(stats) {
   const hasHaloSplash = (sol < 0.55);
 
   let scale = 1.0;
-
   if (isThinLine && !hasHaloSplash) {
-    // gentle boost; engine bias will add a bit more
     const boost = clamp(1.18 + (0.10 - cov) * 2.2, 1.18, 1.38);
     scale = boost;
   } else if (hasHaloSplash) {
-    scale = 1.0; // avoid growth on splashy/halo assets
+    scale = 1.0;
   } else {
-    scale = 1.00; // neutral (engine bias handles the consistent shrink)
+    scale = 1.00;
   }
 
   return { scale, isThinLine, hasHaloSplash };
@@ -237,6 +239,7 @@ function pickEngine(baseEngine, adaptiveEnabled, isThinLine) {
 const fluxPlacementHandler = {
 
   removeImageBackground: async (imageBuffer) => {
+    // 1) local white->alpha if uniform white and no key
     if (!REMOVE_BG_API_KEY) {
       try {
         const { isUniformWhite } = await detectUniformWhiteBackground(imageBuffer);
@@ -245,14 +248,19 @@ const fluxPlacementHandler = {
           return await colorToAlphaWhite(imageBuffer);
         }
       } catch (e) {
-        console.warn('[BG] local white→alpha probe failed, passing-through:', e.message);
+        console.warn('[BG] local white→alpha probe failed, pass-through:', e.message);
       }
       return await sharp(imageBuffer).png().toBuffer();
     }
 
+    // 2) remove.bg then fallback to local/passthrough
     try {
       const formData = new FormData();
-      formData.append('image_file', new Blob([imageBuffer], { type: 'image/png' }), 'tattoo_design.png');
+      // Node 22 has global Blob; if not, form-data can accept Buffers as well.
+      formData.append('image_file', Buffer.from(imageBuffer), {
+        filename: 'tattoo_design.png',
+        contentType: 'image/png'
+      });
       formData.append('size', 'auto');
       formData.append('format', 'png');
 
@@ -267,7 +275,7 @@ const fluxPlacementHandler = {
       try {
         const { isUniformWhite } = await detectUniformWhiteBackground(imageBuffer);
         if (isUniformWhite) return await colorToAlphaWhite(imageBuffer);
-      } catch (e) {}
+      } catch (e) { /* ignore */ }
       return await sharp(imageBuffer).png().toBuffer();
     }
   },
@@ -275,4 +283,249 @@ const fluxPlacementHandler = {
   applyWatermark: async (imageBuffer) => {
     try {
       const watermarkText = 'SkinTip.AI';
-      const watermarkSvg = `<svg width="200" height="30" viewBox="0 0
+      const watermarkSvg =
+        `<svg width="200" height="30" viewBox="0 0 200 30" xmlns="http://www.w3.org/2000/svg">
+           <text x="10" y="25" font-family="Arial, sans-serif" font-size="16" fill="#FFFFFF" fill-opacity="0.5">${watermarkText}</text>
+         </svg>`;
+      const svgBuffer = Buffer.from(watermarkSvg);
+
+      const metadata = await sharp(imageBuffer).metadata();
+      const imageWidth = metadata.width || 0;
+      const imageHeight = metadata.height || 0;
+
+      const svgWidth = 200;
+      const svgHeight = 30;
+      const padding = 15;
+
+      const left = Math.max(0, imageWidth - svgWidth - padding);
+      const top = Math.max(0, imageHeight - svgHeight - padding);
+
+      return await sharp(imageBuffer)
+        .composite([{ input: svgBuffer, top, left, blend: 'over' }])
+        .png()
+        .toBuffer();
+    } catch (error) {
+      console.error('Error applying watermark:', error);
+      return imageBuffer;
+    }
+  },
+
+  uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '', contentType = 'image/png') => {
+    const filePath = folder ? `${userId}/${folder}/${fileName}` : `${userId}/${fileName}`;
+    const { error } = await supabase.storage
+      .from(SUPABASE_STORAGE_BUCKET)
+      .upload(filePath, imageBuffer, { contentType, upsert: false });
+    if (error) {
+      console.error('Supabase upload error:', error);
+      throw new Error(`Failed to upload image to storage: ${error.message}`);
+    }
+    const { data: pub } = supabase.storage.from(SUPABASE_STORAGE_BUCKET).getPublicUrl(filePath);
+    if (!pub?.publicUrl) throw new Error('Failed to get public URL for uploaded image.');
+    console.log('Image uploaded to Supabase:', pub.publicUrl);
+    return pub.publicUrl;
+  },
+
+  /**
+   * Main pipeline
+   */
+  placeTattooOnSkin: async (
+    skinImageBuffer,
+    tattooDesignImageBase64,
+    maskBase64,
+    userId,
+    numVariations,
+    fluxApiKey,
+    tattooAngle = 0,
+    tattooScale = 1.0
+  ) => {
+    // --- Inputs ---
+    const tattooDesignOriginalBuffer = Buffer.from(tattooDesignImageBase64, 'base64');
+    const tattooMeta0 = await sharp(tattooDesignOriginalBuffer).metadata();
+    console.log(`Input tattoo meta: ${tattooMeta0.width}x${tattooMeta0.height}, fmt=${tattooMeta0.format}`);
+
+    // --- Remove background to ensure alpha ---
+    const tattooDesignPng = await fluxPlacementHandler.removeImageBackground(tattooDesignOriginalBuffer);
+
+    // --- Analyze tattoo alpha for adaptive decisions ---
+    const stats = await analyzeTattooAlpha(tattooDesignPng);
+    console.log(`[ADAPT] coverage=${stats.coverage.toFixed(4)} thinness=${stats.thinness.toFixed(4)} solidity=${stats.solidity.toFixed(4)} bbox=${stats.bbox ? stats.bbox.w+'x'+stats.bbox.h : 'NA'}`);
+
+    // --- Adaptive scale & engine pick ---
+    const baseEngine = FLUX_ENGINE_DEFAULT;
+    const { scale: adaptScale, isThinLine, hasHaloSplash } =
+      ADAPTIVE_SCALE_ENABLED ? chooseAdaptiveScale(stats) : { scale: 1.0, isThinLine: false, hasHaloSplash: false };
+    const engine = pickEngine(baseEngine, ADAPTIVE_ENGINE_ENABLED, isThinLine);
+    const engineBias = engine === 'fill' ? ENGINE_CAL_BIAS_FILL : ENGINE_CAL_BIAS_KONTEXT;
+
+    // final scale factor used when sizing to mask region
+    const EFFECTIVE_SCALE = tattooScale * GLOBAL_SCALE_UP * adaptScale * engineBias;
+    console.log(`[ENGINE] chosen=${engine} | GLOBAL_SCALE_UP=${GLOBAL_SCALE_UP} | adaptiveScale=${adaptScale.toFixed(3)} | engineBias=${engineBias.toFixed(3)} | effective=${EFFECTIVE_SCALE.toFixed(3)} | thinLine=${isThinLine} halo=${hasHaloSplash}`);
+
+    // --- Prepare mask ---
+    const originalMaskBuffer = Buffer.from(maskBase64, 'base64');
+    let maskMeta, maskGrayRaw;
+    try {
+      maskMeta = await sharp(originalMaskBuffer).metadata();
+      maskGrayRaw = await sharp(originalMaskBuffer).grayscale().raw().toBuffer();
+      console.log(`Mask meta: ${maskMeta.width}x${maskMeta.height}`);
+    } catch (e) {
+      throw new Error(`Failed to read mask: ${e.message}`);
+    }
+
+    // Compute bounding box of white region in mask (non-zero)
+    function getMaskBBox(buf, w, h) {
+      let minX = w, minY = h, maxX = -1, maxY = -1, found = false;
+      for (let y = 0; y < h; y++) {
+        const row = y * w;
+        for (let x = 0; x < w; x++) {
+          if (buf[row + x] > 0) {
+            found = true;
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+      if (!found) return { isEmpty: true };
+      return { isEmpty: false, minX, minY, maxX, maxY, width: maxX - minX + 1, height: maxY - minY + 1 };
+    }
+    const maskBBox = getMaskBBox(maskGrayRaw, maskMeta.width, maskMeta.height);
+    if (maskBBox.isEmpty) throw new Error('Mask area is empty.');
+
+    // --- Resize/rotate tattoo to fit mask with effective scale ---
+    const targetW = Math.round(maskBBox.width * EFFECTIVE_SCALE);
+    const targetH = Math.round(maskBBox.height * EFFECTIVE_SCALE);
+    const resizedTattoo = await sharp(tattooDesignPng)
+      .resize({ width: targetW, height: targetH, fit: sharp.fit.inside, withoutEnlargement: false })
+      .toBuffer();
+
+    const rotatedTattoo = await sharp(resizedTattoo)
+      .rotate(tattooAngle, { background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .toBuffer();
+
+    const rotMeta = await sharp(rotatedTattoo).metadata();
+
+    const centeredLeft = maskBBox.minX + (maskBBox.width  - targetW) / 2;
+    const centeredTop  = maskBBox.minY + (maskBBox.height - targetH) / 2;
+    const placementLeft = Math.round(centeredLeft - (rotMeta.width  - targetW) / 2);
+    const placementTop  = Math.round(centeredTop  - (rotMeta.height - targetH) / 2);
+
+    // --- Build positioned tattoo canvas (skin-sized transparent), then mask-composite ---
+    const skinMeta = await sharp(skinImageBuffer).metadata();
+
+    const positionedCanvas = await sharp({
+      create: {
+        width: skinMeta.width,
+        height: skinMeta.height,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 }
+      }
+    })
+      .composite([{ input: rotatedTattoo, left: placementLeft, top: placementTop }])
+      .png()
+      .toBuffer();
+
+    const compositedForPreview = await sharp(skinImageBuffer)
+      .composite([{ input: positionedCanvas, blend: 'over', mask: maskGrayRaw }])
+      .png()
+      .toBuffer();
+
+    await uploadDebug(originalMaskBuffer, userId, 'mask_original');
+    await uploadDebug(positionedCanvas, userId, 'tattoo_canvas_positioned');
+    await uploadDebug(compositedForPreview, userId, 'debug_sharp_composite');
+
+    // -----------------------------
+    // FLUX call(s)
+    // -----------------------------
+    const generatedImageUrls = [];
+    const basePrompt =
+      'Preserve the exact silhouette, linework, proportions and interior details of the tattoo. Only relight and blend the existing tattoo into the skin. Add realistic lighting, micro-shadowing, slight ink diffusion, and subtle skin texture. Do not redraw or restyle.';
+
+    const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
+
+    const endpoint = engine === 'fill'
+      ? 'https://api.bfl.ai/v1/flux-fill'
+      : 'https://api.bfl.ai/v1/flux-kontext-pro';
+
+    const inputBase64 = compositedForPreview.toString('base64');
+    const maskB64 = maskBase64;
+
+    console.log(`Making ${numVariations} calls to FLUX (${endpoint.split('/').pop()})...`);
+
+    for (let i = 0; i < numVariations; i++) {
+      const seed = Date.now() + i;
+
+      const payload = engine === 'fill'
+        ? {
+            prompt: basePrompt,
+            input_image: inputBase64,
+            mask_image: maskB64,
+            output_format: 'png',
+            n: 1,
+            guidance_scale: 8.0,
+            prompt_upsampling: true,
+            safety_tolerance: 2,
+            seed
+          }
+        : {
+            prompt: basePrompt,
+            input_image: inputBase64,
+            mask_image: maskB64,
+            output_format: 'png',
+            n: 1,
+            fidelity: 0.8,
+            guidance_scale: 8.0,
+            prompt_upsampling: true,
+            safety_tolerance: 2,
+            seed
+          };
+
+      let task;
+      try {
+        const res = await axios.post(endpoint, payload, { headers: fluxHeaders, timeout: 90000 });
+        task = res.data;
+        console.log(`DEBUG: FLUX POST status=${res.status} id=${task.id}`);
+      } catch (e) {
+        console.error('FLUX post failed:', e.response?.data || e.message);
+        continue;
+      }
+
+      if (!task?.polling_url) {
+        console.warn('FLUX: missing polling_url');
+        continue;
+      }
+
+      let attempts = 0, done = false;
+      while (!done && attempts < 60) {
+        attempts++;
+        await new Promise(r => setTimeout(r, 2000));
+        const poll = await axios.get(task.polling_url, { headers: { 'x-key': fluxApiKey || FLUX_API_KEY }, timeout: 15000 });
+        const data = poll.data;
+
+        if (data.status === 'Ready') {
+          const url = data.result?.sample;
+          if (!url) { done = true; break; }
+          const imgRes = await axios.get(url, { responseType: 'arraybuffer' });
+          const buf = Buffer.from(imgRes.data);
+          const watermarked = await fluxPlacementHandler.applyWatermark(buf);
+          const fileName = `tattoo-${uuidv4()}.png`;
+          const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarked, fileName, userId, '', 'image/png');
+          generatedImageUrls.push(publicUrl);
+          done = true;
+        } else if (data.status === 'Error' || data.status === 'Content Moderated') {
+          console.warn('FLUX polling end:', data.status, data.details || '');
+          done = true;
+        }
+      }
+    }
+
+    if (generatedImageUrls.length === 0) {
+      throw new Error('Flux API: No images were generated across all attempts. Please try again.');
+    }
+
+    return generatedImageUrls;
+  }
+};
+
+export default fluxPlacementHandler;

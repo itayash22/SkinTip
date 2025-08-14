@@ -85,23 +85,12 @@
                     <p>Drag, resize, and rotate the tattoo to place it on the skin.</p>
                 </div>
                 
-                <div class="drawing-area-and-preview">
-                    <div class="image-preview-inline">
-                        <p>Tattoo Design</p>
-                        <img id="tattooDesignPreviewImg" src="" alt="Tattoo Design Preview" class="preview-small">
-                    </div>
-
-                    <div class="drawing-container">
-                        <canvas id="drawingCanvas"></canvas>
-                    </div>
-
-                    <div class="image-preview-inline">
-                        <p>Your Skin Photo</p>
-                        <img id="previewImg" src="" alt="Skin Photo Preview" class="preview-small">
-                    </div>
+                <div class="drawing-container">
+                    <canvas id="drawingCanvas"></canvas>
                 </div>
 
                 <div class="drawing-tools">
+                    <button id="changeSkinPhotoBtn" class="btn btn-outline btn-sm">Change Skin Photo</button>
                     <div class="rotation-control">
                         <label for="rotationSlider">Rotate Tattoo: <span id="rotationValue">0°</span></label>
                         <input type="range" id="rotationSlider" min="-180" max="180" value="0">
@@ -559,6 +548,7 @@
             }
 
             // --- UI Element References ---
+            const changeSkinPhotoBtn = document.getElementById('changeSkinPhotoBtn');
             const skinPhotoUploadSection = document.getElementById('skinPhotoUploadSection');
             const skinUploadArea = document.getElementById('skinUploadArea');
             const fileInput = document.getElementById('fileInput');
@@ -660,6 +650,14 @@
 
             // --- START Main Event Listeners Block (Correctly placed) ---
 
+            changeSkinPhotoBtn?.addEventListener('click', () => {
+                drawingSection.style.display = 'none';
+                skinPhotoUploadSection.style.display = 'block';
+                if (window.drawing && drawing.clearCanvas) {
+                    drawing.clearCanvas();
+                }
+            });
+
             // Skin Photo Upload 
             skinUploadArea?.addEventListener('click', () => {
                 fileInput.click();
@@ -676,12 +674,6 @@
                 imagePreview.style.display = 'none';
                 fileInput.value = '';
                 STATE.currentImage = null;
-                if (window.drawing && drawing.clearCanvas) {
-                    drawing.clearCanvas();
-                }
-                skinPhotoUploadSection.style.display = 'none';
-                document.getElementById('styleSelectionSection').style.display = 'block';
-                document.getElementById('styleSelectionSection').scrollIntoView({ behavior: 'smooth' });
             });
 
             async function handleSkinPhotoFile(file) {

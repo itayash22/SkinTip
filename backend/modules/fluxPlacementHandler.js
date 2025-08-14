@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-08-12_WHITE_BG_CTA_V1');
+console.log('FLUX_HANDLER_VERSION: 2025-08-11_ADAPTIVE_SCALE_ENGINE_V1');
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -7,245 +7,69 @@ import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
 import FormData from 'form-data';
 
-// ---- Supabase ----
+// -----------------------------
+// Supabase setup
+// -----------------------------
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generated-tattoos';
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
-// ---- Engine flag ----
-// kontext (default) | fill
-const FLUX_ENGINE = (process.env.FLUX_ENGINE || 'kontext').toLowerCase();
-
-// Debug uploads toggle (default ON)
-const DEBUG_UPLOADS = (process.env.DEBUG_UPLOADS ?? '1') !== '0';
-
-// ---- remove.bg ----
+// -----------------------------
+// External API keys
+// -----------------------------
 const REMOVE_BG_API_KEY = process.env.REMOVE_BG_API_KEY;
+const FLUX_API_KEY = process.env.FLUX_API_KEY;
 
-// ---- Model scale-up (+20%) for what we send to FLUX ----
-const MODEL_SCALE_UP = parseFloat(process.env.MODEL_SCALE_UP || '1.2');
+// -----------------------------
+// Behavior flags
+// -----------------------------
+const ADAPTIVE_SCALE_ENABLED = (process.env.ADAPTIVE_SCALE_ENABLED ?? 'true').toLowerCase() === 'true';
+const ADAPTIVE_ENGINE_ENABLED = (process.env.ADAPTIVE_ENGINE_ENABLED ?? 'true').toLowerCase() === 'true';
+const GLOBAL_SCALE_UP = Number(process.env.MODEL_SCALE_UP || '1.0'); // applied always
+const FLUX_ENGINE_DEFAULT = (process.env.FLUX_ENGINE || 'kontext').toLowerCase(); // 'kontext' | 'fill'
 
-/* ============================== Helpers ============================== */
+// -----------------------------
+// Small helpers
+// -----------------------------
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
-async function uploadDebug(buffer, name, userId, contentType = 'image/png') {
-  if (!DEBUG_UPLOADS) return null;
+async function uploadDebug(imageBuffer, userId, name, contentType = 'image/png', folder = 'debug') {
   try {
-    const url = await fluxPlacementHandler.uploadToSupabaseStorage(
-      buffer, `${name}`, userId, 'debug', contentType
-    );
-    console.log(`[DEBUG_UPLOAD] ${name} => ${url}`);
-    return url;
+    const fileName = `${name}_${uuidv4()}.${contentType.startsWith('image/png') ? 'png' : 'jpg'}`;
+    const filePath = `${userId}/${folder}/${fileName}`;
+    const { error } = await supabase.storage.from(SUPABASE_STORAGE_BUCKET)
+      .upload(filePath, imageBuffer, { contentType, upsert: false });
+    if (error) throw error;
+    const { data: pub } = supabase.storage.from(SUPABASE_STORAGE_BUCKET).getPublicUrl(filePath);
+    console.log('[UPLOAD] final URL for client:', pub.publicUrl);
+    console.log(`[DEBUG_UPLOAD] ${fileName} => ${pub.publicUrl}`);
+    return pub.publicUrl;
   } catch (e) {
-    console.warn('[DEBUG_UPLOAD] failed:', name, e.message);
+    console.warn('[DEBUG_UPLOAD] failed:', e.message);
     return null;
   }
 }
 
-/** Read raw single-channel gray. */
-async function toRawGray(buffer) {
-  const meta = await sharp(buffer).metadata();
-  const raw = await sharp(buffer).grayscale().raw().toBuffer();
-  return { raw, width: meta.width, height: meta.height };
-}
-
-/** Count white pixels (>127). */
-async function areaFromMaskPng(maskPng) {
-  const { raw } = await toRawGray(maskPng);
-  let A = 0;
-  for (let i = 0; i < raw.length; i++) if (raw[i] > 127) A++;
-  return A;
-}
-
-/** Area & 4-neighbor perimeter. */
-function areaPerimeterFromRaw({ raw, width, height }) {
-  let A = 0, P = 0;
-  const idx = (x, y) => y * width + x;
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const on = raw[idx(x, y)] > 127;
-      if (!on) continue;
-      A++;
-      if (x === 0 || raw[idx(x - 1, y)] <= 127) P++;
-      if (x === width - 1 || raw[idx(x + 1, y)] <= 127) P++;
-      if (y === 0 || raw[idx(x, y - 1)] <= 127) P++;
-      if (y === height - 1 || raw[idx(x, y + 1)] <= 127) P++;
-    }
-  }
-  return { A, P };
-}
-
-/** Thickness metric: t = 4πA / P²  (0≈hairline, →1≈solid). */
-function thicknessFromAP(A, P) {
-  if (P <= 0) return 0;
-  return Math.max(0, Math.min(1, (4 * Math.PI * A) / (P * P)));
-}
-
-/** Feather for soft edges. */
-async function featherMask(maskPng, sigma = 0.3) {
-  return sharp(maskPng).blur(sigma).png().toBuffer();
-}
-
-/** Dilate a hard mask by integer radius (cap 64px to cover growth). */
-async function dilateHardMask(hardMaskPng, radiusPx) {
-  const r = Math.max(0, Math.min(64, Math.round(radiusPx)));
-  if (r === 0) return hardMaskPng;
-
-  const k = 2 * r + 1;
-  const kernel = { width: k, height: k, kernel: Array(k * k).fill(1) };
-
-  const meta = await sharp(hardMaskPng).metadata();
-  const summed = await sharp(hardMaskPng)
-    .removeAlpha()
-    .convolve(kernel)
-    .normalize()
-    .threshold(1)
-    .png()
-    .toBuffer();
-
-  return sharp(summed).resize({ width: meta.width, height: meta.height, fit: 'fill' }).png().toBuffer();
-}
-
-/** Build a smart hard mask (0/255), prefer ALPHA; fallback to LUMA with safe polarity. */
-async function buildSmartMask(maskBuffer, skinW, skinH) {
-  const meta = await sharp(maskBuffer).metadata();
-  console.log(`[MASK] Input meta: ${meta.width}x${meta.height}, hasAlpha=${!!meta.hasAlpha}, channels=${meta.channels}`);
-
-  const EXT_LOW = 0.00001;   // 0.001% of image
-  const EXT_HIGH = 0.995;    // 99.5%
-
-  // 1) Try ALPHA path first if present
-  if (meta.hasAlpha) {
-    const alphaRaw = await sharp(maskBuffer).extractChannel('alpha')
-      .resize({ width: skinW, height: skinH, fit: 'fill', kernel: sharp.kernel.nearest })
-      .raw()
-      .toBuffer();
-
-    let nz = 0, sum = 0, minA = 255, maxA = 0;
-    for (let i = 0; i < alphaRaw.length; i++) {
-      const v = alphaRaw[i];
-      sum += v;
-      if (v > 0) nz++;
-      if (v < minA) minA = v;
-      if (v > maxA) maxA = v;
-    }
-    const mean = sum / alphaRaw.length;
-    const nzRatio = nz / alphaRaw.length;
-
-    console.log(`[MASK] Alpha stats: mean=${mean.toFixed(2)} nz%=${(nzRatio*100).toFixed(4)} min=${minA} max=${maxA}`);
-
-    if (nzRatio >= EXT_LOW && nzRatio <= EXT_HIGH) {
-      const hard = await sharp(maskBuffer)
-        .extractChannel('alpha')
-        .resize({ width: skinW, height: skinH, fit: 'fill', kernel: sharp.kernel.nearest })
-        .threshold(8)
-        .png()
-        .toBuffer();
-      const soft = await featherMask(hard, 0.3);
-
-      const { raw, width, height } = await toRawGray(hard);
-      const { A, P } = areaPerimeterFromRaw({ raw, width, height });
-      const t = thicknessFromAP(A, P);
-      const areaRatio = A / (skinW * skinH);
-
-      console.log(`[MASK] Strategy=alpha | A=${A} areaRatio=${areaRatio.toFixed(6)} t=${t.toFixed(4)}`);
-      return { hard, soft, A, P, t, areaRatio, width, height, strategy: 'alpha' };
-    } else {
-      console.log('[MASK] Alpha not informative (empty or full) → try luminance.');
-    }
-  }
-
-  // 2) LUMA path
-  const gray = await sharp(maskBuffer)
-    .resize({ width: skinW, height: skinH, fit: 'fill', kernel: sharp.kernel.nearest })
-    .grayscale()
-    .toBuffer();
-  const bin = await sharp(gray).threshold(128).png().toBuffer();
-  const inv = await sharp(gray).linear(-1, 255).threshold(128).png().toBuffer();
-
-  const areaImg = skinW * skinH;
-  const a1 = await areaFromMaskPng(bin);
-  const a2 = await areaFromMaskPng(inv);
-  const r1 = a1 / areaImg;
-  const r2 = a2 / areaImg;
-  console.log(`[MASK] Luma areas: r1=${r1.toFixed(6)} r2=${r2.toFixed(6)}`);
-
-  const meta2 = await sharp(maskBuffer).metadata();
-  if (meta2.hasAlpha && (r1 <= EXT_LOW || r1 >= EXT_HIGH || r2 <= EXT_LOW || r2 >= EXT_HIGH)) {
-    console.log('[MASK] Luma extreme. Falling back to alpha-sparse.');
-    const hard = await sharp(maskBuffer)
-      .extractChannel('alpha')
-      .resize({ width: skinW, height: skinH, fit: 'fill', kernel: sharp.kernel.nearest })
-      .threshold(8)
-      .png()
-      .toBuffer();
-    const soft = await featherMask(hard, 0.3);
-    const { raw, width, height } = await toRawGray(hard);
-    const { A, P } = areaPerimeterFromRaw({ raw, width, height });
-    const t = thicknessFromAP(A, P);
-    const areaRatio = A / (skinW * skinH);
-    console.log(`[MASK] Strategy=alpha-sparse | A=${A} areaRatio=${areaRatio.toFixed(6)} t=${t.toFixed(4)}`);
-    return { hard, soft, A, P, t, areaRatio, width, height, strategy: 'alpha-sparse' };
-  }
-
-  const ok1 = r1 >= EXT_LOW && r1 <= 0.95;
-  const ok2 = r2 >= EXT_LOW && r2 <= 0.95;
-  let hard = (ok1 && (!ok2 || r1 <= r2)) ? bin : inv;
-  let strategy = (hard === bin) ? 'luma' : 'luma-inv';
-
-  const soft = await featherMask(hard, 0.3);
-  const { raw, width, height } = await toRawGray(hard);
-  const { A, P } = areaPerimeterFromRaw({ raw, width, height });
-  const t = thicknessFromAP(A, P);
-  const areaRatio = A / (skinW * skinH);
-  console.log(`[MASK] Strategy=${strategy} | A=${A} areaRatio=${areaRatio.toFixed(6)} t=${t.toFixed(4)}`);
-
-  return { hard, soft, A, P, t, areaRatio, width, height, strategy };
-}
-
-/* ---------- White PNG knockout helpers (uniform-white CTA) ---------- */
-
-/** Analyze alpha: is it useful (both opaque & transparent present)? */
-async function analyzeAlphaPng(pngBuffer) {
-  const meta = await sharp(pngBuffer).metadata();
-  const raw = await sharp(pngBuffer).ensureAlpha().raw().toBuffer(); // RGBA
-  const n = meta.width * meta.height;
-  let opaque = 0, transparent = 0;
-  for (let i = 0; i < n; i++) {
-    const a = raw[i * 4 + 3];
-    if (a >= 250) opaque++;
-    if (a <= 5)   transparent++;
-  }
-  return {
-    width: meta.width,
-    height: meta.height,
-    opaqueRatio: opaque / n,
-    transparentRatio: transparent / n,
-    hasAlpha: !!meta.hasAlpha,
-    alphaUseful: (opaque > 0 && transparent > 0)
-  };
-}
-
-// REPLACE the whole detectUniformWhiteBackground with this safe version
+// -----------------------------
+// Background removal
+// -----------------------------
 async function detectUniformWhiteBackground(pngBuffer) {
   const meta = await sharp(pngBuffer).metadata();
   const w = meta.width | 0, h = meta.height | 0;
   if (!w || !h) return { isUniformWhite: false, bgColor: [255, 255, 255] };
 
-  // 5% of the shorter side, clamped to [2 .. min(w,h)]
   let patch = Math.floor(Math.min(w, h) * 0.05);
   patch = Math.max(2, Math.min(patch, w, h));
 
-  // safe extractor: clamp left/top inside image, build a fresh sharp() per read
   async function stats(left, top) {
     const l = Math.max(0, Math.min(left,  w - patch));
     const t = Math.max(0, Math.min(top,   h - patch));
     const buf = await sharp(pngBuffer)
       .extract({ left: l, top: t, width: patch, height: patch })
       .ensureAlpha()
-      .raw()                   // ensureAlpha BEFORE raw()
+      .raw()
       .toBuffer();
-
     const n = patch * patch;
     let r = 0, g = 0, b = 0, rr = 0, gg = 0, bb = 0;
     for (let i = 0; i < n; i++) {
@@ -278,231 +102,232 @@ async function detectUniformWhiteBackground(pngBuffer) {
     (s1.std[2] + s2.std[2] + s3.std[2] + s4.std[2]) / 4,
   ];
 
-  // Near pure white and very low variance across corners
-  const nearWhite   = (mean[0] >= 242 && mean[1] >= 242 && mean[2] >= 242);
-  const lowVariance = (std[0] < 3.5 && std[1] < 3.5 && std[2] < 3.5);
+  const nearWhite = (mean[0] >= 242 && mean[1] >= 242 && mean[2] >= 242);
+  const lowVar = (std[0] < 3.5 && std[1] < 3.5 && std[2] < 3.5);
 
-  return { isUniformWhite: nearWhite && lowVariance, bgColor: mean };
+  return { isUniformWhite: nearWhite && lowVar, bgColor: mean };
 }
 
+async function colorToAlphaWhite(buffer) {
+  // Gentle white→alpha with decontamination; preserves edges reasonably well
+  const img = sharp(buffer).ensureAlpha();
+  const { width: w, height: h } = await img.metadata();
+  const raw = await img.raw().toBuffer();
 
-/**
- * Color-to-Alpha (CTA) for near-white backgrounds, with decontamination and edge protection.
- * - softThreshold: start removing above this RGB
- * - hardThreshold: fully remove above this RGB
- * - edgeThresh: Laplacian threshold for edge mask
- * - feather: gaussian blur on alpha
- */
-async function colorToAlphaDecontam(pngBuffer, bgRGB = [255,255,255], {
-  softThreshold = parseInt(process.env.WHITE_KNOCKOUT_SOFT || '235', 10),
-  hardThreshold = parseInt(process.env.WHITE_KNOCKOUT_HARD || '252', 10),
-  edgeThresh    = parseInt(process.env.WHITE_KNOCKOUT_EDGE || '20',  10),
-  feather       = parseFloat(process.env.WHITE_KNOCKOUT_FEATHER || '0.5')
-} = {}) {
+  const soft = 235, hard = 252;
+  const ramp = Math.max(1, hard - soft);
 
-  const base = sharp(pngBuffer).ensureAlpha();
-  const { width, height } = await base.metadata();
-  const rgba = await base.raw().toBuffer(); // RGBA
-
-  // Edge mask for protection
-  const edgeMaskRaw = await sharp(pngBuffer)
-    .grayscale()
-    .convolve({ width: 3, height: 3, kernel: [0, -1, 0, -1, 4, -1, 0, -1, 0] })
-    .normalize()
-    .threshold(edgeThresh)
-    .raw()
-    .toBuffer(); // 1 channel
-
-  const out = Buffer.allocUnsafe(rgba.length);
-
-  const bgR = bgRGB[0], bgG = bgRGB[1], bgB = bgRGB[2];
-  const ramp = Math.max(1, (hardThreshold - softThreshold));
-
-  const n = width * height;
-  for (let i = 0; i < n; i++) {
-    const R = rgba[i*4+0], G = rgba[i*4+1], B = rgba[i*4+2];
-    const A = rgba[i*4+3];
-
-    // whiteness vs threshold band
-    const w = Math.max(R, G, B);
+  for (let i = 0; i < w * h; i++) {
+    const p = i * 4;
+    const R = raw[p], G = raw[p + 1], B = raw[p + 2], A = raw[p + 3];
+    const wmax = Math.max(R, G, B);
     let alpha = A;
-
-    if (w >= softThreshold) {
-      const cut = Math.max(0, Math.min(1, (w - softThreshold) / ramp)); // 0..1
-      const newAlpha = Math.round(A * (1 - cut)); // fade out as it gets whiter
-      alpha = newAlpha;
-      if (w >= hardThreshold) alpha = 0;
+    if (wmax >= soft) {
+      const cut = Math.max(0, Math.min(1, (wmax - soft) / ramp));
+      alpha = Math.round(A * (1 - cut));
+      if (wmax >= hard) alpha = 0;
     }
-
-    // Edge protection: keep original alpha where edge detected
-    if (edgeMaskRaw[i] > 0) alpha = Math.max(alpha, A);
-
-    // Decontaminate RGB from bg:  F = (R - (1-a)*bg) / a
-    // (avoid divide-by-zero; if alpha==0, just keep RGB)
-    let FR = R, FG = G, FB = B;
+    // simple decontamination to reduce white halo:
     if (alpha > 0 && alpha < 255) {
       const a = alpha / 255;
-      FR = Math.max(0, Math.min(255, Math.round((R - (1 - a) * bgR) / a)));
-      FG = Math.max(0, Math.min(255, Math.round((G - (1 - a) * bgG) / a)));
-      FB = Math.max(0, Math.min(255, Math.round((B - (1 - a) * bgB) / a)));
+      raw[p]   = clamp(Math.round((R - (1 - a) * 255) / a), 0, 255);
+      raw[p+1] = clamp(Math.round((G - (1 - a) * 255) / a), 0, 255);
+      raw[p+2] = clamp(Math.round((B - (1 - a) * 255) / a), 0, 255);
     }
-
-    out[i*4+0] = FR;
-    out[i*4+1] = FG;
-    out[i*4+2] = FB;
-    out[i*4+3] = alpha;
+    raw[p + 3] = alpha;
   }
 
-  let outPng = await sharp(out, { raw: { width, height, channels: 4 } }).png().toBuffer();
-
-  if (feather > 0) {
-    const alpha = await sharp(outPng).extractChannel('alpha').blur(feather).toBuffer();
-    outPng = await sharp(outPng).removeAlpha().joinChannel(alpha).png().toBuffer();
-  }
-
-  return outPng;
+  return await sharp(raw, { raw: { width: w, height: h, channels: 4 } }).png().toBuffer();
 }
 
-/* ============================== Core ============================== */
+// -----------------------------
+// Adaptive analysis on tattoo alpha
+// -----------------------------
+async function analyzeTattooAlpha(pngBuffer) {
+  // returns { coverage, thinness, solidity, bbox, width, height }
+  const img = sharp(pngBuffer).ensureAlpha();
+  const meta = await img.metadata();
+  const w = meta.width | 0, h = meta.height | 0;
 
+  // alpha channel only
+  const alpha = await img.extractChannel('alpha').raw().toBuffer(); // 1 channel
+  const N = w * h;
+
+  // Binary mask (alpha > 128)
+  const mask = new Uint8Array(N);
+  let area = 0;
+  let minX = w, minY = h, maxX = -1, maxY = -1;
+  for (let i = 0; i < N; i++) {
+    const v = alpha[i] > 128 ? 1 : 0;
+    mask[i] = v;
+    if (v) {
+      area++;
+      const y = (i / w) | 0, x = i - y * w;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (area === 0) {
+    return { coverage: 0, thinness: 0, solidity: 0, bbox: null, width: w, height: h };
+  }
+
+  const bboxW = maxX - minX + 1;
+  const bboxH = maxY - minY + 1;
+  const bboxArea = bboxW * bboxH;
+  const coverage = area / N;
+  const solidity = bboxArea > 0 ? area / bboxArea : 0;
+
+  // Thinness proxy: average absolute gradient of alpha within bbox
+  // (approx edge density; higher = thinner strokes / more edges)
+  let gradAcc = 0, gradCount = 0;
+  for (let y = minY + 1; y < maxY; y++) {
+    let row = y * w;
+    for (let x = minX + 1; x < maxX; x++) {
+      const i = row + x;
+      const gx = Math.abs(alpha[i] - alpha[i - 1]);
+      const gy = Math.abs(alpha[i] - alpha[i - w]);
+      gradAcc += gx + gy;
+      gradCount += 2;
+    }
+  }
+  const thinness = gradCount ? (gradAcc / (gradCount * 255)) : 0; // 0..1 approx
+
+  return {
+    coverage,        // 0..1
+    thinness,        // 0..~1 (thin lines ~higher)
+    solidity,        // area / bboxArea (lower → more halo/splash)
+    bbox: { minX, minY, maxX, maxY, w: bboxW, h: bboxH },
+    width: w,
+    height: h
+  };
+}
+
+function chooseAdaptiveScale(stats) {
+  // Heuristics from your dataset:
+  // - Thin-line (low coverage + high thinness) → up-scale
+  // - Splash/halo (low solidity) → avoid up-scaling
+  // - Otherwise light bias only
+  const cov = stats.coverage;   // e.g., 0.03 .. 0.40
+  const thn = stats.thinness;   // e.g., 0.05 .. 0.40
+  const sol = stats.solidity;   // e.g., 0.15 .. 0.95
+
+  // thresholds tuned conservatively
+  const isThinLine = (cov < 0.12 && thn > 0.10);
+  const hasHaloSplash = (sol < 0.55);
+
+  let scale = 1.0;
+
+  if (isThinLine && !hasHaloSplash) {
+    // 1.35 .. 1.50 depending on how sparse it is
+    const boost = clamp(1.20 + (0.12 - cov) * 2.5, 1.20, 1.50);
+    scale = boost;
+  } else if (hasHaloSplash) {
+    // model tends to grow these; avoid extra boost
+    scale = 1.0;
+  } else {
+    // normal filled-ish designs: small nudge
+    scale = 1.05;
+  }
+
+  return { scale, isThinLine, hasHaloSplash };
+}
+
+function pickEngine(baseEngine, adaptiveEnabled, isThinLine) {
+  if (!adaptiveEnabled) return baseEngine;
+  // route thin-line to hard-mask fill model for shape fidelity
+  return isThinLine ? 'fill' : baseEngine;
+}
+
+// -----------------------------
+// Public module
+// -----------------------------
 const fluxPlacementHandler = {
 
-  /**
-   * Background removal with robust white-PNG handling:
-   * 1) Try remove.bg if configured.
-   * 2) If alpha not useful → detect uniform white and run CTA with decontam.
-   * 3) If remove.bg disabled/failed → CTA path directly.
-   */
   removeImageBackground: async (imageBuffer) => {
-    // Always normalize to PNG
-    const originalPng = await sharp(imageBuffer).png().toBuffer();
-
-    // Try remove.bg first if key exists
-    if (REMOVE_BG_API_KEY) {
+    // 1) If no key, try local white→alpha; if not uniform white, just pass-through
+    if (!REMOVE_BG_API_KEY) {
       try {
-        console.log('[BG] remove.bg: attempting cutout…');
-        const formData = new FormData();
-        formData.append('image_file', new Blob([originalPng], { type: 'image/png' }), 'tattoo_design.png');
-        formData.append('size', 'auto');
-        formData.append('format', 'png');
-
-        const res = await axios.post('https://api.remove.bg/v1.0/removebg', formData, {
-          headers: { 'X-Api-Key': REMOVE_BG_API_KEY, ...formData.getHeaders() },
-          responseType: 'arraybuffer'
-        });
-
-        if (res.status === 200) {
-          let cut = Buffer.from(res.data);
-          const ana = await analyzeAlphaPng(cut);
-
-          if (ana.alphaUseful && ana.transparentRatio > 0.001) {
-            // Good alpha, use it as-is
-            console.log('[BG] remove.bg returned useful alpha, keeping.');
-            return cut;
-          }
-
-          // Not useful -> check uniform white and CTA
-          const det = await detectUniformWhiteBackground(originalPng);
-          if (det.isUniformWhite) {
-            console.log('[BG] remove.bg opaque; uniform white detected → CTA decontam.');
-            const cta = await colorToAlphaDecontam(originalPng, det.bgColor);
-            return cta;
-          }
-
-          console.log('[BG] remove.bg opaque; non-uniform background → CTA fallback (best effort).');
-          const ctaGeneric = await colorToAlphaDecontam(originalPng);
-          return ctaGeneric;
+        const { isUniformWhite } = await detectUniformWhiteBackground(imageBuffer);
+        if (isUniformWhite) {
+          console.log('[BG] Uniform white detected → converting to alpha locally.');
+          return await colorToAlphaWhite(imageBuffer);
         }
-
-        console.warn('[BG] remove.bg non-200; falling back to CTA.');
-        const det2 = await detectUniformWhiteBackground(originalPng);
-        return await colorToAlphaDecontam(originalPng, det2.isUniformWhite ? det2.bgColor : [255,255,255]);
-
-      } catch (error) {
-        console.warn('[BG] remove.bg failed:', error.response?.data?.toString?.() || error.message);
-        // Fall through to CTA path
+      } catch (e) {
+        console.warn('[BG] local white→alpha probe failed, passing-through:', e.message);
       }
+      return await sharp(imageBuffer).png().toBuffer();
     }
 
-    // No remove.bg or failed: CTA path based on detection
-    const det = await detectUniformWhiteBackground(originalPng);
-    if (det.isUniformWhite) {
-      console.log('[BG] CTA: uniform white detected.');
-      return await colorToAlphaDecontam(originalPng, det.bgColor);
-    } else {
-      console.log('[BG] CTA: non-uniform background; attempting generic CTA.');
-      return await colorToAlphaDecontam(originalPng);
+    // 2) Try remove.bg; if fails, fallback to local logic or passthrough
+    try {
+      const formData = new FormData();
+      formData.append('image_file', new Blob([imageBuffer], { type: 'image/png' }), 'tattoo_design.png');
+      formData.append('size', 'auto');
+      formData.append('format', 'png');
+
+      const response = await axios.post('https://api.remove.bg/v1.0/removebg', formData, {
+        headers: { 'X-Api-Key': REMOVE_BG_API_KEY, ...formData.getHeaders() },
+        responseType: 'arraybuffer'
+      });
+      if (response.status === 200) return Buffer.from(response.data);
+      throw new Error(`remove.bg status ${response.status}`);
+    } catch (error) {
+      console.warn('[BG] remove.bg failed; fallback to local:', error.message);
+      try {
+        const { isUniformWhite } = await detectUniformWhiteBackground(imageBuffer);
+        if (isUniformWhite) return await colorToAlphaWhite(imageBuffer);
+      } catch (e) {}
+      return await sharp(imageBuffer).png().toBuffer();
     }
   },
 
   applyWatermark: async (imageBuffer) => {
     try {
       const watermarkText = 'SkinTip.AI';
-      const svg = Buffer.from(
-        `<svg width="200" height="30" viewBox="0 0 200 30" xmlns="http://www.w3.org/2000/svg">
-          <text x="10" y="25" font-family="Arial, sans-serif" font-size="16" fill="#FFFFFF" fill-opacity="0.5">${watermarkText}</text>
-        </svg>`
-      );
-      const { width, height } = await sharp(imageBuffer).metadata();
-      const left = Math.max(0, width - 200 - 15);
-      const top = Math.max(0, height - 30 - 15);
+      const watermarkSvg = `<svg width="200" height="30" viewBox="0 0 200 30" xmlns="http://www.w3.org/2000/svg">
+        <text x="10" y="25" font-family="Arial, sans-serif" font-size="16" fill="#FFFFFF" fill-opacity="0.5">${watermarkText}</text>
+      </svg>`;
+      const svgBuffer = Buffer.from(watermarkSvg);
 
-      return sharp(imageBuffer).composite([{ input: svg, left, top, blend: 'over' }]).png().toBuffer();
-    } catch (e) {
-      console.error('[WATERMARK] error:', e.message);
+      const metadata = await sharp(imageBuffer).metadata();
+      const imageWidth = metadata.width;
+      const imageHeight = metadata.height;
+
+      const svgWidth = 200;
+      const svgHeight = 30;
+      const padding = 15;
+
+      const left = Math.max(0, imageWidth - svgWidth - padding);
+      const top = Math.max(0, imageHeight - svgHeight - padding);
+
+      return await sharp(imageBuffer)
+        .composite([{ input: svgBuffer, top, left, blend: 'over' }])
+        .png()
+        .toBuffer();
+    } catch (error) {
+      console.error('Error applying watermark:', error);
       return imageBuffer;
     }
   },
 
-  /**
-   * Verifies public URL; if not reachable, returns a signed URL fallback.
-   */
-  uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '', contentType = 'image/jpeg') => {
-    const path = folder ? `${userId}/${folder}/${fileName}` : `${userId}/${fileName}`;
-
-    const { error: upErr } = await supabase.storage
-      .from(SUPABASE_STORAGE_BUCKET)
-      .upload(path, imageBuffer, {
-        contentType,
-        upsert: false,
-        cacheControl: '3600',
-      });
-
-    if (upErr) {
-      console.error('Supabase upload error:', upErr);
-      throw new Error(`Failed to upload image to storage: ${upErr.message}`);
+  uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '', contentType = 'image/png') => {
+    const filePath = folder ? `${userId}/${folder}/${fileName}` : `${userId}/${fileName}`;
+    const { error } = await supabase.storage.from(SUPABASE_STORAGE_BUCKET)
+      .upload(filePath, imageBuffer, { contentType, upsert: false });
+    if (error) {
+      console.error('Supabase upload error:', error);
+      throw new Error(`Failed to upload image to storage: ${error.message}`);
     }
-
-    const { data: pub } = supabase.storage
-      .from(SUPABASE_STORAGE_BUCKET)
-      .getPublicUrl(path);
-
-    let url = pub?.publicUrl || null;
-    console.log('[UPLOAD] tentative publicUrl:', url);
-
-    try {
-      if (!url) throw new Error('No publicUrl returned');
-      const head = await axios.head(url, { validateStatus: () => true });
-      if (head.status < 200 || head.status >= 300) {
-        throw new Error(`HEAD ${head.status}`);
-      }
-    } catch (e) {
-      console.warn('[UPLOAD] publicUrl not accessible → creating signed URL fallback:', e.message);
-      const { data: signed, error: signErr } = await supabase.storage
-        .from(SUPABASE_STORAGE_BUCKET)
-        .createSignedUrl(path, 60 * 60 * 24 * 30);
-      if (signErr || !signed?.signedUrl) {
-        throw new Error(`Failed to create signed URL: ${signErr?.message || 'unknown error'}`);
-      }
-      url = signed.signedUrl;
-    }
-
-    console.log('[UPLOAD] final URL for client:', url);
-    return url;
+    const { data: pub } = supabase.storage.from(SUPABASE_STORAGE_BUCKET).getPublicUrl(filePath);
+    if (!pub?.publicUrl) throw new Error('Failed to get public URL for uploaded image.');
+    console.log('Image uploaded to Supabase:', pub.publicUrl);
+    return pub.publicUrl;
   },
 
   /**
-   * Geometry-safe pipeline + engine flag + +20% scale for model (no global darkening).
+   * Main pipeline
    */
   placeTattooOnSkin: async (
     skinImageBuffer,
@@ -514,298 +339,191 @@ const fluxPlacementHandler = {
     tattooAngle = 0,
     tattooScale = 1.0
   ) => {
-    console.log(`[ENGINE] FLUX_ENGINE=${FLUX_ENGINE} | MODEL_SCALE_UP=${MODEL_SCALE_UP}`);
+    // --- Inputs ---
+    const tattooDesignOriginalBuffer = Buffer.from(tattooDesignImageBase64, 'base64');
+    const tattooMeta0 = await sharp(tattooDesignOriginalBuffer).metadata();
+    console.log(`Input tattoo meta: ${tattooMeta0.width}x${tattooMeta0.height}, fmt=${tattooMeta0.format}`);
 
-    // --- Canonicalize inputs ---
-    const skinMeta = await sharp(skinImageBuffer).metadata();
-    const skinW = skinMeta.width, skinH = skinMeta.height;
-    console.log(`[INIT] Skin=${skinW}x${skinH}`);
+    // --- Remove background to ensure alpha ---
+    const tattooDesignPng = await fluxPlacementHandler.removeImageBackground(tattooDesignOriginalBuffer);
 
-    const maskOriginal = Buffer.from(maskBase64, 'base64');
-    await uploadDebug(maskOriginal, `mask_original_${uuidv4()}.png`, userId);
+    // --- Analyze tattoo alpha for adaptive decisions ---
+    const stats = await analyzeTattooAlpha(tattooDesignPng);
+    console.log(`[ADAPT] coverage=${stats.coverage.toFixed(4)} thinness=${stats.thinness.toFixed(4)} solidity=${stats.solidity.toFixed(4)} bbox=${stats.bbox ? stats.bbox.w+'x'+stats.bbox.h : 'NA'}`);
 
-    // Smart mask
-    const { hard: maskHardPngSkinSize, soft: maskSoftPngSkinSize, A, P, t, areaRatio, width: mw, height: mh, strategy } =
-      await buildSmartMask(maskOriginal, skinW, skinH);
-    await uploadDebug(maskHardPngSkinSize, `mask_hard_${strategy}_${uuidv4()}.png`, userId);
-    await uploadDebug(maskSoftPngSkinSize, `mask_soft_${strategy}_${uuidv4()}.png`, userId);
+    // --- Adaptive scale & engine pick ---
+    const baseEngine = FLUX_ENGINE_DEFAULT; // respect env default
+    const { scale: adaptScale, isThinLine, hasHaloSplash } = ADAPTIVE_SCALE_ENABLED ? chooseAdaptiveScale(stats) : { scale: 1.0, isThinLine: false, hasHaloSplash: false };
+    const engine = pickEngine(baseEngine, ADAPTIVE_ENGINE_ENABLED, isThinLine);
 
-    if (A < 40) {
-      throw new Error('Mask too small. Please draw a larger area for the tattoo.');
+    // final scale factor used when sizing to mask region
+    const EFFECTIVE_SCALE = tattooScale * GLOBAL_SCALE_UP * adaptScale;
+    console.log(`[ENGINE] chosen=${engine} | GLOBAL_SCALE_UP=${GLOBAL_SCALE_UP} | adaptiveScale=${adaptScale.toFixed(3)} | effective=${EFFECTIVE_SCALE.toFixed(3)} | thinLine=${isThinLine} halo=${hasHaloSplash}`);
+
+    // --- Prepare mask ---
+    const originalMaskBuffer = Buffer.from(maskBase64, 'base64');
+    let maskMeta, maskGrayRaw;
+    try {
+      maskMeta = await sharp(originalMaskBuffer).metadata();
+      maskGrayRaw = await sharp(originalMaskBuffer).grayscale().raw().toBuffer();
+      console.log(`Mask meta: ${maskMeta.width}x${maskMeta.height}`);
+    } catch (e) {
+      throw new Error(`Failed to read mask: ${e.message}`);
     }
 
-    // Initial adaptive dilation for model region
-    const k = 40, k2 = 8, rmin = 1, rmax = 36;
-    let r_model = Math.max(rmin, Math.min(rmax, Math.round(k * Math.sqrt(Math.max(1e-9, areaRatio)) + k2 * (1 - t))));
-    console.log(`[DILATION] initial r_model=${r_model}`);
-
-    // Build model mask (initial)
-    let maskForModelHard = await dilateHardMask(maskHardPngSkinSize, r_model);
-    let areaModel = (await areaFromMaskPng(maskForModelHard)) / (skinW * skinH);
-    if (areaModel > 0.25) {
-      const scale = Math.max(0.2, Math.sqrt(0.25 / areaModel));
-      const r2 = Math.max(1, Math.round(r_model * scale));
-      console.log(`[DILATION] area too large (${(areaModel*100).toFixed(2)}%), reducing r_model → ${r2}`);
-      r_model = r2;
-      maskForModelHard = await dilateHardMask(maskHardPngSkinSize, r_model);
-      areaModel = (await areaFromMaskPng(maskForModelHard)) / (skinW * skinH);
-    }
-    let maskForModelSoft = await featherMask(maskForModelHard, 0.3);
-    await uploadDebug(maskForModelHard, `mask_for_model_hard_r${r_model}_${uuidv4()}.png`, userId);
-
-    // --- Tattoo design prep & deterministic placement (with +20% scale-up) ---
-    const tattooOriginal = Buffer.from(tattooDesignImageBase64, 'base64');
-    const tattooPng = await fluxPlacementHandler.removeImageBackground(tattooOriginal);
-    const tatMeta = await sharp(tattooOriginal).metadata();
-    console.log(`[PLACE] TattooDesign=${tatMeta.width}x${tatMeta.height}`);
-
-    // BBox from mask (skin space)
-    let minX = mw, minY = mh, maxX = -1, maxY = -1;
-    const { raw: mraw } = await toRawGray(maskHardPngSkinSize);
-    for (let y = 0; y < mh; y++) {
-      for (let x = 0; x < mw; x++) {
-        if (mraw[y * mw + x] > 127) {
-          if (x < minX) minX = x;
-          if (y < minY) minY = y;
-          if (x > maxX) maxX = x;
-          if (y > maxY) maxY = y;
+    // Compute bounding box of white region in mask (non-zero)
+    function getMaskBBox(buf, w, h) {
+      let minX = w, minY = h, maxX = -1, maxY = -1, found = false;
+      for (let y = 0; y < h; y++) {
+        const row = y * w;
+        for (let x = 0; x < w; x++) {
+          if (buf[row + x] > 0) {
+            found = true;
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+          }
         }
       }
+      if (!found) return { isEmpty: true };
+      return { isEmpty: false, minX, minY, maxX, maxY, width: maxX - minX + 1, height: maxY - minY + 1 };
     }
-    if (maxX < minX || maxY < minY) throw new Error('Empty bbox from mask.');
-    const bboxW = maxX - minX + 1, bboxH = maxY - minY + 1;
-    console.log(`[PLACE] BBOX(skin): x=${minX}, y=${minY}, w=${bboxW}, h=${bboxH}`);
+    const maskBBox = getMaskBBox(maskGrayRaw, maskMeta.width, maskMeta.height);
+    if (maskBBox.isEmpty) throw new Error('Mask area is empty.');
 
-    // Scale up by +20% for the model input & final geometry
-    const modelTargetW = Math.max(1, Math.round(bboxW * tattooScale * MODEL_SCALE_UP));
-    const modelTargetH = Math.max(1, Math.round(bboxH * tattooScale * MODEL_SCALE_UP));
-    console.log(`[PLACE] Target size with scale-up: ${modelTargetW}x${modelTargetH}`);
-
-    // Ensure model editable region covers the growth beyond bbox
-    const growW = Math.max(0, modelTargetW - Math.round(bboxW * tattooScale));
-    const growH = Math.max(0, modelTargetH - Math.round(bboxH * tattooScale));
-    const r_growthPixels = Math.ceil(Math.max(growW, growH) / 2);
-    if (r_growthPixels > r_model) {
-      const rNew = Math.min(36, r_growthPixels);
-      console.log(`[DILATION] bumping r_model to cover scale-up: ${r_model} → ${rNew}`);
-      r_model = rNew;
-      maskForModelHard = await dilateHardMask(maskHardPngSkinSize, r_model);
-      maskForModelSoft = await featherMask(maskForModelHard, 0.3);
-      areaModel = (await areaFromMaskPng(maskForModelHard)) / (skinW * skinH);
-      await uploadDebug(maskForModelHard, `mask_for_model_hard_r${r_model}_afterGrowth_${uuidv4()}.png`, userId);
-    }
-
-    const resizedTattoo = await sharp(tattooPng)
-      .resize({ width: modelTargetW, height: modelTargetH, fit: sharp.fit.inside, kernel: sharp.kernel.lanczos3 })
+    // --- Resize/rotate tattoo to fit mask with effective scale ---
+    const targetW = Math.round(maskBBox.width * EFFECTIVE_SCALE);
+    const targetH = Math.round(maskBBox.height * EFFECTIVE_SCALE);
+    const resizedTattoo = await sharp(tattooDesignPng)
+      .resize({ width: targetW, height: targetH, fit: sharp.fit.inside, withoutEnlargement: false })
       .toBuffer();
+
     const rotatedTattoo = await sharp(resizedTattoo)
       .rotate(tattooAngle, { background: { r: 0, g: 0, b: 0, alpha: 0 } })
       .toBuffer();
+
     const rotMeta = await sharp(rotatedTattoo).metadata();
 
-    const left = Math.round(minX + (bboxW - rotMeta.width) / 2);
-    const top  = Math.round(minY + (bboxH - rotMeta.height) / 2);
+    const centeredLeft = maskBBox.minX + (maskBBox.width  - targetW) / 2;
+    const centeredTop  = maskBBox.minY + (maskBBox.height - targetH) / 2;
+    const placementLeft = Math.round(centeredLeft - (rotMeta.width  - targetW) / 2);
+    const placementTop  = Math.round(centeredTop  - (rotMeta.height - targetH) / 2);
 
-    const tattooCanvasPlaced = await sharp({
-      create: { width: skinW, height: skinH, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } }
+    // --- Build positioned tattoo canvas (skin-sized transparent), then mask-composite ---
+    const skinMeta = await sharp(skinImageBuffer).metadata();
+
+    const positionedCanvas = await sharp({
+      create: {
+        width: skinMeta.width,
+        height: skinMeta.height,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 }
+      }
     })
-      .composite([{ input: rotatedTattoo, left, top }])
-      .png()
-      .toBuffer();
-    await uploadDebug(tattooCanvasPlaced, `tattoo_canvas_placed_${uuidv4()}.png`, userId);
-
-    // ORIGINAL silhouette (exact, now based on placed tattoo alpha → keeps the +20% size)
-    const tattooAlphaHard = await sharp(tattooCanvasPlaced).extractChannel('alpha').threshold(8).png().toBuffer();
-    // Intersect with model mask to stay within editable region
-    let originalSilhouette = await sharp(tattooAlphaHard)
-      .composite([{ input: maskForModelHard, blend: 'dest-in' }])
-      .png()
-      .toBuffer();
-    await uploadDebug(originalSilhouette, `original_silhouette_${uuidv4()}.png`, userId);
-
-    // --- Build input image for the model (NO PREFILL DARKENING) ---
-    const tattooWithinModelMask = await sharp(tattooCanvasPlaced)
-      .composite([{ input: maskForModelSoft, blend: 'dest-in' }])
+      .composite([{ input: rotatedTattoo, left: placementLeft, top: placementTop }])
       .png()
       .toBuffer();
 
-    const inputImageForModel = await sharp(skinImageBuffer)
-      .composite([
-        { input: tattooWithinModelMask, blend: 'over', opacity: 0.95 }
-      ])
+    const compositedForPreview = await sharp(skinImageBuffer)
+      .composite([{ input: positionedCanvas, blend: 'over', mask: maskGrayRaw }])
       .png()
       .toBuffer();
-    await uploadDebug(inputImageForModel, `input_for_model_${uuidv4()}.png`, userId);
 
-    // --- Engine-specific POST helper with fallback ---
-    async function postWithEngine(engine, fluxApiKey, inputImgBase64, maskBase64, seed, i) {
-      const headers = { 'Content-Type': 'application/json', 'x-key': fluxApiKey };
+    await uploadDebug(originalMaskBuffer, userId, 'mask_original');
+    await uploadDebug(positionedCanvas, userId, 'tattoo_canvas_positioned');
+    await uploadDebug(compositedForPreview, userId, 'debug_sharp_composite');
 
-      const basePrompt =
-        "Preserve the exact silhouette, linework, proportions and interior details of the tattoo. Only relight and blend the existing tattoo into the skin. Add realistic lighting, micro-shadowing, slight ink diffusion, and subtle skin texture. Do not redraw or restyle.";
-      const negativePrompt =
-        "re-sketch, new lines, restyle, warp, change shape, extra elements, animals, octopus, figurative art, glow, blur, smoothing edges, color shift";
+    // -----------------------------
+    // FLUX call(s)
+    // -----------------------------
+    const generatedImageUrls = [];
+    const basePrompt =
+      'Preserve the exact silhouette, linework, proportions and interior details of the tattoo. Only relight and blend the existing tattoo into the skin. Add realistic lighting, micro-shadowing, slight ink diffusion, and subtle skin texture. Do not redraw or restyle.';
 
-      if (engine === 'fill') {
-        const payload1 = {
-          prompt: basePrompt,
-          negative_prompt: negativePrompt,
-          image: inputImgBase64,
-          mask: maskBase64,
-          n: 3,
-          output_format: 'png',
-          guidance_scale: 3.0,
-          safety_tolerance: 2,
-          seed
-        };
-        try {
-          const r1 = await axios.post('https://api.bfl.ai/v1/flux-pro-1.0-fill', payload1, { headers, timeout: 120000 });
-          console.log(`[FLUX][FILL] POST#${i} payload1 ok:`, r1.status);
-          return r1.data;
-        } catch (e1) {
-          const status = e1.response?.status;
-          const dataStr = e1.response?.data ? JSON.stringify(e1.response.data).slice(0, 200) : e1.message;
-          console.warn(`[FLUX][FILL] payload1 failed (${status}): ${dataStr}`);
-          const payload2 = {
+    const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
+
+    const endpoint = engine === 'fill'
+      ? 'https://api.bfl.ai/v1/flux-fill'
+      : 'https://api.bfl.ai/v1/flux-kontext-pro';
+
+    const inputBase64 = compositedForPreview.toString('base64');
+    const maskB64 = maskBase64; // same mask
+
+    console.log(`Making ${numVariations} calls to FLUX (${endpoint.split('/').pop()})...`);
+
+    for (let i = 0; i < numVariations; i++) {
+      const seed = Date.now() + i;
+
+      const payload = engine === 'fill'
+        ? {
             prompt: basePrompt,
-            negative_prompt: negativePrompt,
-            input_image: inputImgBase64,
-            mask_image: maskBase64,
-            n: 3,
+            input_image: inputBase64,
+            mask_image: maskB64,
             output_format: 'png',
-            guidance_scale: 3.0,
+            n: 1,
+            guidance_scale: 8.0,
+            prompt_upsampling: true,
+            safety_tolerance: 2,
+            seed
+          }
+        : {
+            prompt: basePrompt,
+            input_image: inputBase64,
+            mask_image: maskB64,
+            output_format: 'png',
+            n: 1,
+            fidelity: 0.8,
+            guidance_scale: 8.0,
+            prompt_upsampling: true,
             safety_tolerance: 2,
             seed
           };
-          try {
-            const r2 = await axios.post('https://api.bfl.ai/v1/flux-pro-1.0-fill', payload2, { headers, timeout: 120000 });
-            console.log(`[FLUX][FILL] POST#${i} payload2 ok:`, r2.status);
-            return r2.data;
-          } catch (e2) {
-            const status2 = e2.response?.status;
-            const dataStr2 = e2.response?.data ? JSON.stringify(e2.response.data).slice(0, 200) : e2.message;
-            console.warn(`[FLUX][FILL] payload2 failed (${status2}): ${dataStr2}`);
-            console.warn('[FLUX][FILL] Falling back to KONText for this request.');
-          }
-        }
-      }
 
-      const payloadKontext = {
-        prompt: basePrompt,
-        negative_prompt: negativePrompt,
-        input_image: inputImgBase64,
-        mask_image: maskBase64, // likely ignored by kontext
-        n: 3,
-        output_format: 'png',
-        fidelity: 0.8,
-        guidance_scale: 3.0,
-        prompt_upsampling: false,
-        safety_tolerance: 2,
-        seed
-      };
-      const rK = await axios.post('https://api.bfl.ai/v1/flux-kontext-pro', payloadKontext, { headers, timeout: 120000 });
-      console.log(`[FLUX][KONTEXT] POST#${i} ok:`, rK.status);
-      return rK.data;
-    }
-
-    // --- FLUX calls ---
-    const generatedImageUrls = [];
-    console.log(`[FLUX] Engine=${FLUX_ENGINE}. Calling ${numVariations}×, each n=3`);
-
-    for (let i = 0; i < numVariations; i++) {
-      const currentSeed = Date.now() + i;
-
-      let postData;
+      let task;
       try {
-        postData = await postWithEngine(
-          FLUX_ENGINE,
-          fluxApiKey,
-          inputImageForModel.toString('base64'),
-          (await sharp(maskForModelHard).png().toBuffer()).toString('base64'),
-          currentSeed,
-          i + 1
-        );
-      } catch (errPost) {
-        console.error('[FLUX] POST failed (after fallback):', errPost.response?.data || errPost.message);
+        const res = await axios.post(endpoint, payload, { headers: fluxHeaders, timeout: 90000 });
+        task = res.data;
+        console.log(`DEBUG: FLUX POST status=${res.status} id=${task.id}`);
+      } catch (e) {
+        console.error('FLUX post failed:', e.response?.data || e.message);
         continue;
       }
 
-      const taskId = postData?.id;
-      const polling = postData?.polling_url;
-      if (!taskId || !polling) { console.warn('[FLUX] Missing task/polling'); continue; }
+      if (!task?.polling_url) {
+        console.warn('FLUX: missing polling_url');
+        continue;
+      }
 
-      let tries = 0, done = false;
-      while (tries < 60 && !done) {
-        tries++;
+      // Poll
+      let attempts = 0, done = false;
+      while (!done && attempts < 60) {
+        attempts++;
         await new Promise(r => setTimeout(r, 2000));
-        const pol = await axios.get(polling, { headers: { 'x-key': fluxApiKey }, timeout: 15000 });
-        if (pol.data?.status === 'Ready') {
-          const r = pol.data.result || {};
-          const urls = [];
-          if (typeof r.sample === 'string') urls.push(r.sample);
-          if (Array.isArray(r.samples)) urls.push(...r.samples.filter(s => typeof s === 'string'));
-          if (Array.isArray(r.images)) urls.push(...r.images.filter(s => typeof s === 'string'));
-          if (Array.isArray(r.output)) urls.push(...r.output.filter(s => typeof s === 'string'));
+        const poll = await axios.get(task.polling_url, { headers: { 'x-key': fluxApiKey || FLUX_API_KEY }, timeout: 15000 });
+        const data = poll.data;
 
-          // ---- POST-PROCESS (strict clamp ONLY, no dark floor) ----
-          const TAU = 0.05;
-          const r_final = Math.max(1, Math.min(6, Math.round(1 + 10 * Math.max(0, TAU - t))));
-          console.log(`[CLAMP] r_final=${r_final} (t=${t.toFixed(4)})`);
-
-          const silhouetteHard = await sharp(originalSilhouette).threshold(8).png().toBuffer();
-          const clampMaskHard = await dilateHardMask(silhouetteHard, r_final);
-          const clampMaskSoft = await featherMask(clampMaskHard, 0.3);
-          await uploadDebug(clampMaskHard, `clamp_mask_r${r_final}_${uuidv4()}.png`, userId);
-
-          for (const u of urls) {
-            try {
-              const img = await axios.get(u, { responseType: 'arraybuffer' });
-              let out = Buffer.from(img.data);
-
-              // Normalize to skin size BEFORE clamp
-              out = await sharp(out).resize({ width: skinW, height: skinH, fit: 'fill' }).png().toBuffer();
-
-              // strict clamp
-              const clamped = await sharp(out)
-                .composite([{ input: clampMaskSoft, blend: 'dest-in' }])
-                .png()
-                .toBuffer();
-
-              // final = skin + clamped tattoo ONLY (no dark overlays)
-              const finalComp = await sharp(skinImageBuffer)
-                .composite([
-                  { input: clamped, blend: 'over', premultiplied: true }
-                ])
-                .png()
-                .toBuffer();
-
-              await uploadDebug(finalComp, `final_preview_${uuidv4()}.png`, userId);
-
-              const watermarked = await fluxPlacementHandler.applyWatermark(finalComp);
-              const url = await fluxPlacementHandler.uploadToSupabaseStorage(watermarked, `tattoo-${uuidv4()}.png`, userId, '', 'image/png');
-              generatedImageUrls.push(url);
-            } catch (e) {
-              console.error('[FINAL] postprocess/upload error:', e.message);
-            }
-          }
+        if (data.status === 'Ready') {
+          const url = data.result?.sample;
+          if (!url) { done = true; break; }
+          const imgRes = await axios.get(url, { responseType: 'arraybuffer' });
+          const buf = Buffer.from(imgRes.data);
+          const watermarked = await fluxPlacementHandler.applyWatermark(buf);
+          const fileName = `tattoo-${uuidv4()}.png`;
+          const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarked, fileName, userId, '', 'image/png');
+          generatedImageUrls.push(publicUrl);
           done = true;
-        } else if (pol.data?.status === 'Content Moderated') {
-          console.warn('[FLUX] moderation:', pol.data?.details || '');
-          done = true;
-        } else if (pol.data?.status === 'Error') {
-          console.error('[FLUX] polling error:', pol.data);
+        } else if (data.status === 'Error' || data.status === 'Content Moderated') {
+          console.warn('FLUX polling end:', data.status, data.details || '');
           done = true;
         }
       }
-
-      if (!done) console.warn('[FLUX] polling timeout');
     }
 
     if (generatedImageUrls.length === 0) {
-      throw new Error('Flux API: no images generated.');
+      throw new Error('Flux API: No images were generated across all attempts. Please try again.');
     }
 
-    console.log(`[FINAL] Generated ${generatedImageUrls.length} image(s).`);
     return generatedImageUrls;
   }
 };

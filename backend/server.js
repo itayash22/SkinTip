@@ -106,11 +106,11 @@ const upload = multer({
 });
 
 app.get('/', (req, res) => {
-    res.json({ status: 'OK', message: 'SkinTip API is running' });
+    res.json({ status: 'OK', message: 'SLATE API is running' });
 });
 
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'OK', message: 'SkinTip API is running' });
+    res.json({ status: 'OK', message: 'SLATE API is running' });
 });
 
 const authenticateToken = async (req, res, next) => {
@@ -447,7 +447,7 @@ app.use((error, req, res, next) => {
 
 // Start server
 app.listen(PORT, () => {
-    console.log(`🚀 SkinTip backend running on port ${PORT}`);
+    console.log(`🚀 SLATE backend running on port ${PORT}`);
     console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🔑 Flux API: ${process.env.FLUX_API_KEY ? 'Configured' : 'Not configured (using mock)'}`);
     console.log(`🔗 Supabase URL: ${SUPABASE_URL ? 'Configured' : 'Not configured'}`);

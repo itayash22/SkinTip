@@ -34,20 +34,23 @@
 
     <main class="main-content">
         <div class="container">
-            <section id="sketchGallerySection" class="section">
+            <section id="styleSelectionSection" class="section">
                 <div class="section-header">
-                    <h2>Choose Your Sketch</h2>
-                    <p>Browse our gallery of unique tattoo sketches</p>
+                    <h2>Slate.Tattoo – Try Before You Dye</h2>
+                    <p>Explore curated tattoo stencils from top artists. Choose a style to begin.</p>
                 </div>
-                <div class="filters">
-                    <button class="btn btn-outline filter-btn active" data-theme="all">All</button>
-                    <button class="btn btn-outline filter-btn" data-theme="Animals">Animals</button>
-                    <button class="btn btn-outline filter-btn" data-theme="Fantasy">Fantasy</button>
-                    <button class="btn btn-outline filter-btn" data-theme="Nature">Nature</button>
-                    <button class="btn btn-outline filter-btn" data-theme="Abstract">Abstract</button>
+                <div class="style-chips">
+                    <button class="btn btn-primary style-chip" data-style="Minimalist">Minimalist</button>
+                    <button class="btn btn-primary style-chip" data-style="Geometric">Geometric</button>
+                    <button class="btn btn-primary style-chip" data-style="Watercolor">Watercolor</button>
+                    <button class="btn btn-primary style-chip" data-style="Traditional">Traditional</button>
+                    <button class="btn btn-primary style-chip" data-style="Abstract">Abstract</button>
+                    <button class="btn btn-primary style-chip" data-style="Animals">Animals</button>
+                    <button class="btn btn-secondary style-chip" data-style="Freestyle">Free style</button>
                 </div>
-                <div id="sketchGrid" class="sketch-grid">
-                    <!-- Sketches will be dynamically loaded here -->
+                <div class="upload-link-container">
+                    <input type="file" id="stencilFileInput" accept="image/jpeg,image/png,image/webp" hidden>
+                    <a href="#" id="uploadStencilLink">Or, upload your own stencil</a>
                 </div>
             </section>
             
@@ -181,6 +184,16 @@
         </div>
     </main>
 
+    <div id="stencilModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h2 id="stencilModalTitle"></h2>
+            <div id="stencilGrid" class="sketch-grid">
+                <!-- Stencils will be dynamically loaded here -->
+            </div>
+            <button id="closeStencilModalBtn" class="btn btn-outline" style="margin-top: 1rem;">Close</button>
+        </div>
+    </div>
+
     <div id="loadingOverlay" class="loading-overlay" style="display: none;">
         <div class="loading-content">
             <div class="spinner"></div>
@@ -230,7 +243,7 @@
     <script src="js/auth.js"></script>
     <script>console.log('Loading drawing.js...');</script>
     <script type="module" src="js/drawing.js"></script>
-    <script src="js/gallery.js"></script>
+    <script src="js/stencil-data.js"></script>
     <script type="module">
         console.log('Main inline script starting...');
 
@@ -436,53 +449,107 @@
         document.addEventListener('DOMContentLoaded', () => {
             console.log('🎨 SkinTip initializing (DOMContentLoaded)!');
 
-            // --- Sketch Gallery Logic ---
-            const sketchGrid = document.getElementById('sketchGrid');
-            const filterBtns = document.querySelectorAll('.filter-btn');
+            // --- New User Flow Logic ---
+            const styleChips = document.querySelectorAll('.style-chip');
+            const stencilModal = document.getElementById('stencilModal');
+            const stencilModalTitle = document.getElementById('stencilModalTitle');
+            const stencilGrid = document.getElementById('stencilGrid');
+            const closeStencilModalBtn = document.getElementById('closeStencilModalBtn');
 
-            function displaySketches(theme) {
-                sketchGrid.innerHTML = '';
-                const filteredSketches = theme === 'all' ? sketchGallery : sketchGallery.filter(sketch => sketch.theme === theme);
+            styleChips.forEach(chip => {
+                chip.addEventListener('click', () => {
+                    const style = chip.dataset.style;
+                    stencilModalTitle.textContent = style;
+                    populateStencilGrid(style);
+                    stencilModal.style.display = 'flex';
+                });
+            });
 
-                filteredSketches.forEach(sketch => {
+            function populateStencilGrid(style) {
+                stencilGrid.innerHTML = '';
+                const stencils = stencilData[style] || [];
+
+                stencils.forEach(stencil => {
                     const sketchCard = document.createElement('div');
                     sketchCard.className = 'sketch-card';
-                    sketchCard.dataset.sketchId = sketch.id;
+                    sketchCard.dataset.stencilId = stencil.id;
                     sketchCard.innerHTML = `
-                        <img src="${sketch.imageUrl}" alt="${sketch.theme} sketch">
+                        <img src="${stencil.imageUrl}" alt="${stencil.name}">
                         <div class="sketch-card-info">
-                            <h4>${sketch.theme} Sketch</h4>
-                            <p>By ${sketch.artist.name}</p>
+                            <h4>${stencil.name}</h4>
+                            <p>By ${stencil.artist}</p>
                         </div>
                     `;
-                    sketchGrid.appendChild(sketchCard);
+                    stencilGrid.appendChild(sketchCard);
                 });
             }
 
-            filterBtns.forEach(btn => {
-                btn.addEventListener('click', () => {
-                    filterBtns.forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
-                    displaySketches(btn.dataset.theme);
-                });
-            });
-
-            displaySketches('all'); // Initial display
-
-            // --- Sketch Selection Logic ---
-            sketchGrid.addEventListener('click', (e) => {
+            stencilGrid.addEventListener('click', (e) => {
                 const sketchCard = e.target.closest('.sketch-card');
                 if (!sketchCard) return;
 
-                const sketchId = parseInt(sketchCard.dataset.sketchId, 10);
-                const selectedSketch = sketchGallery.find(sketch => sketch.id === sketchId);
+                const stencilId = parseInt(sketchCard.dataset.stencilId, 10);
 
-                if (selectedSketch) {
-                    STATE.selectedSketch = selectedSketch;
-                    document.getElementById('sketchGallerySection').style.display = 'none';
+                // Find the stencil in the data
+                let selectedStencil = null;
+                for (const style in stencilData) {
+                    const found = stencilData[style].find(s => s.id === stencilId);
+                    if (found) {
+                        selectedStencil = found;
+                        break;
+                    }
+                }
+
+                if (selectedStencil) {
+                    STATE.selectedStencil = selectedStencil;
+                    stencilModal.style.display = 'none';
+                    document.getElementById('styleSelectionSection').style.display = 'none';
                     document.getElementById('skinPhotoUploadSection').style.display = 'block';
                 }
             });
+
+            closeStencilModalBtn.addEventListener('click', () => {
+                stencilModal.style.display = 'none';
+            });
+
+            // --- Upload Stencil Logic ---
+            const uploadStencilLink = document.getElementById('uploadStencilLink');
+            const stencilFileInput = document.getElementById('stencilFileInput');
+
+            uploadStencilLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                stencilFileInput.click();
+            });
+
+            stencilFileInput.addEventListener('change', async (e) => {
+                if (e.target.files.length > 0) {
+                    await handleTattooDesignFile(e.target.files[0]);
+                }
+            });
+
+            async function handleTattooDesignFile(file) {
+                if (!CONFIG.ALLOWED_FILE_TYPES.includes(file.type)) {
+                    utils.showError('Please upload a JPEG, PNG, or WebP image for your tattoo design.');
+                    return;
+                }
+                if (file.size > CONFIG.MAX_FILE_SIZE) {
+                    utils.showError('Tattoo design file size must be less than 5MB.');
+                    return;
+                }
+                utils.showLoading('Processing tattoo design...');
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const originalDataURL = e.target.result;
+                    const resizedDataURL = await resizeImage(originalDataURL, file.type, 768, 768, 0.9);
+                    STATE.uploadedTattooDesignBase64 = resizedDataURL;
+
+                    document.getElementById('styleSelectionSection').style.display = 'none';
+                    document.getElementById('skinPhotoUploadSection').style.display = 'block';
+                    utils.hideLoading();
+                };
+                reader.readAsDataURL(file);
+            }
+
 
             // Initialize auth module (handles redirection for authenticated users)
             if (typeof auth !== 'undefined' && auth.init) {
@@ -514,7 +581,7 @@
 
             // Initial UI setup and reset function
             function resetUI() {
-                document.getElementById('sketchGallerySection').style.display = 'block';
+                document.getElementById('styleSelectionSection').style.display = 'block';
 
                 skinPhotoUploadSection.style.display = 'none';
                 imagePreview.style.display = 'none';
@@ -531,7 +598,8 @@
                 if (window.drawing && drawing.clearCanvas) {
                     drawing.clearCanvas();
                 }
-                STATE.selectedSketch = null;
+                STATE.selectedStencil = null;
+                STATE.uploadedTattooDesignBase64 = null;
                 STATE.currentImage = null;
                 STATE.currentMask = null;
                 STATE.generatedImages = [];
@@ -612,8 +680,8 @@
                     drawing.clearCanvas();
                 }
                 skinPhotoUploadSection.style.display = 'none';
-                document.getElementById('sketchGallerySection').style.display = 'block';
-                document.getElementById('sketchGallerySection').scrollIntoView({ behavior: 'smooth' });
+                document.getElementById('styleSelectionSection').style.display = 'block';
+                document.getElementById('styleSelectionSection').scrollIntoView({ behavior: 'smooth' });
             });
 
             async function handleSkinPhotoFile(file) {
@@ -643,12 +711,13 @@
                 previewImg.src = resizedDataURL;
 
                 if (window.drawing && drawing.init) {
-                    if (!STATE.selectedSketch) {
-                        utils.showError('No sketch selected. Please go back and choose a sketch.');
+                    const tattooImageUrl = STATE.selectedStencil ? STATE.selectedStencil.imageUrl : STATE.uploadedTattooDesignBase64;
+                    if (!tattooImageUrl) {
+                        utils.showError('No stencil selected or uploaded. Please go back and choose a stencil or upload one.');
                         return;
                     }
                     // Pass both skin and tattoo image URLs to the new init function
-                    drawing.init(resizedDataURL, STATE.selectedSketch.imageUrl);
+                    drawing.init(resizedDataURL, tattooImageUrl);
                 } else {
                     console.error("drawing.js module not loaded correctly or 'drawing' object not exposed.");
                 }
@@ -670,8 +739,8 @@
                 utils.showError(`Not enough tokens! This action costs ${CONFIG.TOKEN_COSTS.FLUX_PLACEMENT} tokens. You have ${STATE.userTokens || 0}.`);
                 return;
             }
-            if (!STATE.selectedSketch || !STATE.currentImage) {
-                utils.showError('Please ensure you have selected a sketch and uploaded a skin photo.');
+            if ((!STATE.selectedStencil && !STATE.uploadedTattooDesignBase64) || !STATE.currentImage) {
+                utils.showError('Please ensure you have selected a stencil or uploaded a design, and uploaded a skin photo.');
                 return;
             }
 
@@ -695,10 +764,12 @@
             const artistName = document.getElementById('artistName');
             const artistBio = document.getElementById('artistBio');
 
-            if (STATE.selectedSketch && STATE.selectedSketch.artist) {
-                artistName.textContent = STATE.selectedSketch.artist.name;
-                artistBio.textContent = STATE.selectedSketch.artist.bio;
+            if (STATE.selectedStencil && STATE.selectedStencil.artist) {
+                artistName.textContent = STATE.selectedStencil.artist;
+                artistBio.textContent = ""; // Bio is not in the new data structure
                 artistInfo.style.display = 'block';
+            } else {
+                artistInfo.style.display = 'none';
             }
             // ---
 
@@ -707,7 +778,8 @@
             try {
                 const formData = new FormData();
                 formData.append('skinImage', STATE.currentImage);
-                const tattooDesignBlob = await (await fetch(STATE.selectedSketch.imageUrl)).blob();
+                const tattooImageUrl = STATE.selectedStencil ? STATE.selectedStencil.imageUrl : STATE.uploadedTattooDesignBase64;
+                const tattooDesignBlob = await (await fetch(tattooImageUrl)).blob();
                 // Crucial fix: Use the correct original file type, not hardcoded 'image/jpeg'
                 // Ensure the name also suggests PNG if the type is PNG
                 const tattooDesignFileName = tattooDesignBlob.type === 'image/png' ? 'tattoo_design.png' : 'tattoo_design.jpeg';
@@ -853,7 +925,7 @@
         // New Design button
             document.getElementById('newDesignBtn')?.addEventListener('click', () => {
                 resetUI();
-                document.getElementById('sketchGallerySection').scrollIntoView({ behavior: 'smooth' });
+                document.getElementById('styleSelectionSection').scrollIntoView({ behavior: 'smooth' });
             });
 
         // The filter event listeners for artists:

@@ -122,10 +122,12 @@ body {
     padding: 2rem;
     border-radius: 0.5rem;
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-    max-width: 400px;
+    max-width: 800px;
     width: 90%;
     position: relative;
     box-sizing: border-box; /* Ensure padding is included in width */
+    max-height: 80vh;
+    overflow-y: auto;
 }
 
 .auth-container {
@@ -419,6 +421,30 @@ body {
     gap: 1rem;
     flex-wrap: wrap;
     margin-top: 1rem;
+}
+
+/* Style Chips */
+.style-chips {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.upload-link-container {
+    text-align: center;
+    margin-top: 1.5rem;
+}
+
+.upload-link-container a {
+    color: #6366f1;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.upload-link-container a:hover {
+    text-decoration: underline;
 }
 
 /* Sketch Gallery Grid */

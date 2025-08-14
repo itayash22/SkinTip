@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-08-12_ADAPTIVE_SCALE_MASK_GROW_V2');
+console.log('FLUX_HANDLER_VERSION: 2025-08-12_ADAPTIVE_SCALE_ENGINE_V2');
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -22,21 +22,13 @@ const REMOVE_BG_API_KEY = process.env.REMOVE_BG_API_KEY;
 const FLUX_API_KEY = process.env.FLUX_API_KEY;
 
 // -----------------------------
-// Behavior flags + knobs
+// Behavior flags
 // -----------------------------
 const ADAPTIVE_SCALE_ENABLED  = (process.env.ADAPTIVE_SCALE_ENABLED  ?? 'true').toLowerCase() === 'true';
 const ADAPTIVE_ENGINE_ENABLED = (process.env.ADAPTIVE_ENGINE_ENABLED ?? 'true').toLowerCase() === 'true';
-const GLOBAL_SCALE_UP         = Number(process.env.MODEL_SCALE_UP || '1.0');       // applied always
+const GLOBAL_SCALE_UP         = Number(process.env.MODEL_SCALE_UP   || '1.00'); // optional global bump
+const FLUX_SHRINK_FIX         = Number(process.env.FLUX_SHRINK_FIX  || '1.12'); // <— new: corrects consistent FLUX downsizing
 const FLUX_ENGINE_DEFAULT     = (process.env.FLUX_ENGINE || 'kontext').toLowerCase(); // 'kontext' | 'fill'
-
-// Engine-specific size bias to counter model shrink
-const ENGINE_KONTEXT_SIZE_BIAS = Number(process.env.ENGINE_KONTEXT_SIZE_BIAS || '1.08');
-const ENGINE_FILL_SIZE_BIAS    = Number(process.env.ENGINE_FILL_SIZE_BIAS    || '1.02');
-
-// Mask grow (gives the model some “breathing room”)
-const MODEL_MASK_GROW_PCT = Number(process.env.MODEL_MASK_GROW_PCT || '0.06'); // 6% of bbox max dim
-const MODEL_MASK_GROW_MIN = Number(process.env.MODEL_MASK_GROW_MIN || '4');    // px
-const MODEL_MASK_GROW_MAX = Number(process.env.MODEL_MASK_GROW_MAX || '28');   // px
 
 // -----------------------------
 // Small helpers
@@ -118,7 +110,7 @@ async function detectUniformWhiteBackground(pngBuffer) {
 }
 
 async function colorToAlphaWhite(buffer) {
-  // Gentle white→alpha with decontamination; preserves edges reasonably well
+  // Gentle white→alpha with decontamination
   const img = sharp(buffer).ensureAlpha();
   const { width: w, height: h } = await img.metadata();
   const raw = await img.raw().toBuffer();
@@ -136,7 +128,6 @@ async function colorToAlphaWhite(buffer) {
       alpha = Math.round(A * (1 - cut));
       if (wmax >= hard) alpha = 0;
     }
-    // simple decontamination to reduce white halo:
     if (alpha > 0 && alpha < 255) {
       const a = alpha / 255;
       raw[p]   = clamp(Math.round((R - (1 - a) * 255) / a), 0, 255);
@@ -158,9 +149,10 @@ async function analyzeTattooAlpha(pngBuffer) {
   const meta = await img.metadata();
   const w = meta.width | 0, h = meta.height | 0;
 
-  const alpha = await img.extractChannel('alpha').raw().toBuffer(); // 1 channel
+  const alpha = await img.extractChannel('alpha').raw().toBuffer(); // 1 ch
   const N = w * h;
 
+  // Binary mask (alpha > 128)
   const mask = new Uint8Array(N);
   let area = 0;
   let minX = w, minY = h, maxX = -1, maxY = -1;
@@ -176,7 +168,9 @@ async function analyzeTattooAlpha(pngBuffer) {
       if (y > maxY) maxY = y;
     }
   }
-  if (area === 0) return { coverage: 0, thinness: 0, solidity: 0, bbox: null, width: w, height: h };
+  if (area === 0) {
+    return { coverage: 0, thinness: 0, solidity: 0, bbox: null, width: w, height: h };
+  }
 
   const bboxW = maxX - minX + 1;
   const bboxH = maxY - minY + 1;
@@ -184,15 +178,13 @@ async function analyzeTattooAlpha(pngBuffer) {
   const coverage = area / N;
   const solidity = bboxArea > 0 ? area / bboxArea : 0;
 
-  // Thinness proxy: edge density via alpha gradient
+  // Thinness proxy: average absolute gradient of alpha within bbox
   let gradAcc = 0, gradCount = 0;
   for (let y = minY + 1; y < maxY; y++) {
     let row = y * w;
     for (let x = minX + 1; x < maxX; x++) {
       const i = row + x;
-      const gx = Math.abs(alpha[i] - alpha[i - 1]);
-      const gy = Math.abs(alpha[i] - alpha[i - w]);
-      gradAcc += gx + gy;
+      gradAcc += Math.abs(alpha[i] - alpha[i - 1]) + Math.abs(alpha[i] - alpha[i - w]);
       gradCount += 2;
     }
   }
@@ -206,21 +198,24 @@ async function analyzeTattooAlpha(pngBuffer) {
 }
 
 function chooseAdaptiveScale(stats) {
-  const cov = stats.coverage;
-  const thn = stats.thinness;
-  const sol = stats.solidity;
+  // thresholds tuned conservatively (so global FLUX_SHRINK_FIX does most of the work)
+  const cov = stats.coverage;   // 0..1
+  const thn = stats.thinness;   // 0..1 (higher → thinner lines)
+  const sol = stats.solidity;   // area/bboxArea
 
   const isThinLine     = (cov < 0.12 && thn > 0.10);
   const hasHaloSplash  = (sol < 0.55);
 
-  let scale = 1.0;
+  let scale = 1.00;
+
   if (isThinLine && !hasHaloSplash) {
-    const boost = clamp(1.20 + (0.12 - cov) * 2.5, 1.20, 1.50); // 1.20..1.50
+    // was 1.20–1.50; soften because we apply FLUX_SHRINK_FIX globally
+    const boost = clamp(1.12 + (0.12 - cov) * 2.0, 1.12, 1.40);
     scale = boost;
   } else if (hasHaloSplash) {
-    scale = 1.0;
+    scale = 1.00;
   } else {
-    scale = 1.05;
+    scale = 1.02;
   }
   return { scale, isThinLine, hasHaloSplash };
 }
@@ -230,33 +225,12 @@ function pickEngine(baseEngine, adaptiveEnabled, isThinLine) {
   return isThinLine ? 'fill' : baseEngine;
 }
 
-// ------ simple “dilation” for 8-bit gray mask using box-convolve + threshold
-async function dilateGrayMaskToPng(grayRawBuffer, w, h, growPx) {
-  // Convert raw -> sharp image
-  const img = sharp(grayRawBuffer, { raw: { width: w, height: h, channels: 1 } });
-  // Build odd-sized kernel width = 2*growPx + 1 (capped for perf)
-  const r = clamp(growPx, 1, 64);
-  const k = 2 * r + 1;
-  const kernel = { width: k, height: k, kernel: new Array(k * k).fill(1) };
-
-  // Convolve (box “sum”), any positive → 255
-  const convolved = await img
-    .convolve(kernel)
-    .threshold(1)                // anything >0 becomes 255
-    .toColourspace('b-w')        // keep single channel
-    .png()
-    .toBuffer();
-
-  return convolved; // PNG (L)
-}
-
 // -----------------------------
 // Public module
 // -----------------------------
 const fluxPlacementHandler = {
 
   removeImageBackground: async (imageBuffer) => {
-    // 1) If no key, try local white→alpha; if not uniform white, just pass-through
     if (!REMOVE_BG_API_KEY) {
       try {
         const { isUniformWhite } = await detectUniformWhiteBackground(imageBuffer);
@@ -270,7 +244,6 @@ const fluxPlacementHandler = {
       return await sharp(imageBuffer).png().toBuffer();
     }
 
-    // 2) Try remove.bg; if fails, fallback to local logic or passthrough
     try {
       const formData = new FormData();
       formData.append('image_file', new Blob([imageBuffer], { type: 'image/png' }), 'tattoo_design.png');
@@ -310,7 +283,7 @@ const fluxPlacementHandler = {
       const padding = 15;
 
       const left = Math.max(0, imageWidth - svgWidth - padding);
-      const top = Math.max(0, imageHeight - svgHeight - padding);
+      const top  = Math.max(0, imageHeight - svgHeight - padding);
 
       return await sharp(imageBuffer)
         .composite([{ input: svgBuffer, top, left, blend: 'over' }])
@@ -354,7 +327,7 @@ const fluxPlacementHandler = {
     const tattooMeta0 = await sharp(tattooDesignOriginalBuffer).metadata();
     console.log(`Input tattoo meta: ${tattooMeta0.width}x${tattooMeta0.height}, fmt=${tattooMeta0.format}`);
 
-    // --- Ensure proper alpha on tattoo design ---
+    // --- Remove background (ensure alpha) ---
     const tattooDesignPng = await fluxPlacementHandler.removeImageBackground(tattooDesignOriginalBuffer);
 
     // --- Analyze tattoo alpha for adaptive decisions ---
@@ -363,16 +336,13 @@ const fluxPlacementHandler = {
 
     // --- Adaptive scale & engine pick ---
     const baseEngine = FLUX_ENGINE_DEFAULT;
-    const { scale: adaptScale, isThinLine, hasHaloSplash } = ADAPTIVE_SCALE_ENABLED
-      ? chooseAdaptiveScale(stats)
-      : { scale: 1.0, isThinLine: false, hasHaloSplash: false };
+    const { scale: adaptScale, isThinLine, hasHaloSplash } =
+      ADAPTIVE_SCALE_ENABLED ? chooseAdaptiveScale(stats) : { scale: 1.00, isThinLine: false, hasHaloSplash: false };
     const engine = pickEngine(baseEngine, ADAPTIVE_ENGINE_ENABLED, isThinLine);
 
-    const ENGINE_SIZE_BIAS = engine === 'kontext' ? ENGINE_KONTEXT_SIZE_BIAS : ENGINE_FILL_SIZE_BIAS;
-
     // final scale factor used when sizing to mask region
-    const EFFECTIVE_SCALE = tattooScale * GLOBAL_SCALE_UP * adaptScale * ENGINE_SIZE_BIAS;
-    console.log(`[ENGINE] chosen=${engine} | GLOBAL_SCALE_UP=${GLOBAL_SCALE_UP} | adaptiveScale=${adaptScale.toFixed(3)} | engineBias=${ENGINE_SIZE_BIAS} | effective=${EFFECTIVE_SCALE.toFixed(3)} | thinLine=${isThinLine} halo=${hasHaloSplash}`);
+    const EFFECTIVE_SCALE = tattooScale * GLOBAL_SCALE_UP * FLUX_SHRINK_FIX * adaptScale;
+    console.log(`[ENGINE] chosen=${engine} | tattooScale=${tattooScale.toFixed(3)} | GLOBAL_SCALE_UP=${GLOBAL_SCALE_UP} | FLUX_SHRINK_FIX=${FLUX_SHRINK_FIX} | adaptiveScale=${adaptScale.toFixed(3)} | EFFECTIVE_SCALE=${EFFECTIVE_SCALE.toFixed(3)} | thinLine=${isThinLine} halo=${hasHaloSplash}`);
 
     // --- Prepare mask ---
     const originalMaskBuffer = Buffer.from(maskBase64, 'base64');
@@ -385,7 +355,6 @@ const fluxPlacementHandler = {
       throw new Error(`Failed to read mask: ${e.message}`);
     }
 
-    // Compute bounding box of white region in mask (non-zero)
     function getMaskBBox(buf, w, h) {
       let minX = w, minY = h, maxX = -1, maxY = -1, found = false;
       for (let y = 0; y < h; y++) {
@@ -406,18 +375,10 @@ const fluxPlacementHandler = {
     const maskBBox = getMaskBBox(maskGrayRaw, maskMeta.width, maskMeta.height);
     if (maskBBox.isEmpty) throw new Error('Mask area is empty.');
 
-    // Grow (dilate) the mask for the model so it doesn’t shrink the tattoo
-    const growPx = clamp(
-      Math.round(MODEL_MASK_GROW_PCT * Math.max(maskBBox.width, maskBBox.height)),
-      MODEL_MASK_GROW_MIN,
-      MODEL_MASK_GROW_MAX
-    );
-    const grownMaskPng = await dilateGrayMaskToPng(maskGrayRaw, maskMeta.width, maskMeta.height, growPx);
-    await uploadDebug(grownMaskPng, userId, `mask_for_model_grow${growPx}px`);
-
     // --- Resize/rotate tattoo to fit mask with effective scale ---
     const targetW = Math.round(maskBBox.width  * EFFECTIVE_SCALE);
     const targetH = Math.round(maskBBox.height * EFFECTIVE_SCALE);
+
     const resizedTattoo = await sharp(tattooDesignPng)
       .resize({ width: targetW, height: targetH, fit: sharp.fit.inside, withoutEnlargement: false })
       .toBuffer();
@@ -433,7 +394,7 @@ const fluxPlacementHandler = {
     const placementLeft = Math.round(centeredLeft - (rotMeta.width  - targetW) / 2);
     const placementTop  = Math.round(centeredTop  - (rotMeta.height - targetH) / 2);
 
-    // --- Build positioned tattoo canvas (skin-sized transparent), then mask-composite (for preview/input) ---
+    // --- Build positioned tattoo canvas (skin-sized transparent), then mask-composite ---
     const skinMeta = await sharp(skinImageBuffer).metadata();
 
     const positionedCanvas = await sharp({
@@ -448,15 +409,14 @@ const fluxPlacementHandler = {
       .png()
       .toBuffer();
 
-    // Use the *grown* mask for the input we send to FLUX to prevent shrink
     const compositedForPreview = await sharp(skinImageBuffer)
-      .composite([{ input: positionedCanvas, blend: 'over' }])
+      .composite([{ input: positionedCanvas, blend: 'over', mask: maskGrayRaw }])
       .png()
       .toBuffer();
 
     await uploadDebug(originalMaskBuffer, userId, 'mask_original');
-    await uploadDebug(positionedCanvas,   userId, 'tattoo_canvas_positioned');
-    await uploadDebug(compositedForPreview, userId, 'debug_preview_input');
+    await uploadDebug(positionedCanvas, userId, 'tattoo_canvas_positioned');
+    await uploadDebug(compositedForPreview, userId, 'debug_sharp_composite');
 
     // -----------------------------
     // FLUX call(s)
@@ -472,7 +432,7 @@ const fluxPlacementHandler = {
       : 'https://api.bfl.ai/v1/flux-kontext-pro';
 
     const inputBase64 = compositedForPreview.toString('base64');
-    const maskB64     = Buffer.from(grownMaskPng).toString('base64'); // grown mask
+    const maskB64 = maskBase64;
 
     console.log(`Making ${numVariations} calls to FLUX (${endpoint.split('/').pop()})...`);
 
@@ -497,7 +457,7 @@ const fluxPlacementHandler = {
             mask_image: maskB64,
             output_format: 'png',
             n: 1,
-            fidelity: 0.8,
+            fidelity: 0.90,           // slightly higher = a bit more faithful size retention
             guidance_scale: 8.0,
             prompt_upsampling: true,
             safety_tolerance: 2,

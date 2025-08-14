@@ -24,18 +24,14 @@ const FLUX_API_KEY = process.env.FLUX_API_KEY;
 // -----------------------------
 // Behavior flags
 // -----------------------------
-const ADAPTIVE_SCALE_ENABLED = (process.env.ADAPTIVE_SCALE_ENABLED ?? 'true').toLowerCase() === 'true';
+const ADAPTIVE_SCALE_ENABLED  = (process.env.ADAPTIVE_SCALE_ENABLED  ?? 'true').toLowerCase() === 'true';
 const ADAPTIVE_ENGINE_ENABLED = (process.env.ADAPTIVE_ENGINE_ENABLED ?? 'true').toLowerCase() === 'true';
+const GLOBAL_SCALE_UP         = Number(process.env.MODEL_SCALE_UP || '1.0'); // applied always
+const FLUX_ENGINE_DEFAULT     = (process.env.FLUX_ENGINE || 'kontext').toLowerCase(); // 'kontext' | 'fill'
 
-// Site-wide multiplier you already had
-const GLOBAL_SCALE_UP = Number(process.env.MODEL_SCALE_UP || '1.0');
-
-// Engine selection default
-const FLUX_ENGINE_DEFAULT = (process.env.FLUX_ENGINE || 'kontext').toLowerCase(); // 'kontext' | 'fill'
-
-// New: small calibration multipliers per engine to counter FLUX’s consistent shrink.
-const ENGINE_CAL_BIAS_KONTEXT = Number(process.env.ENGINE_CAL_BIAS_KONTEXT || '1.08');
-const ENGINE_CAL_BIAS_FILL    = Number(process.env.ENGINE_CAL_BIAS_FILL    || '1.02');
+// NEW: engine-specific fudge (to counter FLUX’s consistent shrink)
+const FLUX_SIZE_FUDGE_KONTEXT = Number(process.env.FLUX_SIZE_FUDGE_KONTEXT || '1.15'); // ~+15%
+const FLUX_SIZE_FUDGE_FILL    = Number(process.env.FLUX_SIZE_FUDGE_FILL    || '1.07'); // ~+7%
 
 // -----------------------------
 // Small helpers
@@ -46,8 +42,7 @@ async function uploadDebug(imageBuffer, userId, name, contentType = 'image/png',
   try {
     const fileName = `${name}_${uuidv4()}.${contentType.startsWith('image/png') ? 'png' : 'jpg'}`;
     const filePath = `${userId}/${folder}/${fileName}`;
-    const { error } = await supabase.storage
-      .from(SUPABASE_STORAGE_BUCKET)
+    const { error } = await supabase.storage.from(SUPABASE_STORAGE_BUCKET)
       .upload(filePath, imageBuffer, { contentType, upsert: false });
     if (error) throw error;
     const { data: pub } = supabase.storage.from(SUPABASE_STORAGE_BUCKET).getPublicUrl(filePath);
@@ -118,7 +113,6 @@ async function detectUniformWhiteBackground(pngBuffer) {
 }
 
 async function colorToAlphaWhite(buffer) {
-  // soft white→alpha + simple decontamination
   const img = sharp(buffer).ensureAlpha();
   const { width: w, height: h } = await img.metadata();
   const raw = await img.raw().toBuffer();
@@ -156,17 +150,18 @@ async function analyzeTattooAlpha(pngBuffer) {
   const meta = await img.metadata();
   const w = meta.width | 0, h = meta.height | 0;
 
-  const alpha = await img.extractChannel('alpha').raw().toBuffer(); // 1 channel
+  const alpha = await img.extractChannel('alpha').raw().toBuffer();
   const N = w * h;
 
+  const mask = new Uint8Array(N);
   let area = 0;
   let minX = w, minY = h, maxX = -1, maxY = -1;
   for (let i = 0; i < N; i++) {
     const v = alpha[i] > 128 ? 1 : 0;
+    mask[i] = v;
     if (v) {
       area++;
-      const y = (i / w) | 0;
-      const x = i - y * w;
+      const y = (i / w) | 0, x = i - y * w;
       if (x < minX) minX = x;
       if (y < minY) minY = y;
       if (x > maxX) maxX = x;
@@ -183,10 +178,9 @@ async function analyzeTattooAlpha(pngBuffer) {
   const coverage = area / N;
   const solidity = bboxArea > 0 ? area / bboxArea : 0;
 
-  // Thinness proxy via simple alpha gradients inside bbox
   let gradAcc = 0, gradCount = 0;
   for (let y = minY + 1; y < maxY; y++) {
-    const row = y * w;
+    let row = y * w;
     for (let x = minX + 1; x < maxX; x++) {
       const i = row + x;
       const gx = Math.abs(alpha[i] - alpha[i - 1]);
@@ -217,14 +211,13 @@ function chooseAdaptiveScale(stats) {
 
   let scale = 1.0;
   if (isThinLine && !hasHaloSplash) {
-    const boost = clamp(1.18 + (0.10 - cov) * 2.2, 1.18, 1.38);
+    const boost = clamp(1.20 + (0.12 - cov) * 2.5, 1.20, 1.50);
     scale = boost;
   } else if (hasHaloSplash) {
     scale = 1.0;
   } else {
-    scale = 1.00;
+    scale = 1.05;
   }
-
   return { scale, isThinLine, hasHaloSplash };
 }
 
@@ -239,7 +232,6 @@ function pickEngine(baseEngine, adaptiveEnabled, isThinLine) {
 const fluxPlacementHandler = {
 
   removeImageBackground: async (imageBuffer) => {
-    // 1) local white->alpha if uniform white and no key
     if (!REMOVE_BG_API_KEY) {
       try {
         const { isUniformWhite } = await detectUniformWhiteBackground(imageBuffer);
@@ -248,19 +240,14 @@ const fluxPlacementHandler = {
           return await colorToAlphaWhite(imageBuffer);
         }
       } catch (e) {
-        console.warn('[BG] local white→alpha probe failed, pass-through:', e.message);
+        console.warn('[BG] local white→alpha probe failed, passing-through:', e.message);
       }
       return await sharp(imageBuffer).png().toBuffer();
     }
 
-    // 2) remove.bg then fallback to local/passthrough
     try {
       const formData = new FormData();
-      // Node 22 has global Blob; if not, form-data can accept Buffers as well.
-      formData.append('image_file', Buffer.from(imageBuffer), {
-        filename: 'tattoo_design.png',
-        contentType: 'image/png'
-      });
+      formData.append('image_file', new Blob([imageBuffer], { type: 'image/png' }), 'tattoo_design.png');
       formData.append('size', 'auto');
       formData.append('format', 'png');
 
@@ -275,7 +262,7 @@ const fluxPlacementHandler = {
       try {
         const { isUniformWhite } = await detectUniformWhiteBackground(imageBuffer);
         if (isUniformWhite) return await colorToAlphaWhite(imageBuffer);
-      } catch (e) { /* ignore */ }
+      } catch (e) {}
       return await sharp(imageBuffer).png().toBuffer();
     }
   },
@@ -283,15 +270,14 @@ const fluxPlacementHandler = {
   applyWatermark: async (imageBuffer) => {
     try {
       const watermarkText = 'SkinTip.AI';
-      const watermarkSvg =
-        `<svg width="200" height="30" viewBox="0 0 200 30" xmlns="http://www.w3.org/2000/svg">
-           <text x="10" y="25" font-family="Arial, sans-serif" font-size="16" fill="#FFFFFF" fill-opacity="0.5">${watermarkText}</text>
-         </svg>`;
+      const watermarkSvg = `<svg width="200" height="30" viewBox="0 0 200 30" xmlns="http://www.w3.org/2000/svg">
+        <text x="10" y="25" font-family="Arial, sans-serif" font-size="16" fill="#FFFFFF" fill-opacity="0.5">${watermarkText}</text>
+      </svg>`;
       const svgBuffer = Buffer.from(watermarkSvg);
 
       const metadata = await sharp(imageBuffer).metadata();
-      const imageWidth = metadata.width || 0;
-      const imageHeight = metadata.height || 0;
+      const imageWidth = metadata.width;
+      const imageHeight = metadata.height;
 
       const svgWidth = 200;
       const svgHeight = 30;
@@ -312,8 +298,7 @@ const fluxPlacementHandler = {
 
   uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '', contentType = 'image/png') => {
     const filePath = folder ? `${userId}/${folder}/${fileName}` : `${userId}/${fileName}`;
-    const { error } = await supabase.storage
-      .from(SUPABASE_STORAGE_BUCKET)
+    const { error } = await supabase.storage.from(SUPABASE_STORAGE_BUCKET)
       .upload(filePath, imageBuffer, { contentType, upsert: false });
     if (error) {
       console.error('Supabase upload error:', error);
@@ -355,11 +340,24 @@ const fluxPlacementHandler = {
     const { scale: adaptScale, isThinLine, hasHaloSplash } =
       ADAPTIVE_SCALE_ENABLED ? chooseAdaptiveScale(stats) : { scale: 1.0, isThinLine: false, hasHaloSplash: false };
     const engine = pickEngine(baseEngine, ADAPTIVE_ENGINE_ENABLED, isThinLine);
-    const engineBias = engine === 'fill' ? ENGINE_CAL_BIAS_FILL : ENGINE_CAL_BIAS_KONTEXT;
+
+    // NEW: deterministic fudge by engine, with light heuristics
+    let fudge = engine === 'kontext' ? FLUX_SIZE_FUDGE_KONTEXT : FLUX_SIZE_FUDGE_FILL;
+    if (isThinLine)     fudge += 0.03;   // thin-lines tended to shrink more
+    if (hasHaloSplash)  fudge -= 0.03;   // splashy fills sometimes expand
+    fudge = clamp(fudge, 1.00, 1.25);
 
     // final scale factor used when sizing to mask region
-    const EFFECTIVE_SCALE = tattooScale * GLOBAL_SCALE_UP * adaptScale * engineBias;
-    console.log(`[ENGINE] chosen=${engine} | GLOBAL_SCALE_UP=${GLOBAL_SCALE_UP} | adaptiveScale=${adaptScale.toFixed(3)} | engineBias=${engineBias.toFixed(3)} | effective=${EFFECTIVE_SCALE.toFixed(3)} | thinLine=${isThinLine} halo=${hasHaloSplash}`);
+    const EFFECTIVE_SCALE = tattooScale * GLOBAL_SCALE_UP * adaptScale * fudge;
+
+    console.log(
+      `[ENGINE] chosen=${engine}` +
+      ` | GLOBAL_SCALE_UP=${GLOBAL_SCALE_UP}` +
+      ` | adaptiveScale=${adaptScale.toFixed(3)}` +
+      ` | fudge=${fudge.toFixed(3)}` +
+      ` | effective=${EFFECTIVE_SCALE.toFixed(3)}` +
+      ` | thinLine=${isThinLine} halo=${hasHaloSplash}`
+    );
 
     // --- Prepare mask ---
     const originalMaskBuffer = Buffer.from(maskBase64, 'base64');
@@ -372,7 +370,6 @@ const fluxPlacementHandler = {
       throw new Error(`Failed to read mask: ${e.message}`);
     }
 
-    // Compute bounding box of white region in mask (non-zero)
     function getMaskBBox(buf, w, h) {
       let minX = w, minY = h, maxX = -1, maxY = -1, found = false;
       for (let y = 0; y < h; y++) {
@@ -394,8 +391,9 @@ const fluxPlacementHandler = {
     if (maskBBox.isEmpty) throw new Error('Mask area is empty.');
 
     // --- Resize/rotate tattoo to fit mask with effective scale ---
-    const targetW = Math.round(maskBBox.width * EFFECTIVE_SCALE);
+    const targetW = Math.round(maskBBox.width  * EFFECTIVE_SCALE);
     const targetH = Math.round(maskBBox.height * EFFECTIVE_SCALE);
+
     const resizedTattoo = await sharp(tattooDesignPng)
       .resize({ width: targetW, height: targetH, fit: sharp.fit.inside, withoutEnlargement: false })
       .toBuffer();
@@ -426,6 +424,7 @@ const fluxPlacementHandler = {
       .png()
       .toBuffer();
 
+    // Preview composite for debugging
     const compositedForPreview = await sharp(skinImageBuffer)
       .composite([{ input: positionedCanvas, blend: 'over', mask: maskGrayRaw }])
       .png()

@@ -155,14 +155,14 @@ const auth = {
     setAuthMode: (isRegister) => {
         auth.isRegisterMode = isRegister;
         if (isRegister) {
-            auth.authTitle.textContent = 'Register for SLATE';
+            auth.authTitle.textContent = 'Register for Slate.Tattoo';
             auth.authSwitchText.textContent = 'Already have an account?';
             auth.authSwitchLink.textContent = 'Login';
             auth.authForm.querySelector('button[type="submit"]').textContent = 'Register';
             auth.usernameGroup.style.display = 'block';
             auth.usernameInput.setAttribute('required', 'required');
         } else {
-            auth.authTitle.textContent = 'Login to SLATE';
+            auth.authTitle.textContent = 'Login to Slate.Tattoo';
             auth.authSwitchText.textContent = "Don't have an account?";
             auth.authSwitchLink.textContent = 'Register';
             auth.authForm.querySelector('button[type="submit"]').textContent = 'Login';

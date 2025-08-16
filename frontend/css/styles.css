@@ -228,6 +228,10 @@ body {
     margin-bottom: 1.5rem;
 }
 
+#selectedStencilPreview {
+    text-align: center;
+}
+
 .section-header h2 {
     font-size: 2rem;
     margin-bottom: 0.5rem;
@@ -451,6 +455,13 @@ body {
     width: 100%;
     height: 100%;
     object-fit: cover;
+}
+
+.tattoo-of-the-day-title {
+    font-size: 0.8rem;
+    color: #6c757d;
+    text-align: center;
+    margin-top: 0.5rem;
 }
 
 .upload-link-container {
@@ -784,6 +795,20 @@ body {
 .artist-info-loading p {
     margin: 0;
     font-size: 0.9rem;
+}
+
+.artist-sketches-grid {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.artist-sketches-grid img {
+    width: 80px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 0.25rem;
 }
 
 @keyframes spin {

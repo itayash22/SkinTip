@@ -50,24 +50,12 @@ app.use((req, res, next) => {
 });
 
 app.use(cors({
-    origin: function (origin, callback) {
-        const allowedOrigins = [
-            process.env.FRONTEND_URL,
-            'https://itayash22.github.io',
-            'http://localhost:8080',
-            'http://127.0.0.1:8080'
-        ].filter(Boolean);
-
-        if (!origin) return callback(null, true);
-
-        if (allowedOrigins.includes(origin)) {
-            return callback(null, true);
-        } else {
-            const msg = `The CORS policy for this site does not allow access from Origin ${origin}. You should ensure your FRONTEND_URL environment variable is set correctly on Render or add ${origin} to allowed list.`;
-            console.error('CORS ERROR: Blocking origin -', origin, msg);
-            return callback(new Error(msg), false);
-        }
-    },
+    origin: [
+        process.env.FRONTEND_URL,
+        'https://itayash22.github.io',
+        'http://localhost:8080',
+        'http://127.0.0.1:8080'
+    ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-key'],

@@ -189,7 +189,8 @@
             <div id="artistInfo" class="artist-info-loading" style="display: none;">
                 <h4>While you wait, meet the artist:</h4>
                 <p id="artistName"></p>
-                <p id="artistBio"></p>
+                <div id="artistSketchesGrid" class="artist-sketches-grid"></div>
+                <a id="artistWhatsappLink" href="#" target="_blank" class="btn btn-primary btn-sm" style="margin-top: 1rem;">Contact Artist on WhatsApp</a>
             </div>
         </div>
     </div>
@@ -456,13 +457,18 @@
 
                     const tattooOfTheDay = document.createElement('div');
                     tattooOfTheDay.className = 'tattoo-of-the-day';
+                    const tattooOfTheDayTitle = document.createElement('div');
+                    tattooOfTheDayTitle.className = 'tattoo-of-the-day-title';
+
                     const firstStencil = stencilData[style][0];
                     if (firstStencil) {
                         tattooOfTheDay.innerHTML = `<img src="${firstStencil.imageUrl}" alt="Tattoo of the day for ${style}">`;
+                        tattooOfTheDayTitle.innerHTML = `<p><strong>Tattoo of the day:</strong> ${firstStencil.name}, by ${firstStencil.artist}</p>`;
                     }
 
                     styleChipContainer.appendChild(button);
                     styleChipContainer.appendChild(tattooOfTheDay);
+                    styleChipContainer.appendChild(tattooOfTheDayTitle);
                     styleChipsContainer.appendChild(styleChipContainer);
                 }
             }
@@ -793,11 +799,28 @@
             // --- Display artist info in loading overlay ---
             const artistInfo = document.getElementById('artistInfo');
             const artistName = document.getElementById('artistName');
-            const artistBio = document.getElementById('artistBio');
+            const artistSketchesGrid = document.getElementById('artistSketchesGrid');
+            const artistWhatsappLink = document.getElementById('artistWhatsappLink');
 
             if (STATE.selectedStencil && STATE.selectedStencil.artist) {
-                artistName.textContent = STATE.selectedStencil.artist;
-                artistBio.textContent = ""; // Bio is not in the new data structure
+                artistName.textContent = STATE.selectedStencil.artist.name;
+
+                // Find other sketches by the same artist
+                const artistSketches = [];
+                for (const style in stencilData) {
+                    stencilData[style].forEach(stencil => {
+                        if (stencil.artist.name === STATE.selectedStencil.artist.name && stencil.id !== STATE.selectedStencil.id) {
+                            artistSketches.push(stencil);
+                        }
+                    });
+                }
+
+                artistSketchesGrid.innerHTML = '';
+                for (let i = 0; i < Math.min(3, artistSketches.length); i++) {
+                    artistSketchesGrid.innerHTML += `<img src="${artistSketches[i].imageUrl}" alt="${artistSketches[i].name}">`;
+                }
+
+                artistWhatsappLink.href = `https://wa.me/${STATE.selectedStencil.artist.whatsapp}`;
                 artistInfo.style.display = 'block';
             } else {
                 artistInfo.style.display = 'none';

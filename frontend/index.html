@@ -40,13 +40,7 @@
                     <p>Explore curated tattoo stencils from top artists. Choose a style to begin.</p>
                 </div>
                 <div class="style-chips">
-                    <button class="btn btn-primary style-chip" data-style="Minimalist">Minimalist</button>
-                    <button class="btn btn-primary style-chip" data-style="Geometric">Geometric</button>
-                    <button class="btn btn-primary style-chip" data-style="Watercolor">Watercolor</button>
-                    <button class="btn btn-primary style-chip" data-style="Traditional">Traditional</button>
-                    <button class="btn btn-primary style-chip" data-style="Abstract">Abstract</button>
-                    <button class="btn btn-primary style-chip" data-style="Animals">Animals</button>
-                    <button class="btn btn-secondary style-chip" data-style="Freestyle">Free style</button>
+                    <!-- This will be populated by JavaScript -->
                 </div>
                 <div class="upload-link-container">
                     <input type="file" id="stencilFileInput" accept="image/jpeg,image/png,image/webp" hidden>
@@ -58,6 +52,11 @@
                 <div class="section-header">
                     <h2>Upload Your Photo</h2>
                     <p>Choose a photo where you want the tattoo</p>
+                </div>
+
+                <div id="selectedStencilPreview" class="image-preview" style="display: none; margin-bottom: 2rem;">
+                    <h4>Your Chosen Stencil:</h4>
+                    <img id="selectedStencilPreviewImg" src="" alt="Selected Stencil Preview" style="max-width: 200px;">
                 </div>
                 
                 <div class="upload-area" id="skinUploadArea">
@@ -439,6 +438,37 @@
             console.log('🎨 SkinTip initializing (DOMContentLoaded)!');
 
             // --- New User Flow Logic ---
+            const styleChipsContainer = document.querySelector('.style-chips');
+
+            function populateStyleChips() {
+                for (const style in stencilData) {
+                    const styleChipContainer = document.createElement('div');
+                    styleChipContainer.className = 'style-chip-container';
+
+                    const button = document.createElement('button');
+                    button.className = 'btn btn-primary style-chip';
+                    button.dataset.style = style;
+                    button.textContent = style;
+                    if (style === 'Freestyle') {
+                        button.classList.remove('btn-primary');
+                        button.classList.add('btn-secondary');
+                    }
+
+                    const tattooOfTheDay = document.createElement('div');
+                    tattooOfTheDay.className = 'tattoo-of-the-day';
+                    const firstStencil = stencilData[style][0];
+                    if (firstStencil) {
+                        tattooOfTheDay.innerHTML = `<img src="${firstStencil.imageUrl}" alt="Tattoo of the day for ${style}">`;
+                    }
+
+                    styleChipContainer.appendChild(button);
+                    styleChipContainer.appendChild(tattooOfTheDay);
+                    styleChipsContainer.appendChild(styleChipContainer);
+                }
+            }
+
+            populateStyleChips();
+
             const styleChips = document.querySelectorAll('.style-chip');
             const stencilModal = document.getElementById('stencilModal');
             const stencilModalTitle = document.getElementById('stencilModalTitle');
@@ -491,6 +521,14 @@
 
                 if (selectedStencil) {
                     STATE.selectedStencil = selectedStencil;
+
+                    // --- Show selected stencil preview ---
+                    const selectedStencilPreview = document.getElementById('selectedStencilPreview');
+                    const selectedStencilPreviewImg = document.getElementById('selectedStencilPreviewImg');
+                    selectedStencilPreviewImg.src = selectedStencil.imageUrl;
+                    selectedStencilPreview.style.display = 'block';
+                    // ---
+
                     stencilModal.style.display = 'none';
                     document.getElementById('styleSelectionSection').style.display = 'none';
                     document.getElementById('skinPhotoUploadSection').style.display = 'block';
@@ -572,6 +610,7 @@
             // Initial UI setup and reset function
             function resetUI() {
                 document.getElementById('styleSelectionSection').style.display = 'block';
+                document.getElementById('selectedStencilPreview').style.display = 'none';
 
                 skinPhotoUploadSection.style.display = 'none';
                 imagePreview.style.display = 'none';

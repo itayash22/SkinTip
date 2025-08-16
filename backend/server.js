@@ -232,6 +232,49 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
+app.get('/api/styles-with-stencils', async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('portfolio_items')
+            .select(`
+                id,
+                image_url,
+                caption,
+                style_tag,
+                artists (
+                    name,
+                    whatsapp_number
+                )
+            `);
+
+        if (error) {
+            throw error;
+        }
+
+        const stylesWithStencils = data.reduce((acc, item) => {
+            const style = item.style_tag || 'Freestyle';
+            if (!acc[style]) {
+                acc[style] = [];
+            }
+            acc[style].push({
+                id: item.id,
+                imageUrl: item.image_url,
+                name: item.caption,
+                artist: {
+                    name: item.artists.name,
+                    whatsapp: item.artists.whatsapp_number
+                }
+            });
+            return acc;
+        }, {});
+
+        res.json(stylesWithStencils);
+    } catch (error) {
+        console.error('Error fetching styles with stencils:', error);
+        res.status(500).json({ error: 'Failed to fetch stencil data' });
+    }
+});
+
 function isValidBase64(str) {
     if (!str || str.length < 100) return false;
     try {

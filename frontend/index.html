@@ -72,10 +72,6 @@
                     </div>
                 </div>
 
-                <div id="imagePreview" class="image-preview" style="display: none;">
-                    <img id="previewImg" src="" alt="Skin Photo Preview">
-                    <button id="changeImageBtn" class="btn btn-outline btn-sm">Change Image</button>
-                </div>
             </section>
 
             <section id="drawingSection" class="section" style="display: none;">
@@ -232,7 +228,6 @@
     <script src="js/auth.js"></script>
     <script>console.log('Loading drawing.js...');</script>
     <script type="module" src="js/drawing.js"></script>
-    <script src="js/stencil-data.js"></script>
     <script type="module">
         console.log('Main inline script starting...');
 
@@ -435,8 +430,24 @@
         // --- END ARTIST FUNCTIONS GLOBAL SCOPE ---
 
 
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
             console.log('🎨 SkinTip initializing (DOMContentLoaded)!');
+
+            let stencilData = {};
+
+            async function fetchStencilData() {
+                try {
+                    const response = await fetch(`${CONFIG.API_URL}/styles-with-stencils`);
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch stencil data');
+                    }
+                    stencilData = await response.json();
+                    populateStyleChips();
+                } catch (error) {
+                    console.error('Error fetching stencil data:', error);
+                    utils.showError('Could not load tattoo styles. Please try again later.');
+                }
+            }
 
             // --- New User Flow Logic ---
             const styleChipsContainer = document.querySelector('.style-chips');
@@ -463,7 +474,7 @@
                     const firstStencil = stencilData[style][0];
                     if (firstStencil) {
                         tattooOfTheDay.innerHTML = `<img src="${firstStencil.imageUrl}" alt="Tattoo of the day for ${style}">`;
-                        tattooOfTheDayTitle.innerHTML = `<p><strong>Tattoo of the day:</strong> ${firstStencil.name}, by ${firstStencil.artist}</p>`;
+                        tattooOfTheDayTitle.innerHTML = `<p><strong>Tattoo of the day:</strong> ${firstStencil.name}, by ${firstStencil.artist.name}</p>`;
                     }
 
                     styleChipContainer.appendChild(button);
@@ -471,11 +482,20 @@
                     styleChipContainer.appendChild(tattooOfTheDayTitle);
                     styleChipsContainer.appendChild(styleChipContainer);
                 }
+                // Re-select the style chips after they are populated
+                const styleChips = document.querySelectorAll('.style-chip');
+                styleChips.forEach(chip => {
+                    chip.addEventListener('click', () => {
+                        const style = chip.dataset.style;
+                        stencilModalTitle.textContent = style;
+                        populateStencilGrid(style);
+                        stencilModal.style.display = 'flex';
+                    });
+                });
             }
 
-            populateStyleChips();
+            await fetchStencilData();
 
-            const styleChips = document.querySelectorAll('.style-chip');
             const stencilModal = document.getElementById('stencilModal');
             const stencilModalTitle = document.getElementById('stencilModalTitle');
             const stencilGrid = document.getElementById('stencilGrid');
@@ -502,7 +522,7 @@
                         <img src="${stencil.imageUrl}" alt="${stencil.name}">
                         <div class="sketch-card-info">
                             <h4>${stencil.name}</h4>
-                            <p>By ${stencil.artist}</p>
+                            <p>By ${stencil.artist.name}</p>
                         </div>
                     `;
                     stencilGrid.appendChild(sketchCard);
@@ -714,12 +734,6 @@
                 }
             });
 
-            changeImageBtn?.addEventListener('click', () => {
-                skinUploadArea.style.display = 'flex';
-                imagePreview.style.display = 'none';
-                fileInput.value = '';
-                STATE.currentImage = null;
-            });
 
             async function handleSkinPhotoFile(file) {
                 if (!CONFIG.ALLOWED_FILE_TYPES.includes(file.type)) {
@@ -743,9 +757,7 @@
                 Object.defineProperty(resizedFile, 'type', { value: file.type }); // Use original file type here!
                 STATE.currentImage = resizedFile;
 
-                skinUploadArea.style.display = 'none';
-                imagePreview.style.display = 'block';
-                previewImg.src = resizedDataURL;
+                skinPhotoUploadSection.style.display = 'none';
 
                 if (window.drawing && drawing.init) {
                     const tattooImageUrl = STATE.selectedStencil ? STATE.selectedStencil.imageUrl : STATE.uploadedTattooDesignBase64;

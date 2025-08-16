@@ -432,6 +432,27 @@ body {
     margin-bottom: 1.5rem;
 }
 
+.style-chip-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.tattoo-of-the-day {
+    width: 150px;
+    height: 150px;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.tattoo-of-the-day img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
 .upload-link-container {
     text-align: center;
     margin-top: 1.5rem;

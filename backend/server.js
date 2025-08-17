@@ -235,15 +235,17 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/styles-with-stencils', async (req, res) => {
     try {
         const { data, error } = await supabase
-            .from('portfolio_items')
+            .from('styles')
             .select(`
-                id,
-                image_url,
-                caption,
-                style_tag,
-                artists (
+                name,
+                stencils (
+                    id,
                     name,
-                    whatsapp_number
+                    image_url,
+                    artists (
+                        name,
+                        whatsapp_number
+                    )
                 )
             `);
 
@@ -251,20 +253,16 @@ app.get('/api/styles-with-stencils', async (req, res) => {
             throw error;
         }
 
-        const stylesWithStencils = data.reduce((acc, item) => {
-            const style = item.style_tag || 'Freestyle';
-            if (!acc[style]) {
-                acc[style] = [];
-            }
-            acc[style].push({
-                id: item.id,
-                imageUrl: item.image_url,
-                name: item.caption,
+        const stylesWithStencils = data.reduce((acc, style) => {
+            acc[style.name] = style.stencils.map(stencil => ({
+                id: stencil.id,
+                imageUrl: stencil.image_url,
+                name: stencil.name,
                 artist: {
-                    name: item.artists.name,
-                    whatsapp: item.artists.whatsapp_number
+                    name: stencil.artists ? stencil.artists.name : 'Unknown Artist',
+                    whatsapp: stencil.artists ? stencil.artists.whatsapp_number : ''
                 }
-            });
+            }));
             return acc;
         }, {});
 

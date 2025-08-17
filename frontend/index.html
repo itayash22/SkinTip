@@ -501,15 +501,6 @@
             const stencilGrid = document.getElementById('stencilGrid');
             const closeStencilModalBtn = document.getElementById('closeStencilModalBtn');
 
-            styleChips.forEach(chip => {
-                chip.addEventListener('click', () => {
-                    const style = chip.dataset.style;
-                    stencilModalTitle.textContent = style;
-                    populateStencilGrid(style);
-                    stencilModal.style.display = 'flex';
-                });
-            });
-
             function populateStencilGrid(style) {
                 stencilGrid.innerHTML = '';
                 const stencils = stencilData[style] || [];

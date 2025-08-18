@@ -905,7 +905,7 @@
                 formData.append('tattooAngle', angle);
 
                 const sizeSlider = document.getElementById('sizeSlider');
-                const scale = parseFloat(sizeSlider.value) / 100;
+                const scale = (parseFloat(sizeSlider.value) / 100) * 1.2; // Increase size by 20%
                 formData.append('tattooScale', scale);
 
                 const response = await fetch(`${CONFIG.API_URL}/generate-final-tattoo`, {
@@ -967,7 +967,17 @@
                 const artistContactSection = document.getElementById('artistContactSection');
                 if (STATE.selectedStencil && STATE.selectedStencil.artist && artistContactSection) {
                     const artistContactLink = document.getElementById('artistContactLink');
-                    artistContactLink.href = `https://wa.me/${STATE.selectedStencil.artist.whatsapp}`;
+                    const artistName = STATE.selectedStencil.artist.name;
+                    const message = `Hi ${artistName}, \u{1F600}.\nI got this stunning AI tattoo from your catalog \u{1F525}.\n can you share more details about yourself and the tattoo? \u{1F637}\nThanks!`;
+                    const whatsappUrl = `https://wa.me/${STATE.selectedStencil.artist.whatsapp}?text=${encodeURIComponent(message)}`;
+
+                    artistContactLink.href = whatsappUrl;
+                    artistContactLink.onclick = function(e) {
+                        e.preventDefault();
+                        alert("To share the images with the artist, please first use the 'Download All' button to save them to your device. Then, you can easily attach them in your WhatsApp chat.");
+                        window.open(whatsappUrl, '_blank');
+                    };
+
                     artistContactSection.style.display = 'block';
                 } else if (artistContactSection) {
                     artistContactSection.style.display = 'none';

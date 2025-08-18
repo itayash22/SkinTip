@@ -124,7 +124,7 @@
                 </div>
 
                 <div id="artistContactSection" class="artist-contact-section" style="display: none; text-align: center; margin-top: 2rem;">
-                    <p>Stunning view, isn't it? <a id="artistContactLink" href="#" target="_blank">Click here to chat with the artist and let's ink you</a></p>
+                    <button id="sendToArtistBtn" class="btn btn-primary btn-lg">Send to Artist on WhatsApp</button>
                 </div>
 
                 <div class="results-actions">
@@ -905,7 +905,7 @@
                 formData.append('tattooAngle', angle);
 
                 const sizeSlider = document.getElementById('sizeSlider');
-                const scale = (parseFloat(sizeSlider.value) / 100) * 1.2; // Increase size by 20%
+                const scale = (parseFloat(sizeSlider.value) / 100) * 1.4; // Increase size by another 20% (total 40%)
                 formData.append('tattooScale', scale);
 
                 const response = await fetch(`${CONFIG.API_URL}/generate-final-tattoo`, {
@@ -963,21 +963,9 @@
                 socialShareDiv.style.display = 'block';
                 window.loadDemoArtistsWithFilter(); // Call global loadDemoArtistsWithFilter
 
-                // Show artist contact link if a stencil was used
+                // Show artist contact button if a stencil was used
                 const artistContactSection = document.getElementById('artistContactSection');
                 if (STATE.selectedStencil && STATE.selectedStencil.artist && artistContactSection) {
-                    const artistContactLink = document.getElementById('artistContactLink');
-                    const artistName = STATE.selectedStencil.artist.name;
-                    const message = `Hi ${artistName}, \u{1F600}.\nI got this stunning AI tattoo from your catalog \u{1F525}.\n can you share more details about yourself and the tattoo? \u{1F637}\nThanks!`;
-                    const whatsappUrl = `https://wa.me/${STATE.selectedStencil.artist.whatsapp}?text=${encodeURIComponent(message)}`;
-
-                    artistContactLink.href = whatsappUrl;
-                    artistContactLink.onclick = function(e) {
-                        e.preventDefault();
-                        alert("To share the images with the artist, please first use the 'Download All' button to save them to your device. Then, you can easily attach them in your WhatsApp chat.");
-                        window.open(whatsappUrl, '_blank');
-                    };
-
                     artistContactSection.style.display = 'block';
                 } else if (artistContactSection) {
                     artistContactSection.style.display = 'none';
@@ -1061,6 +1049,46 @@
         const styleFilter = document.getElementById('styleFilter');
         locationFilter?.addEventListener('input', window.filterArtists);
         styleFilter?.addEventListener('change', window.filterArtists);
+
+        // Event listener for the new "Send to Artist" button
+        document.getElementById('sendToArtistBtn')?.addEventListener('click', async () => {
+            if (!STATE.selectedStencil || !STATE.selectedStencil.artist) {
+                utils.showError('No artist selected.');
+                return;
+            }
+            if (!STATE.generatedImages || STATE.generatedImages.length === 0) {
+                utils.showError('No images generated to share.');
+                return;
+            }
+
+            utils.showLoading('Sending to artist...');
+            try {
+                const response = await fetch(`${CONFIG.API_URL}/share-on-whatsapp`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${STATE.token}`
+                    },
+                    body: JSON.stringify({
+                        artistWhatsapp: STATE.selectedStencil.artist.whatsapp,
+                        imageUrls: STATE.generatedImages,
+                        artistName: STATE.selectedStencil.artist.name
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to send to WhatsApp');
+                }
+
+                utils.hideLoading();
+                utils.showSuccess('Successfully sent to the artist on WhatsApp!');
+
+            } catch (error) {
+                utils.hideLoading();
+                utils.showError(`Error sending to artist: ${error.message}`);
+            }
+        });
 
         console.log('✅ SkinTip ready!');
     });

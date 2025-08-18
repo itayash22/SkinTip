@@ -829,8 +829,3 @@ body {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
-
-.artist-contact-section p {
-    font-size: 1.3rem; /* 30% increase from 1rem base */
-    font-weight: 500;
-}

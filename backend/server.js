@@ -16,7 +16,6 @@ import sizeOf from 'image-size'; // image-size default export might be different
 // Import our new modularized services
 import tokenService from './modules/tokenService.js'; // Added .js extension
 import fluxKontextHandler from './modules/fluxPlacementHandler.js'; // Added .js extension
-import fetch from 'node-fetch';
 // --- END OF ACTUAL IMPORTS ---
 
 // Function to generate a dynamic timestamp for deployment tracking
@@ -496,71 +495,6 @@ app.post('/api/generate-final-tattoo',
         }
     }
 );
-
-app.post('/api/share-on-whatsapp', authenticateToken, async (req, res) => {
-    // Note: This endpoint requires WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN to be set in the environment variables.
-    const { artistWhatsapp, imageUrls, artistName } = req.body;
-
-    console.log('DEBUG: Reading WhatsApp credentials from process.env');
-    console.log('DEBUG: WHATSAPP_PHONE_NUMBER_ID:', process.env.WHATSAPP_PHONE_NUMBER_ID ? 'Loaded' : 'MISSING');
-    console.log('DEBUG: WHATSAPP_ACCESS_TOKEN:', process.env.WHATSAPP_ACCESS_TOKEN ? 'Loaded' : 'MISSING');
-
-    const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
-    const ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
-
-    if (!PHONE_NUMBER_ID || !ACCESS_TOKEN) {
-        console.error('WhatsApp API credentials are not configured on the server.');
-        return res.status(500).json({ error: 'WhatsApp integration is not configured.' });
-    }
-
-    if (!artistWhatsapp || !imageUrls || !Array.isArray(imageUrls) || imageUrls.length === 0) {
-        return res.status(400).json({ error: 'Missing required parameters for sharing.' });
-    }
-
-    const whatsappApiUrl = `https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`;
-    const headers = {
-        'Authorization': `Bearer ${ACCESS_TOKEN}`,
-        'Content-Type': 'application/json'
-    };
-
-    try {
-        console.log(`[WhatsApp Debug] Initiating share to: ${artistWhatsapp}`);
-        const payload = {
-            messaging_product: 'whatsapp',
-            to: artistWhatsapp,
-            type: 'image',
-            image: {
-                link: imageUrls[0],
-                caption: `Hi ${artistName}! Check out this design.`
-            }
-        };
-
-        console.log('[WhatsApp Debug] Sending payload:', JSON.stringify(payload, null, 2));
-
-        const response = await fetch(whatsappApiUrl, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(payload)
-        });
-
-        const responseBody = await response.json();
-        console.log(`[WhatsApp Debug] Response Status: ${response.status} ${response.statusText}`);
-        console.log('[WhatsApp Debug] Response Body:', JSON.stringify(responseBody, null, 2));
-
-        if (!response.ok) {
-            throw new Error(`WhatsApp API responded with status ${response.status}: ${JSON.stringify(responseBody)}`);
-        }
-
-        res.json({ success: true, message: 'Successfully shared to WhatsApp.' });
-
-    } catch (error) {
-        console.error('[WhatsApp Error] Failed to send WhatsApp message:', error.message);
-        res.status(500).json({
-            error: 'Failed to send message via WhatsApp.',
-            details: error.message
-        });
-    }
-});
 
 // Error handling middleware (catches errors from previous middleware/routes)
 app.use((error, req, res, next) => {

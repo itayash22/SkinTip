@@ -124,7 +124,7 @@
                 </div>
 
                 <div id="artistContactSection" class="artist-contact-section" style="display: none; text-align: center; margin-top: 2rem;">
-                    <button id="sendToArtistBtn" class="btn btn-primary btn-lg">Send to Artist on WhatsApp</button>
+                    <a id="whatsappLink" href="#" target="_blank" class="btn btn-primary btn-lg">Contact Artist on WhatsApp</a>
                 </div>
 
                 <div class="results-actions">
@@ -963,9 +963,17 @@
                 socialShareDiv.style.display = 'block';
                 window.loadDemoArtistsWithFilter(); // Call global loadDemoArtistsWithFilter
 
-                // Show artist contact button if a stencil was used
+                // Show and configure artist contact link if a stencil was used
                 const artistContactSection = document.getElementById('artistContactSection');
                 if (STATE.selectedStencil && STATE.selectedStencil.artist && artistContactSection) {
+                    const whatsappLink = document.getElementById('whatsappLink');
+                    const artistName = STATE.selectedStencil.artist.name;
+                    const introText = `Hi ${artistName}, 😀.\nI got this stunning AI tattoo from your catalog 🔥. Here are the previews:\n`;
+                    const imageUrlsText = STATE.generatedImages.join('\n');
+                    const outroText = "\nCan you share more details about yourself and the tattoo? 😷\nThanks!";
+                    const fullMessage = introText + imageUrlsText + outroText;
+
+                    whatsappLink.href = `https://wa.me/${STATE.selectedStencil.artist.whatsapp}?text=${encodeURIComponent(fullMessage)}`;
                     artistContactSection.style.display = 'block';
                 } else if (artistContactSection) {
                     artistContactSection.style.display = 'none';
@@ -1050,45 +1058,8 @@
         locationFilter?.addEventListener('input', window.filterArtists);
         styleFilter?.addEventListener('change', window.filterArtists);
 
-        // Event listener for the new "Send to Artist" button
-        document.getElementById('sendToArtistBtn')?.addEventListener('click', async () => {
-            if (!STATE.selectedStencil || !STATE.selectedStencil.artist) {
-                utils.showError('No artist selected.');
-                return;
-            }
-            if (!STATE.generatedImages || STATE.generatedImages.length === 0) {
-                utils.showError('No images generated to share.');
-                return;
-            }
-
-            utils.showLoading('Sending to artist...');
-            try {
-                const response = await fetch(`${CONFIG.API_URL}/share-on-whatsapp`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${STATE.token}`
-                    },
-                    body: JSON.stringify({
-                        artistWhatsapp: STATE.selectedStencil.artist.whatsapp,
-                        imageUrls: STATE.generatedImages,
-                        artistName: STATE.selectedStencil.artist.name
-                    })
-                });
-
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || 'Failed to send to WhatsApp');
-                }
-
-                utils.hideLoading();
-                utils.showSuccess('Successfully sent to the artist on WhatsApp!');
-
-            } catch (error) {
-                utils.hideLoading();
-                utils.showError(`Error sending to artist: ${error.message}`);
-            }
-        });
+        // This block is intentionally left empty as the logic will be moved
+        // into the results display section.
 
         console.log('✅ SkinTip ready!');
     });

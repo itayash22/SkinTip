@@ -123,6 +123,10 @@
                 <div class="results-grid">
                 </div>
 
+                <div id="artistContactSection" class="artist-contact-section" style="display: none; text-align: center; margin-top: 2rem;">
+                    <p>Stunning view, isn't it? <a id="artistContactLink" href="#" target="_blank">Click here to chat with the artist and let's ink you</a></p>
+                </div>
+
                 <div class="results-actions">
                     <button id="downloadAllBtn" class="btn btn-primary">Download All</button>
                     <button id="newDesignBtn" class="btn btn-outline">Start New Design</button>
@@ -958,6 +962,16 @@
                 resultsSection.scrollIntoView({behavior: 'smooth'}); // Scroll to results section
                 socialShareDiv.style.display = 'block';
                 window.loadDemoArtistsWithFilter(); // Call global loadDemoArtistsWithFilter
+
+                // Show artist contact link if a stencil was used
+                const artistContactSection = document.getElementById('artistContactSection');
+                if (STATE.selectedStencil && STATE.selectedStencil.artist && artistContactSection) {
+                    const artistContactLink = document.getElementById('artistContactLink');
+                    artistContactLink.href = `https://wa.me/${STATE.selectedStencil.artist.whatsapp}`;
+                    artistContactSection.style.display = 'block';
+                } else if (artistContactSection) {
+                    artistContactSection.style.display = 'none';
+                }
                 
             } catch (error) {
                 console.error('Generation error:', error);

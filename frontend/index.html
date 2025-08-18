@@ -467,14 +467,19 @@
                     }
 
                     const tattooOfTheDay = document.createElement('div');
-                    tattooOfTheDay.className = 'tattoo-of-the-day';
+                    tattooOfTheDay.className = 'tattoo-of-the-day clickable';
                     const tattooOfTheDayTitle = document.createElement('div');
                     tattooOfTheDayTitle.className = 'tattoo-of-the-day-title';
 
                     const firstStencil = stencilData[style][0];
                     if (firstStencil) {
+                        tattooOfTheDay.dataset.stencilId = firstStencil.id;
                         tattooOfTheDay.innerHTML = `<img src="${firstStencil.imageUrl}" alt="Tattoo of the day for ${style}">`;
-                        tattooOfTheDayTitle.innerHTML = `<p><strong>Tattoo of the day:</strong> ${firstStencil.name}, by ${firstStencil.artist.name}</p>`;
+                        tattooOfTheDayTitle.innerHTML = `
+                            <p><strong>Tattoo of the day:</strong></p>
+                            <p>${firstStencil.name}</p>
+                            <p>By: ${firstStencil.artist.name}</p>
+                        `;
                     }
 
                     styleChipContainer.appendChild(button);
@@ -501,6 +506,38 @@
             const stencilGrid = document.getElementById('stencilGrid');
             const closeStencilModalBtn = document.getElementById('closeStencilModalBtn');
 
+            styleChipsContainer.addEventListener('click', (e) => {
+                const tattooOfTheDay = e.target.closest('.tattoo-of-the-day');
+                if (tattooOfTheDay) {
+                    const stencilId = tattooOfTheDay.dataset.stencilId;
+                    if (stencilId) {
+                        // Find the stencil in the data
+                        let selectedStencil = null;
+                        for (const style in stencilData) {
+                            const found = stencilData[style].find(s => s.id == stencilId);
+                            if (found) {
+                                selectedStencil = found;
+                                break;
+                            }
+                        }
+
+                        if (selectedStencil) {
+                            STATE.selectedStencil = selectedStencil;
+
+                            // --- Show selected stencil preview ---
+                            const selectedStencilPreview = document.getElementById('selectedStencilPreview');
+                            const selectedStencilPreviewImg = document.getElementById('selectedStencilPreviewImg');
+                            selectedStencilPreviewImg.src = selectedStencil.imageUrl;
+                            selectedStencilPreview.style.display = 'block';
+                            // ---
+
+                            document.getElementById('styleSelectionSection').style.display = 'none';
+                            document.getElementById('skinPhotoUploadSection').style.display = 'block';
+                        }
+                    }
+                }
+            });
+
             function populateStencilGrid(style) {
                 stencilGrid.innerHTML = '';
                 const stencils = stencilData[style] || [];
@@ -524,7 +561,7 @@
                 const sketchCard = e.target.closest('.sketch-card');
                 if (!sketchCard) return;
 
-                const stencilId = parseInt(sketchCard.dataset.stencilId, 10);
+                const stencilId = sketchCard.dataset.stencilId;
 
                 // Find the stencil in the data
                 let selectedStencil = null;

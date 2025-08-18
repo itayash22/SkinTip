@@ -519,28 +519,31 @@ app.post('/api/share-on-whatsapp', authenticateToken, async (req, res) => {
     };
 
     try {
-        // First, send the text message
         const textMessage = `Hi ${artistName}, 😀.\nI got this stunning AI tattoo from your catalog 🔥.\n can you share more details about yourself and the tattoo? 😷\nThanks!`;
-        const textMessagePayload = {
+
+        // Send the first image with the caption
+        const firstImagePayload = {
             messaging_product: 'whatsapp',
             to: artistWhatsapp,
-            type: 'text',
-            text: { body: textMessage }
+            type: 'image',
+            image: {
+                link: imageUrls[0],
+                caption: textMessage
+            }
         };
-
         await fetch(whatsappApiUrl, {
             method: 'POST',
             headers: headers,
-            body: JSON.stringify(textMessagePayload)
+            body: JSON.stringify(firstImagePayload)
         });
 
-        // Then, send each image
-        for (const imageUrl of imageUrls) {
+        // Send the rest of the images without a caption
+        for (let i = 1; i < imageUrls.length; i++) {
             const imagePayload = {
                 messaging_product: 'whatsapp',
                 to: artistWhatsapp,
                 type: 'image',
-                image: { link: imageUrl }
+                image: { link: imageUrls[i] }
             };
             await fetch(whatsappApiUrl, {
                 method: 'POST',

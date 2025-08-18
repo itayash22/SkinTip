@@ -16,7 +16,6 @@ import sizeOf from 'image-size'; // image-size default export might be different
 // Import our new modularized services
 import tokenService from './modules/tokenService.js'; // Added .js extension
 import fluxKontextHandler from './modules/fluxPlacementHandler.js'; // Added .js extension
-import fetch from 'node-fetch';
 // --- END OF ACTUAL IMPORTS ---
 
 // Function to generate a dynamic timestamp for deployment tracking
@@ -496,61 +495,6 @@ app.post('/api/generate-final-tattoo',
         }
     }
 );
-
-app.post('/api/share-on-whatsapp', authenticateToken, async (req, res) => {
-    // Note: This endpoint requires WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN to be set in the environment variables.
-    const { artistWhatsapp, imageUrls, artistName } = req.body;
-    const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
-    const ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
-
-    if (!PHONE_NUMBER_ID || !ACCESS_TOKEN) {
-        console.error('WhatsApp API credentials are not configured on the server.');
-        return res.status(500).json({ error: 'WhatsApp integration is not configured.' });
-    }
-
-    if (!artistWhatsapp || !imageUrls || !Array.isArray(imageUrls) || imageUrls.length === 0) {
-        return res.status(400).json({ error: 'Missing required parameters for sharing.' });
-    }
-
-    const whatsappApiUrl = `https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`;
-    const headers = {
-        'Authorization': `Bearer ${ACCESS_TOKEN}`,
-        'Content-Type': 'application/json'
-    };
-
-    try {
-        // Construct a single text message with the image URLs
-        const introText = `Hi ${artistName}, 😀.\nI got this stunning AI tattoo from your catalog 🔥. Here are the previews:\n`;
-        const imageUrlsText = imageUrls.join('\n');
-        const outroText = "\nCan you share more details about yourself and the tattoo? 😷\nThanks!";
-        const fullMessage = introText + imageUrlsText + outroText;
-
-        const textMessagePayload = {
-            messaging_product: 'whatsapp',
-            to: artistWhatsapp,
-            type: 'text',
-            text: { body: fullMessage }
-        };
-
-        const response = await fetch(whatsappApiUrl, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(textMessagePayload)
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            console.error('WhatsApp API Error:', errorData);
-            throw new Error(`WhatsApp API responded with status ${response.status}`);
-        }
-
-        res.json({ success: true, message: 'Successfully shared to WhatsApp.' });
-
-    } catch (error) {
-        console.error('Failed to send WhatsApp message:', error);
-        res.status(500).json({ error: 'Failed to send message via WhatsApp.' });
-    }
-});
 
 // Error handling middleware (catches errors from previous middleware/routes)
 app.use((error, req, res, next) => {

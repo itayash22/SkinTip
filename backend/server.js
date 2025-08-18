@@ -500,11 +500,6 @@ app.post('/api/generate-final-tattoo',
 app.post('/api/share-on-whatsapp', authenticateToken, async (req, res) => {
     // Note: This endpoint requires WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN to be set in the environment variables.
     const { artistWhatsapp, imageUrls, artistName } = req.body;
-
-    console.log('DEBUG: Reading WhatsApp credentials from process.env');
-    console.log('DEBUG: WHATSAPP_PHONE_NUMBER_ID:', process.env.WHATSAPP_PHONE_NUMBER_ID ? 'Loaded' : 'MISSING');
-    console.log('DEBUG: WHATSAPP_ACCESS_TOKEN:', process.env.WHATSAPP_ACCESS_TOKEN ? 'Loaded' : 'MISSING');
-
     const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
     const ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
 

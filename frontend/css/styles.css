@@ -457,11 +457,25 @@ body {
     object-fit: cover;
 }
 
+.tattoo-of-the-day.clickable {
+    cursor: pointer;
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.tattoo-of-the-day.clickable:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 12px rgba(0, 0, 0, 0.1);
+}
+
 .tattoo-of-the-day-title {
     font-size: 0.8rem;
     color: #6c757d;
     text-align: center;
     margin-top: 0.5rem;
+}
+
+.tattoo-of-the-day-title p {
+    margin: 0.2rem 0;
 }
 
 .upload-link-container {

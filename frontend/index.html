@@ -663,20 +663,30 @@
 
             // Initial UI setup and reset function
             function resetUI() {
-                document.getElementById('styleSelectionSection').style.display = 'block';
-                document.getElementById('selectedStencilPreview').style.display = 'none';
+                const styleSelectionSection = document.getElementById('styleSelectionSection');
+                const selectedStencilPreview = document.getElementById('selectedStencilPreview');
+                const skinPhotoUploadSection = document.getElementById('skinPhotoUploadSection');
+                const imagePreview = document.getElementById('imagePreview');
+                const skinUploadArea = document.getElementById('skinUploadArea');
+                const drawingSection = document.getElementById('drawingSection');
+                const designSection = document.getElementById('designSection');
+                const resultsSection = document.getElementById('resultsSection');
+                const artistsSection = document.getElementById('artistsSection');
+                const socialShareDiv = document.getElementById('socialShare');
+                const fileInput = document.getElementById('fileInput');
 
-                skinPhotoUploadSection.style.display = 'none';
-                imagePreview.style.display = 'none';
-                skinUploadArea.style.display = 'flex';
+                if (styleSelectionSection) styleSelectionSection.style.display = 'block';
+                if (selectedStencilPreview) selectedStencilPreview.style.display = 'none';
+                if (skinPhotoUploadSection) skinPhotoUploadSection.style.display = 'none';
+                if (imagePreview) imagePreview.style.display = 'none';
+                if (skinUploadArea) skinUploadArea.style.display = 'flex';
+                if (drawingSection) drawingSection.style.display = 'none';
+                if (designSection) designSection.style.display = 'none';
+                if (resultsSection) resultsSection.style.display = 'none';
+                if (artistsSection) artistsSection.style.display = 'none';
+                if (socialShareDiv) socialShareDiv.style.display = 'none';
+                if (fileInput) fileInput.value = '';
 
-                drawingSection.style.display = 'none';
-                designSection.style.display = 'none'; // Ensure this is hidden
-                resultsSection.style.display = 'none';
-                artistsSection.style.display = 'none';
-                socialShareDiv.style.display = 'none';
-
-                fileInput.value = '';
 
                 if (window.drawing && drawing.clearCanvas) {
                     drawing.clearCanvas();
@@ -689,8 +699,6 @@
 
                 utils.updateTokenDisplay();
             }
-
-            resetUI(); 
 
             // --- START Desktop Inactivity Auto-Logout Logic ---
             let inactivityTimeout; // Holds the timer reference
@@ -1021,6 +1029,8 @@
                 resetUI();
                 document.getElementById('styleSelectionSection').scrollIntoView({ behavior: 'smooth' });
             });
+
+            resetUI();
 
         // The filter event listeners for artists:
         const locationFilter = document.getElementById('locationFilter');

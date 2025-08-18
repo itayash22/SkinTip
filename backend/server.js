@@ -234,37 +234,59 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.get('/api/styles-with-stencils', async (req, res) => {
     try {
-        const { data, error } = await supabase
-            .from('styles')
+        const { data: stencils, error: stencilsError } = await supabase
+            .from('stencils')
             .select(`
+                id,
                 name,
-                stencils (
+                image_url,
+                stencil_price,
+                artists (
                     id,
                     name,
-                    image_url,
-                    artists (
-                        name,
-                        whatsapp_number
+                    whatsapp_number
+                ),
+                stencil_styles (
+                    styles (
+                        id,
+                        name
                     )
                 )
             `);
 
-        if (error) {
-            throw error;
-        }
+        if (stencilsError) throw stencilsError;
 
-        const stylesWithStencils = data.reduce((acc, style) => {
-            acc[style.name] = style.stencils.map(stencil => ({
+        const stylesWithStencils = {};
+
+        stencils.forEach(stencil => {
+            const artist = stencil.artists ? {
+                name: stencil.artists.name,
+                whatsapp: stencil.artists.whatsapp_number
+            } : { name: 'Unknown Artist', whatsapp: '' };
+
+            const stencilInfo = {
                 id: stencil.id,
-                imageUrl: stencil.image_url,
                 name: stencil.name,
-                artist: {
-                    name: stencil.artists ? stencil.artists.name : 'Unknown Artist',
-                    whatsapp: stencil.artists ? stencil.artists.whatsapp_number : ''
+                imageUrl: stencil.image_url,
+                price: stencil.stencil_price,
+                artist: artist
+            };
+
+            if (stencil.stencil_styles.length > 0) {
+                stencil.stencil_styles.forEach(style_join => {
+                    const styleName = style_join.styles.name;
+                    if (!stylesWithStencils[styleName]) {
+                        stylesWithStencils[styleName] = [];
+                    }
+                    stylesWithStencils[styleName].push(stencilInfo);
+                });
+            } else {
+                if (!stylesWithStencils['Freestyle']) {
+                    stylesWithStencils['Freestyle'] = [];
                 }
-            }));
-            return acc;
-        }, {});
+                stylesWithStencils['Freestyle'].push(stencilInfo);
+            }
+        });
 
         res.json(stylesWithStencils);
     } catch (error) {

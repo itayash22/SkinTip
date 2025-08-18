@@ -970,7 +970,7 @@
                     const artistName = STATE.selectedStencil.artist.name;
                     const introText = `Hi ${artistName}, 😀.\nI got this stunning AI tattoo from your catalog 🔥. Here are the previews:\n`;
                     const imageUrlsText = STATE.generatedImages.join('\n');
-                    const outroText = "\nCan you share more details about yourself and the tattoo? 😷\nThanks!";
+                    const outroText = `\nCan you share more details about yourself and the tattoo? 😷\nThanks!`;
                     const fullMessage = introText + imageUrlsText + outroText;
 
                     whatsappLink.href = `https://wa.me/${STATE.selectedStencil.artist.whatsapp}?text=${encodeURIComponent(fullMessage)}`;

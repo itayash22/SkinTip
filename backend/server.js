@@ -500,6 +500,11 @@ app.post('/api/generate-final-tattoo',
 app.post('/api/share-on-whatsapp', authenticateToken, async (req, res) => {
     // Note: This endpoint requires WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN to be set in the environment variables.
     const { artistWhatsapp, imageUrls, artistName } = req.body;
+
+    console.log('DEBUG: Reading WhatsApp credentials from process.env');
+    console.log('DEBUG: WHATSAPP_PHONE_NUMBER_ID:', process.env.WHATSAPP_PHONE_NUMBER_ID ? 'Loaded' : 'MISSING');
+    console.log('DEBUG: WHATSAPP_ACCESS_TOKEN:', process.env.WHATSAPP_ACCESS_TOKEN ? 'Loaded' : 'MISSING');
+
     const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
     const ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
 
@@ -519,44 +524,41 @@ app.post('/api/share-on-whatsapp', authenticateToken, async (req, res) => {
     };
 
     try {
-        const textMessage = `Hi ${artistName}, 😀.\nI got this stunning AI tattoo from your catalog 🔥.\n can you share more details about yourself and the tattoo? 😷\nThanks!`;
-
-        // Send the first image with the caption
-        const firstImagePayload = {
+        console.log(`[WhatsApp Debug] Initiating share to: ${artistWhatsapp}`);
+        const payload = {
             messaging_product: 'whatsapp',
             to: artistWhatsapp,
             type: 'image',
             image: {
                 link: imageUrls[0],
-                caption: textMessage
+                caption: `Hi ${artistName}! Check out this design.`
             }
         };
-        await fetch(whatsappApiUrl, {
+
+        console.log('[WhatsApp Debug] Sending payload:', JSON.stringify(payload, null, 2));
+
+        const response = await fetch(whatsappApiUrl, {
             method: 'POST',
             headers: headers,
-            body: JSON.stringify(firstImagePayload)
+            body: JSON.stringify(payload)
         });
 
-        // Send the rest of the images without a caption
-        for (let i = 1; i < imageUrls.length; i++) {
-            const imagePayload = {
-                messaging_product: 'whatsapp',
-                to: artistWhatsapp,
-                type: 'image',
-                image: { link: imageUrls[i] }
-            };
-            await fetch(whatsappApiUrl, {
-                method: 'POST',
-                headers: headers,
-                body: JSON.stringify(imagePayload)
-            });
+        const responseBody = await response.json();
+        console.log(`[WhatsApp Debug] Response Status: ${response.status} ${response.statusText}`);
+        console.log('[WhatsApp Debug] Response Body:', JSON.stringify(responseBody, null, 2));
+
+        if (!response.ok) {
+            throw new Error(`WhatsApp API responded with status ${response.status}: ${JSON.stringify(responseBody)}`);
         }
 
         res.json({ success: true, message: 'Successfully shared to WhatsApp.' });
 
     } catch (error) {
-        console.error('Failed to send WhatsApp message:', error);
-        res.status(500).json({ error: 'Failed to send message via WhatsApp.' });
+        console.error('[WhatsApp Error] Failed to send WhatsApp message:', error.message);
+        res.status(500).json({
+            error: 'Failed to send message via WhatsApp.',
+            details: error.message
+        });
     }
 });
 

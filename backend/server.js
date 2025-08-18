@@ -519,41 +519,36 @@ app.post('/api/share-on-whatsapp', authenticateToken, async (req, res) => {
     };
 
     try {
-        console.log(`[WhatsApp Debug] Initiating share to: ${artistWhatsapp}`);
-        const payload = {
+        // Construct a single text message with the image URLs
+        const introText = `Hi ${artistName}, 😀.\nI got this stunning AI tattoo from your catalog 🔥. Here are the previews:\n`;
+        const imageUrlsText = imageUrls.join('\n');
+        const outroText = "\nCan you share more details about yourself and the tattoo? 😷\nThanks!";
+        const fullMessage = introText + imageUrlsText + outroText;
+
+        const textMessagePayload = {
             messaging_product: 'whatsapp',
             to: artistWhatsapp,
-            type: 'image',
-            image: {
-                link: imageUrls[0],
-                caption: `Hi ${artistName}! Check out this design.`
-            }
+            type: 'text',
+            text: { body: fullMessage }
         };
-
-        console.log('[WhatsApp Debug] Sending payload:', JSON.stringify(payload, null, 2));
 
         const response = await fetch(whatsappApiUrl, {
             method: 'POST',
             headers: headers,
-            body: JSON.stringify(payload)
+            body: JSON.stringify(textMessagePayload)
         });
 
-        const responseBody = await response.json();
-        console.log(`[WhatsApp Debug] Response Status: ${response.status} ${response.statusText}`);
-        console.log('[WhatsApp Debug] Response Body:', JSON.stringify(responseBody, null, 2));
-
         if (!response.ok) {
-            throw new Error(`WhatsApp API responded with status ${response.status}: ${JSON.stringify(responseBody)}`);
+            const errorData = await response.json();
+            console.error('WhatsApp API Error:', errorData);
+            throw new Error(`WhatsApp API responded with status ${response.status}`);
         }
 
         res.json({ success: true, message: 'Successfully shared to WhatsApp.' });
 
     } catch (error) {
-        console.error('[WhatsApp Error] Failed to send WhatsApp message:', error.message);
-        res.status(500).json({
-            error: 'Failed to send message via WhatsApp.',
-            details: error.message
-        });
+        console.error('Failed to send WhatsApp message:', error);
+        res.status(500).json({ error: 'Failed to send message via WhatsApp.' });
     }
 });
 

@@ -234,61 +234,73 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.get('/api/styles-with-stencils', async (req, res) => {
     try {
+        // 1. Fetch all stencils with their artists
         const { data: stencils, error: stencilsError } = await supabase
             .from('stencils')
-            .select(`
-                id,
-                name,
-                image_url,
-                stencil_price,
-                artists (
-                    id,
-                    name,
-                    whatsapp_number
-                ),
-                stencil_styles (
-                    styles (
-                        id,
-                        name
-                    )
-                )
-            `);
-
+            .select('*, artists (*)');
         if (stencilsError) throw stencilsError;
+
+        // 2. Fetch all styles
+        const { data: styles, error: stylesError } = await supabase
+            .from('styles')
+            .select('*');
+        if (stylesError) throw stylesError;
+
+        // 3. Fetch all join table entries
+        const { data: stencilStyleLinks, error: linksError } = await supabase
+            .from('stencil_styles')
+            .select('*');
+        if (linksError) throw linksError;
+
+        // 4. Process the data
+        const stylesMap = styles.reduce((acc, style) => {
+            acc[style.id] = style.name;
+            return acc;
+        }, {});
 
         const stylesWithStencils = {};
 
-        stencils.forEach(stencil => {
-            const artist = stencil.artists ? {
-                name: stencil.artists.name,
-                whatsapp: stencil.artists.whatsapp_number
-            } : { name: 'Unknown Artist', whatsapp: '' };
+        // Initialize all styles from the styles table
+        styles.forEach(style => {
+            stylesWithStencils[style.name] = [];
+        });
+        stylesWithStencils['Freestyle'] = [];
 
+        stencils.forEach(stencil => {
             const stencilInfo = {
                 id: stencil.id,
                 name: stencil.name,
                 imageUrl: stencil.image_url,
                 price: stencil.stencil_price,
-                artist: artist
+                artist: {
+                    name: stencil.artists ? stencil.artists.name : 'Unknown Artist',
+                    whatsapp: stencil.artists ? stencil.artists.whatsapp_number : ''
+                }
             };
 
-            if (stencil.stencil_styles.length > 0) {
-                stencil.stencil_styles.forEach(style_join => {
-                    const styleName = style_join.styles.name;
-                    if (!stylesWithStencils[styleName]) {
-                        stylesWithStencils[styleName] = [];
+            const links = stencilStyleLinks.filter(link => link.stencil_id === stencil.id);
+            if (links.length > 0) {
+                links.forEach(link => {
+                    const styleName = stylesMap[link.style_id];
+                    if (styleName) {
+                        stylesWithStencils[styleName].push(stencilInfo);
                     }
-                    stylesWithStencils[styleName].push(stencilInfo);
                 });
             } else {
-                if (!stylesWithStencils['Freestyle']) {
-                    stylesWithStencils['Freestyle'] = [];
-                }
                 stylesWithStencils['Freestyle'].push(stencilInfo);
             }
         });
 
-        res.json(stylesWithStencils);
+        // Filter out styles that have no stencils, except for Freestyle
+        const finalStyles = {};
+        for (const styleName in stylesWithStencils) {
+            if (stylesWithStencils[styleName].length > 0 || styleName === 'Freestyle') {
+                finalStyles[styleName] = stylesWithStencils[styleName];
+            }
+        }
+
+
+        res.json(finalStyles);
     } catch (error) {
         console.error('Error fetching styles with stencils:', error);
         res.status(500).json({ error: 'Failed to fetch stencil data' });

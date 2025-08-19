@@ -496,6 +496,35 @@ app.post('/api/generate-final-tattoo',
     }
 );
 
+app.post('/api/log-event', authenticateToken, async (req, res) => {
+    const { event_type, artist_id, stencil_id } = req.body;
+    const user_id = req.user.id;
+
+    if (!event_type) {
+        return res.status(400).json({ error: 'Event type is required.' });
+    }
+
+    try {
+        const { data, error } = await supabase
+            .from('user_events')
+            .insert({
+                user_id,
+                event_type,
+                artist_id,
+                stencil_id
+            });
+
+        if (error) {
+            console.error('Error logging event:', error);
+            throw error;
+        }
+
+        res.status(201).json({ success: true, message: 'Event logged.' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to log event.' });
+    }
+});
+
 // Error handling middleware (catches errors from previous middleware/routes)
 app.use((error, req, res, next) => {
     if (error instanceof multer.MulterError) {

@@ -895,9 +895,11 @@
                     artistSketchesGrid.innerHTML += `<img src="${artistSketches[i].imageUrl}" alt="${artistSketches[i].name}">`;
                 }
 
-                const earlyContactMessage = `Hi ${STATE.selectedStencil.artist.name}.\n\nI'm interested in this tattoo design, and I'm waiting for the AI preview.\n\nHere is the original stencil:\n${STATE.selectedStencil.imageUrl}\n\nCan you tell me more about it?\n\nThanks!`;
-                artistWhatsappLink.href = `https://wa.me/${STATE.selectedStencil.artist.whatsapp}?text=${encodeURIComponent(earlyContactMessage)}`;
-                artistWhatsappLink.onclick = () => logUserEvent('WHATSAPP_CONTACT', STATE.selectedStencil.artist.id, STATE.selectedStencil.id);
+                if (STATE.selectedStencil && STATE.selectedStencil.artist && STATE.selectedStencil.imageUrl) {
+                    const earlyContactMessage = `Hi ${STATE.selectedStencil.artist.name}.\n\nI'm interested in this tattoo design: ${STATE.selectedStencil.imageUrl}\n\nCould you tell me more about it?\n\nThanks!`;
+                    artistWhatsappLink.href = `https://wa.me/${STATE.selectedStencil.artist.whatsapp}?text=${encodeURIComponent(earlyContactMessage)}`;
+                    artistWhatsappLink.onclick = () => logUserEvent('WHATSAPP_CONTACT', STATE.selectedStencil.artist.id, STATE.selectedStencil.id);
+                }
                 artistInfo.style.display = 'block';
             } else {
                 artistInfo.style.display = 'none';
@@ -993,9 +995,9 @@
                 if (STATE.selectedStencil && STATE.selectedStencil.artist && artistContactSection) {
                     const whatsappLink = document.getElementById('whatsappLink');
                     const artistName = STATE.selectedStencil.artist.name;
-                    const introText = `Hi ${artistName}.\n\nI got this stunning AI tattoo from your catalog. Here are the previews:\n`;
+                    const introText = `Hi ${artistName},\n\nI got this stunning AI tattoo from your catalog.\n\nHere are the previews:\n`;
                     const imageUrlsText = STATE.generatedImages.join('\n');
-                    const outroText = `\nCan you share more details about yourself and the tattoo?\n\nThanks!`;
+                    const outroText = `\n\nCan you share more details about yourself and the tattoo?\n\nThanks!`;
                     const fullMessage = introText + imageUrlsText + outroText;
 
                     whatsappLink.href = `https://wa.me/${STATE.selectedStencil.artist.whatsapp}?text=${encodeURIComponent(fullMessage)}`;

@@ -996,7 +996,7 @@
                     const whatsappLink = document.getElementById('whatsappLink');
                     const artistName = STATE.selectedStencil.artist.name;
                     const introText = `Hi ${artistName},\n\nI got this stunning AI tattoo from your catalog.\n\nHere are the previews:\n`;
-                    const imageUrlsText = STATE.generatedImages.join('\n');
+                    const imageUrlsText = STATE.generatedImages.join('\n\n');
                     const outroText = `\n\nCan you share more details about yourself and the tattoo?\n\nThanks!`;
                     const fullMessage = introText + imageUrlsText + outroText;
 

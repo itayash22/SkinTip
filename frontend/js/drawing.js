@@ -320,26 +320,35 @@ const drawing = {
 
     onTouchStart: (event) => {
         event.preventDefault();
+        const canvas = drawing.renderer.domElement;
+        const rect = canvas.getBoundingClientRect();
+
         if (event.touches.length === 2) {
             drawing.isPinching = true;
             const t0 = event.touches[0];
             const t1 = event.touches[1];
-            const dx = t1.clientX - t0.clientX;
-            const dy = t1.clientY - t0.clientY;
+            const dx = (t1.clientX - rect.left) - (t0.clientX - rect.left);
+            const dy = (t1.clientY - rect.top) - (t0.clientY - rect.top);
             drawing.initialPinchDistance = Math.sqrt(dx * dx + dy * dy);
             drawing.initialRotation = Math.atan2(dy, dx);
         } else if (event.touches.length === 1) {
-            drawing.onPointerDown({ button: 0, offsetX: event.touches[0].clientX, offsetY: event.touches[0].clientY });
+            const touch = event.touches[0];
+            const offsetX = touch.clientX - rect.left;
+            const offsetY = touch.clientY - rect.top;
+            drawing.onPointerDown({ button: 0, offsetX, offsetY });
         }
     },
 
     onTouchMove: (event) => {
         event.preventDefault();
+        const canvas = drawing.renderer.domElement;
+        const rect = canvas.getBoundingClientRect();
+
         if (drawing.isPinching && event.touches.length === 2) {
             const t0 = event.touches[0];
             const t1 = event.touches[1];
-            const dx = t1.clientX - t0.clientX;
-            const dy = t1.clientY - t0.clientY;
+            const dx = (t1.clientX - rect.left) - (t0.clientX - rect.left);
+            const dy = (t1.clientY - rect.top) - (t0.clientY - rect.top);
             const currentPinchDistance = Math.sqrt(dx * dx + dy * dy);
             const currentRotation = Math.atan2(dy, dx);
 
@@ -357,7 +366,10 @@ const drawing = {
             drawing.initialRotation = currentRotation;
 
         } else if (!drawing.isPinching && event.touches.length === 1) {
-            drawing.onPointerMove({ offsetX: event.touches[0].clientX, offsetY: event.touches[0].clientY });
+            const touch = event.touches[0];
+            const offsetX = touch.clientX - rect.left;
+            const offsetY = touch.clientY - rect.top;
+            drawing.onPointerMove({ offsetX, offsetY });
         }
     },
 

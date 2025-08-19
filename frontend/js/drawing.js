@@ -117,6 +117,9 @@ const drawing = {
     pointer: new THREE.Vector2(),
     selectedArea: null,
     originalImage: null,
+    initialPinchDistance: 0,
+    initialRotation: 0,
+    isPinching: false,
 
     init: (skinImageUrl, tattooImageUrl) => {
         // --- Renderer & Scene ---
@@ -235,6 +238,26 @@ const drawing = {
         const sizeSlider = document.getElementById('sizeSlider');
         const rotationValue = document.getElementById('rotationValue');
         const sizeValue = document.getElementById('sizeValue');
+        const drawingTools = document.querySelector('.drawing-tools');
+
+        const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
+        if (isTouchDevice) {
+            drawingTools.style.display = 'none';
+            // Touch event listeners will be added in the next step
+        } else {
+            // Sliders for desktop
+            rotationSlider.addEventListener('input', (e) => {
+                const angle = parseInt(e.target.value, 10);
+                drawing.tattooMesh.rotation.z = THREE.MathUtils.degToRad(angle);
+                rotationValue.textContent = `${angle}°`;
+            });
+            sizeSlider.addEventListener('input', (e) => {
+                const scale = parseFloat(e.target.value) / 100;
+                drawing.tattooMesh.scale.set(scale, scale, scale);
+                sizeValue.textContent = `${Math.round(scale * 100)}%`;
+            });
+        }
 
         // Sliders
         rotationSlider.addEventListener('input', (e) => {
@@ -253,6 +276,11 @@ const drawing = {
         canvas.addEventListener('pointermove', drawing.onPointerMove);
         canvas.addEventListener('pointerup', drawing.onPointerUp);
         canvas.addEventListener('pointerleave', drawing.onPointerUp);
+
+        // Touch Gestures
+        canvas.addEventListener('touchstart', drawing.onTouchStart);
+        canvas.addEventListener('touchmove', drawing.onTouchMove);
+        canvas.addEventListener('touchend', drawing.onTouchEnd);
     },
 
     onPointerDown: (event) => {
@@ -288,6 +316,55 @@ const drawing = {
 
     onPointerUp: () => {
         drawing.isDragging = false;
+    },
+
+    onTouchStart: (event) => {
+        event.preventDefault();
+        if (event.touches.length === 2) {
+            drawing.isPinching = true;
+            const t0 = event.touches[0];
+            const t1 = event.touches[1];
+            const dx = t1.clientX - t0.clientX;
+            const dy = t1.clientY - t0.clientY;
+            drawing.initialPinchDistance = Math.sqrt(dx * dx + dy * dy);
+            drawing.initialRotation = Math.atan2(dy, dx);
+        } else if (event.touches.length === 1) {
+            drawing.onPointerDown({ button: 0, offsetX: event.touches[0].clientX, offsetY: event.touches[0].clientY });
+        }
+    },
+
+    onTouchMove: (event) => {
+        event.preventDefault();
+        if (drawing.isPinching && event.touches.length === 2) {
+            const t0 = event.touches[0];
+            const t1 = event.touches[1];
+            const dx = t1.clientX - t0.clientX;
+            const dy = t1.clientY - t0.clientY;
+            const currentPinchDistance = Math.sqrt(dx * dx + dy * dy);
+            const currentRotation = Math.atan2(dy, dx);
+
+            // Scale
+            const scaleFactor = currentPinchDistance / drawing.initialPinchDistance;
+            const currentScale = drawing.tattooMesh.scale.x;
+            drawing.tattooMesh.scale.set(currentScale * scaleFactor, currentScale * scaleFactor, currentScale * scaleFactor);
+
+            // Rotation
+            const rotationDelta = currentRotation - drawing.initialRotation;
+            drawing.tattooMesh.rotation.z += rotationDelta;
+
+            // Update initial values for next move event
+            drawing.initialPinchDistance = currentPinchDistance;
+            drawing.initialRotation = currentRotation;
+
+        } else if (!drawing.isPinching && event.touches.length === 1) {
+            drawing.onPointerMove({ offsetX: event.touches[0].clientX, offsetY: event.touches[0].clientY });
+        }
+    },
+
+    onTouchEnd: (event) => {
+        event.preventDefault();
+        drawing.isPinching = false;
+        drawing.onPointerUp();
     },
 
     updateMask: () => {

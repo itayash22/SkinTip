@@ -8,8 +8,8 @@ import * as THREE from 'three';
    Returns a dataURL('image/png')
    ============================================================ */
 async function knockoutWhiteToAlphaClient(imageOrDataURL, opts = {}) {
-    const soft = opts.soft ?? 235;   // start fading above this
-    const hard = opts.hard ?? 252;   // fully transparent above this
+    const soft = opts.soft ?? 240;   // start fading above this
+    const hard = opts.hard ?? 254;   // fully transparent above this
     const edgeT = opts.edgeT ?? 20;  // edge threshold
 
     const img = await new Promise((res, rej) => {
@@ -119,6 +119,8 @@ const drawing = {
     originalImage: null,
     initialPinchDistance: 0,
     initialRotation: 0,
+    initialPinchScale: new THREE.Vector3(1, 1, 1),
+    baseRotation: 0,
     isPinching: false,
 
     init: (skinImageUrl, tattooImageUrl) => {
@@ -331,6 +333,9 @@ const drawing = {
             const dy = (t1.clientY - rect.top) - (t0.clientY - rect.top);
             drawing.initialPinchDistance = Math.sqrt(dx * dx + dy * dy);
             drawing.initialRotation = Math.atan2(dy, dx);
+            // Store the state at the beginning of the pinch
+            drawing.initialPinchScale.copy(drawing.tattooMesh.scale);
+            drawing.baseRotation = drawing.tattooMesh.rotation.z;
         } else if (event.touches.length === 1) {
             const touch = event.touches[0];
             const offsetX = touch.clientX - rect.left;
@@ -353,17 +358,14 @@ const drawing = {
             const currentRotation = Math.atan2(dy, dx);
 
             // Scale
-            const scaleFactor = currentPinchDistance / drawing.initialPinchDistance;
-            const currentScale = drawing.tattooMesh.scale.x;
-            drawing.tattooMesh.scale.set(currentScale * scaleFactor, currentScale * scaleFactor, currentScale * scaleFactor);
+            if (drawing.initialPinchDistance > 0) { // Avoid division by zero
+                const scaleFactor = currentPinchDistance / drawing.initialPinchDistance;
+                drawing.tattooMesh.scale.copy(drawing.initialPinchScale).multiplyScalar(scaleFactor);
+            }
 
             // Rotation
             const rotationDelta = currentRotation - drawing.initialRotation;
-            drawing.tattooMesh.rotation.z += rotationDelta;
-
-            // Update initial values for next move event
-            drawing.initialPinchDistance = currentPinchDistance;
-            drawing.initialRotation = currentRotation;
+            drawing.tattooMesh.rotation.z = drawing.baseRotation + rotationDelta;
 
         } else if (!drawing.isPinching && event.touches.length === 1) {
             const touch = event.touches[0];
@@ -375,7 +377,10 @@ const drawing = {
 
     onTouchEnd: (event) => {
         event.preventDefault();
-        drawing.isPinching = false;
+        // A pinch gesture ends when less than 2 fingers are on the screen.
+        if (event.touches.length < 2) {
+            drawing.isPinching = false;
+        }
         drawing.onPointerUp();
     },
 

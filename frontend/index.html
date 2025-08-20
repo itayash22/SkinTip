@@ -461,6 +461,11 @@
             let stencilData = {};
 
             async function fetchStencilData() {
+                // Use the existing utils.showLoading function
+                if (window.utils && utils.showLoading) {
+                    utils.showLoading('Loading latest styles...');
+                }
+
                 try {
                     const response = await fetch(`${CONFIG.API_URL}/styles-with-stencils`);
                     if (!response.ok) {
@@ -470,7 +475,14 @@
                     populateStyleChips();
                 } catch (error) {
                     console.error('Error fetching stencil data:', error);
-                    utils.showError('Could not load tattoo styles. Please try again later.');
+                    if (window.utils && utils.showError) {
+                        utils.showError('Could not load tattoo styles. Please try again later.');
+                    }
+                } finally {
+                    // Use the existing utils.hideLoading function
+                    if (window.utils && utils.hideLoading) {
+                        utils.hideLoading();
+                    }
                 }
             }
 
@@ -803,11 +815,8 @@
                     utils.showError('Please upload a JPEG, PNG, or WebP image for your skin photo.');
                     return;
                 }
-                if (file.size > CONFIG.MAX_FILE_SIZE) {
-                    utils.showError('Skin photo file size must be less than 5MB.');
-                    return;
-                }
 
+            // All images are resized to a standard size, so we don't need to check for file size.
             utils.showLoading('Processing skin photo...');
             const reader = new FileReader();
             reader.onload = async (e) => {

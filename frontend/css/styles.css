@@ -355,7 +355,6 @@ body {
     margin: 0 auto 1.5rem auto;
     border: 1px solid #dee2e6;
     border-radius: 0.5rem;
-    overflow: hidden; /* Hide any overflow from drawing */
 }
 
 #drawingCanvas {

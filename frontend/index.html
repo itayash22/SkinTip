@@ -649,10 +649,6 @@
                     utils.showError('Please upload a JPEG, PNG, or WebP image for your tattoo design.');
                     return;
                 }
-                if (file.size > CONFIG.MAX_FILE_SIZE) {
-                    utils.showError('Tattoo design file size must be less than 5MB.');
-                    return;
-                }
                 utils.showLoading('Processing tattoo design...');
                 const reader = new FileReader();
                 reader.onload = async (e) => {
@@ -810,10 +806,6 @@
             async function handleSkinPhotoFile(file) {
                 if (!CONFIG.ALLOWED_FILE_TYPES.includes(file.type)) {
                     utils.showError('Please upload a JPEG, PNG, or WebP image for your skin photo.');
-                    return;
-                }
-                if (file.size > CONFIG.MAX_FILE_SIZE) {
-                    utils.showError('Skin photo file size must be less than 5MB.');
                     return;
                 }
 

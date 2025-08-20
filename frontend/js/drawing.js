@@ -115,6 +115,8 @@ const drawing = {
     isDraggingSkin: false,
     dragOffset: new THREE.Vector3(),
     skinPanBounds: { x: 0, y: 0 },
+    dragStartPoint: new THREE.Vector3(),
+    initialSkinPosition: new THREE.Vector3(),
     raycaster: new THREE.Raycaster(),
     pointer: new THREE.Vector2(),
     selectedArea: null,
@@ -317,8 +319,8 @@ const drawing = {
             const skinIntersects = drawing.raycaster.intersectObject(drawing.skinMesh);
             if (skinIntersects.length > 0) {
                 drawing.isDraggingSkin = true;
-                const intersectPoint = skinIntersects[0].point;
-                drawing.dragOffset.copy(intersectPoint).sub(drawing.skinMesh.position);
+                drawing.dragStartPoint.copy(skinIntersects[0].point);
+                drawing.initialSkinPosition.copy(drawing.skinMesh.position);
             }
         }
     },
@@ -336,13 +338,14 @@ const drawing = {
                 drawing.tattooMesh.position.copy(intersect).sub(drawing.dragOffset);
             }
         } else if (drawing.isDraggingSkin) {
-            const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0); // Plane at z=0
+            const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
             const intersect = new THREE.Vector3();
             if (drawing.raycaster.ray.intersectPlane(plane, intersect)) {
-                drawing.skinMesh.position.copy(intersect).sub(drawing.dragOffset);
-                // Clamp position
-                drawing.skinMesh.position.x = THREE.MathUtils.clamp(drawing.skinMesh.position.x, -drawing.skinPanBounds.x, drawing.skinPanBounds.x);
-                drawing.skinMesh.position.y = THREE.MathUtils.clamp(drawing.skinMesh.position.y, -drawing.skinPanBounds.y, drawing.skinPanBounds.y);
+                const delta = new THREE.Vector3().copy(intersect).sub(drawing.dragStartPoint);
+                const newPosition = new THREE.Vector3().copy(drawing.initialSkinPosition).add(delta);
+
+                drawing.skinMesh.position.x = THREE.MathUtils.clamp(newPosition.x, -drawing.skinPanBounds.x, drawing.skinPanBounds.x);
+                drawing.skinMesh.position.y = THREE.MathUtils.clamp(newPosition.y, -drawing.skinPanBounds.y, drawing.skinPanBounds.y);
             }
         }
     },

@@ -19,26 +19,32 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/jwt-decode/build/jwt-decode.js"></script> 
 <style>
-  /* Let the drawing area scale and never crop on mobile */
+  /* Viewport-aware container so the canvas always fits on mobile */
   .drawing-container {
     position: relative;
     width: 100%;
-    /* leave room for your controls (~220px). Adjust if needed */
-    max-height: calc(100svh - 220px);
-    overflow: auto; /* allow scroll instead of hidden crop */
+    height: calc(100svh - 260px) !important; /* room for header + controls */
+    overflow: auto !important;               /* scroll instead of clipping */
+    -webkit-overflow-scrolling: touch;
   }
 
-  /* Make the canvas responsively shrink; preserve aspect ratio */
+  /* Responsive canvas: let width drive height; never stretch */
   #drawingCanvas {
     display: block;
-    width: 100%;
-    height: auto;
-    max-height: 100%;
+    width: 100% !important;
+    height: auto !important;
+    max-height: 100% !important;
+    touch-action: none; /* prevents pinch-zoom oddities over the canvas */
   }
 
-  /* If your global CSS sets overflow:hidden anywhere above, this prevents clipping */
+  /* Safety: avoid any global rules forcing fixed sizes */
+  canvas, img {
+    max-width: 100%;
+  }
+
+  /* Ensure parents don't clip */
   #drawingSection, .section {
-    overflow: visible;
+    overflow: visible !important;
   }
 </style>
 </head>
@@ -256,6 +262,37 @@
     <script>console.log('Loading drawing.js...');</script>
     <script type="module" src="js/drawing.js"></script>
     <script type="module">
+  // ---- Canvas sizing helpers ----
+  function computeContainedSize(containerW, containerH, imageW, imageH) {
+    const ar = imageW / imageH;
+    let w = containerW, h = Math.round(containerW / ar);
+    if (h > containerH) {
+      h = containerH;
+      w = Math.round(containerH * ar);
+    }
+    return { w, h };
+  }
+
+  function fitCanvasToContainer(imageW, imageH) {
+    const canvas = document.getElementById('drawingCanvas');
+    if (!canvas) return;
+    const parent = canvas.parentElement;
+    const rect = parent.getBoundingClientRect();
+    const { w, h } = computeContainedSize(rect.width, rect.height, imageW, imageH);
+
+    // CSS size (what users see)
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+
+    // Internal buffer (what gets drawn into) at device pixel ratio
+    const dpr = window.devicePixelRatio || 1;
+    const targetW = Math.max(1, Math.round(w * dpr));
+    const targetH = Math.max(1, Math.round(h * dpr));
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width  = targetW;
+      canvas.height = targetH;
+    }
+  }
         console.log('Main inline script starting...');
 
         async function logUserEvent(eventType, artistId, stencilId) {
@@ -858,24 +895,45 @@
                 const originalDataURL = e.target.result;
                 // Pass original file type to resizeImage
                 const resizedDataURL = await resizeImage(originalDataURL, file.type, 768, 768, 0.8);
-                
+
+                // Keep a Blob for upload
                 const resizedFile = await (await fetch(resizedDataURL)).blob();
                 Object.defineProperty(resizedFile, 'name', { value: file.name });
-                Object.defineProperty(resizedFile, 'type', { value: file.type }); // Use original file type here!
+                Object.defineProperty(resizedFile, 'type', { value: file.type });
                 STATE.currentImage = resizedFile;
+
+                // Get the resized dimensions (for correct aspect fitting)
+                const tempImg = new Image();
+                await new Promise((resolve) => {
+                  tempImg.onload = resolve;
+                  tempImg.src = resizedDataURL;
+                });
+                STATE.currentImageW = tempImg.width;
+                STATE.currentImageH = tempImg.height;
 
                 skinPhotoUploadSection.style.display = 'none';
 
+                // **Fit the canvas to the container using the real image aspect**
+                fitCanvasToContainer(STATE.currentImageW, STATE.currentImageH);
+
+                // Init your drawing UI
                 if (window.drawing && drawing.init) {
-                    const tattooImageUrl = STATE.selectedStencil ? STATE.selectedStencil.imageUrl : STATE.uploadedTattooDesignBase64;
-                    if (!tattooImageUrl) {
-                        utils.showError('No stencil selected or uploaded. Please go back and choose a stencil or upload one.');
-                        return;
-                    }
-                    // Pass both skin and tattoo image URLs to the new init function
-                    drawing.init(resizedDataURL, tattooImageUrl);
+                  const tattooImageUrl = STATE.selectedStencil ? STATE.selectedStencil.imageUrl : STATE.uploadedTattooDesignBase64;
+                  if (!tattooImageUrl) {
+                    utils.showError('No stencil selected or uploaded. Please go back and choose a stencil or upload one.');
+                    return;
+                  }
+                  drawing.init(resizedDataURL, tattooImageUrl);
+
+                  // Re-fit on viewport/orientation changes so it never crops after rotation
+                  const refit = () => fitCanvasToContainer(STATE.currentImageW, STATE.currentImageH);
+                  window.addEventListener('resize', refit, { passive: true });
+                  window.addEventListener('orientationchange', refit, { passive: true });
+
+                  // Give rendering a tick, then re-fit once more (some UIs lay out after init)
+                  requestAnimationFrame(refit);
                 } else {
-                    console.error("drawing.js module not loaded correctly or 'drawing' object not exposed.");
+                  console.error("drawing.js module not loaded correctly or 'drawing' object not exposed.");
                 }
                 utils.hideLoading();
             };

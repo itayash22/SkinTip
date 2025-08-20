@@ -8,8 +8,8 @@ import * as THREE from 'three';
    Returns a dataURL('image/png')
    ============================================================ */
 async function knockoutWhiteToAlphaClient(imageOrDataURL, opts = {}) {
-    const soft = opts.soft ?? 240;   // start fading above this
-    const hard = opts.hard ?? 254;   // fully transparent above this
+    const soft = opts.soft ?? 235;   // start fading above this
+    const hard = opts.hard ?? 252;   // fully transparent above this
     const edgeT = opts.edgeT ?? 20;  // edge threshold
 
     const img = await new Promise((res, rej) => {

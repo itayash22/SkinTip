@@ -366,7 +366,6 @@ const fluxPlacementHandler = {
     const baseEngine = FLUX_ENGINE_DEFAULT;
     const { scale: adaptScale, isThinLine, hasHaloSplash } =
       ADAPTIVE_SCALE_ENABLED ? chooseAdaptiveScale(stats) : { scale: 1.00, isThinLine: false, hasHaloSplash: false };
-    const engine = pickEngine(baseEngine, ADAPTIVE_ENGINE_ENABLED, isThinLine);
 
     // final scale factor used when sizing to mask region
     const EFFECTIVE_SCALE = tattooScale * GLOBAL_SCALE_UP * FLUX_SHRINK_FIX * adaptScale;

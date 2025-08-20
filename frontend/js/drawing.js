@@ -111,8 +111,10 @@ const drawing = {
     camera: null,
     skinMesh: null,
     tattooMesh: null,
-    isDragging: false,
+    isDraggingTattoo: false,
+    isDraggingSkin: false,
     dragOffset: new THREE.Vector3(),
+    skinPanBounds: { x: 0, y: 0 },
     raycaster: new THREE.Raycaster(),
     pointer: new THREE.Vector2(),
     selectedArea: null,
@@ -166,13 +168,26 @@ const drawing = {
             drawing.camera.aspect = canvasWidth / canvasHeight;
             drawing.camera.updateProjectionMatrix();
 
-            // Adjust camera position to fit image
             const vFOV = THREE.MathUtils.degToRad(drawing.camera.fov);
-            const height = 2 * Math.tan(vFOV / 2) * 100;
-            const width = height * drawing.camera.aspect;
+            const viewHeight = 2 * Math.tan(vFOV / 2) * 100;
+            const viewWidth = viewHeight * drawing.camera.aspect;
+
+            const imageAspect = img.width / img.height;
+
+            let planeWidth, planeHeight;
+            if (imageAspect > drawing.camera.aspect) {
+                planeHeight = viewHeight;
+                planeWidth = planeHeight * imageAspect;
+            } else {
+                planeWidth = viewWidth;
+                planeHeight = planeWidth / imageAspect;
+            }
+
+            drawing.skinPanBounds.x = Math.max(0, (planeWidth - viewWidth) / 2);
+            drawing.skinPanBounds.y = Math.max(0, (planeHeight - viewHeight) / 2);
 
             drawing.skinMesh.geometry.dispose();
-            drawing.skinMesh.geometry = new THREE.PlaneGeometry(width, height);
+            drawing.skinMesh.geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
             drawing.skinMesh.material.map = tex;
             drawing.skinMesh.material.color.set(0xffffff);
             drawing.skinMesh.material.needsUpdate = true;
@@ -292,32 +307,49 @@ const drawing = {
         pointer.y = -(event.offsetY / drawing.renderer.domElement.clientHeight) * 2 + 1;
 
         drawing.raycaster.setFromCamera(pointer, drawing.camera);
-        const intersects = drawing.raycaster.intersectObject(drawing.tattooMesh);
+        const tattooIntersects = drawing.raycaster.intersectObject(drawing.tattooMesh);
 
-        if (intersects.length > 0) {
-            drawing.isDragging = true;
-            const intersectPoint = intersects[0].point;
+        if (tattooIntersects.length > 0) {
+            drawing.isDraggingTattoo = true;
+            const intersectPoint = tattooIntersects[0].point;
             drawing.dragOffset.copy(intersectPoint).sub(drawing.tattooMesh.position);
+        } else {
+            const skinIntersects = drawing.raycaster.intersectObject(drawing.skinMesh);
+            if (skinIntersects.length > 0) {
+                drawing.isDraggingSkin = true;
+                const intersectPoint = skinIntersects[0].point;
+                drawing.dragOffset.copy(intersectPoint).sub(drawing.skinMesh.position);
+            }
         }
     },
 
     onPointerMove: (event) => {
-        if (!drawing.isDragging) return;
         const pointer = drawing.pointer;
         pointer.x = (event.offsetX / drawing.renderer.domElement.clientWidth) * 2 - 1;
         pointer.y = -(event.offsetY / drawing.renderer.domElement.clientHeight) * 2 + 1;
-
         drawing.raycaster.setFromCamera(pointer, drawing.camera);
-        const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -drawing.tattooMesh.position.z);
-        const intersect = new THREE.Vector3();
 
-        if (drawing.raycaster.ray.intersectPlane(plane, intersect)) {
-            drawing.tattooMesh.position.copy(intersect).sub(drawing.dragOffset);
+        if (drawing.isDraggingTattoo) {
+            const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -drawing.tattooMesh.position.z);
+            const intersect = new THREE.Vector3();
+            if (drawing.raycaster.ray.intersectPlane(plane, intersect)) {
+                drawing.tattooMesh.position.copy(intersect).sub(drawing.dragOffset);
+            }
+        } else if (drawing.isDraggingSkin) {
+            const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0); // Plane at z=0
+            const intersect = new THREE.Vector3();
+            if (drawing.raycaster.ray.intersectPlane(plane, intersect)) {
+                drawing.skinMesh.position.copy(intersect).sub(drawing.dragOffset);
+                // Clamp position
+                drawing.skinMesh.position.x = THREE.MathUtils.clamp(drawing.skinMesh.position.x, -drawing.skinPanBounds.x, drawing.skinPanBounds.x);
+                drawing.skinMesh.position.y = THREE.MathUtils.clamp(drawing.skinMesh.position.y, -drawing.skinPanBounds.y, drawing.skinPanBounds.y);
+            }
         }
     },
 
     onPointerUp: () => {
-        drawing.isDragging = false;
+        drawing.isDraggingTattoo = false;
+        drawing.isDraggingSkin = false;
     },
 
     onTouchStart: (event) => {
@@ -367,7 +399,7 @@ const drawing = {
             const rotationDelta = currentRotation - drawing.initialRotation;
             drawing.tattooMesh.rotation.z = drawing.baseRotation + rotationDelta;
 
-        } else if (!drawing.isPinching && event.touches.length === 1) {
+        } else if (event.touches.length === 1) { // Pan with one finger
             const touch = event.touches[0];
             const offsetX = touch.clientX - rect.left;
             const offsetY = touch.clientY - rect.top;
@@ -377,7 +409,6 @@ const drawing = {
 
     onTouchEnd: (event) => {
         event.preventDefault();
-        // A pinch gesture ends when less than 2 fingers are on the screen.
         if (event.touches.length < 2) {
             drawing.isPinching = false;
         }

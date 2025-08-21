@@ -54,45 +54,54 @@ function setPanMode(enabled) {
 
 // === INIT: extend your existing init to capture canvas/context refs ===
 function init(skinDataURL, tattooURL) {
-  // your existing init work...
   canvas = document.getElementById('drawingCanvas');
   ctx = canvas.getContext('2d');
 
-  // ensure canvas size matches container width on load
   const parent = canvas.parentElement;
-  canvas.width  = Math.floor(parent.clientWidth  * window.devicePixelRatio);
+  canvas.width = Math.floor(parent.clientWidth * window.devicePixelRatio);
   canvas.height = Math.floor(parent.clientHeight * window.devicePixelRatio);
-  canvas.style.width  = parent.clientWidth + 'px';
+  canvas.style.width = parent.clientWidth + 'px';
   canvas.style.height = parent.clientHeight + 'px';
-  ctx.setTransform(1,0,0,1,0,0);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-  // load images
+  // Reset state for new images
+  skinImg = null;
+  tattooImg = null;
+  pointers.clear();
+  Object.assign(camera, { x: 0, y: 0, scale: 1 });
+  Object.assign(tattoo, { x: 0, y: 0, scale: 1, angle: 0, width: 0, height: 0 });
+
+
+  // 1. Load skin image first
   skinImg = new Image();
   skinImg.onload = () => {
-      centerSkin();
-      requestRender();
-  };
-  skinImg.src = skinDataURL;
+    // 2. Once skin is loaded, center the camera
+    centerSkin();
+    requestRender(); // Render the skin immediately
 
-  tattooImg = new Image();
-  tattooImg.onload = () => {
+    // 3. Then, load the tattoo image
+    tattooImg = new Image();
+    tattooImg.onload = () => {
       tattoo.width = tattooImg.width;
       tattoo.height = tattooImg.height;
-      // Place tattoo in the center of the visible part of the canvas, in world coordinates
+
+      // 4. Position and scale the tattoo relative to the now-centered skin
+      const skinWidthInWorld = skinImg.width;
+      const desiredTattooWidth = skinWidthInWorld * 0.25; // Start at 25% of skin width
+      tattoo.scale = desiredTattooWidth / tattoo.width;
+
       const centerX_css = canvas.clientWidth / 2;
       const centerY_css = canvas.clientHeight / 2;
       tattoo.x = (centerX_css - camera.x) / camera.scale;
       tattoo.y = (centerY_css - camera.y) / camera.scale;
+
       requestRender();
+    };
+    tattooImg.src = tattooURL;
   };
-  tattooImg.src = tattooURL;
+  skinImg.src = skinDataURL;
 
-  // attach pan / pinch handlers once
   attachPanHandlers();
-
-  // Optionally start with the skin centered
-  centerSkin();
-  requestRender();
 }
 
 function centerSkin() {

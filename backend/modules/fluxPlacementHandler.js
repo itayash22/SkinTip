@@ -338,12 +338,8 @@ const fluxPlacementHandler = {
     const { scale: adaptScale, isThinLine, hasHaloSplash } =
       ADAPTIVE_SCALE_ENABLED ? chooseAdaptiveScale(stats) : { scale: 1.00, isThinLine: false, hasHaloSplash: false };
 
-    let engine;
-    if (LOCK_SILHOUETTE) {
-      engine = 'fill';
-    } else {
-      engine = pickEngine(FLUX_ENGINE_DEFAULT, ADAPTIVE_ENGINE_ENABLED, isThinLine);
-    }
+    const LOCK_SILHOUETTE = (process.env.LOCK_SILHOUETTE ?? 'false').toLowerCase() === 'true';
+    let engine = LOCK_SILHOUETTE ? 'fill' : pickEngine(FLUX_ENGINE_DEFAULT, ADAPTIVE_ENGINE_ENABLED, isThinLine);
 
     // final scale factor used when sizing to mask region
     const EFFECTIVE_SCALE = tattooScale * GLOBAL_SCALE_UP * FLUX_SHRINK_FIX * adaptScale;

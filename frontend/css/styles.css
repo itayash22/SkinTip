@@ -348,23 +348,24 @@ body {
 
 
 /* Drawing Canvas Section */
-.drawing-container {
-    position: relative;
-    width: 100%;
-    max-width: 600px; /* Limit canvas width for display */
-    margin: 0 auto 1.5rem auto;
-    border: 1px solid #dee2e6;
-    border-radius: 0.5rem;
-    overflow: hidden; /* Hide any overflow from drawing */
-    aspect-ratio: 1 / 1; /* Ensure a square aspect ratio */
+/* give the canvas a real box */
+.drawing-container{
+  position:relative;
+  width:100%;
+  height:min(80vh, 900px);
+  min-height:360px;
+  background:#111;
+  overflow:hidden;
 }
 
-#drawingCanvas {
-    display: block;
-    width: 100%;
-    height: 100%; /* Fill the container */
-    background-color: #e9ecef; /* Fallback background for canvas */
-    touch-action: none; /* Prevent browser touch gestures on canvas */
+/* ensures CSS size always matches the JS pixel buffer */
+#drawingCanvas{
+  width:100%;
+  height:100%;
+  display:block;
+  touch-action:none;
+  user-select:none;
+  -webkit-user-drag:none;
 }
 
 .drawing-tools {

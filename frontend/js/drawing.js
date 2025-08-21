@@ -6,6 +6,8 @@ let skinImg = null, tattooImg = null; // assume you already set these in init
 const camera = { x: 0, y: 0, scale: 1 };
 let panMode = false;
 
+let baseTattooScale = 1;
+
 let tattoo = {
     x: 0,
     y: 0,
@@ -58,11 +60,26 @@ function init(skinDataURL, tattooURL) {
   ctx = canvas.getContext('2d');
 
   const parent = canvas.parentElement;
-  canvas.width = Math.floor(parent.clientWidth * window.devicePixelRatio);
-  canvas.height = Math.floor(parent.clientHeight * window.devicePixelRatio);
-  canvas.style.width = parent.clientWidth + 'px';
-  canvas.style.height = parent.clientHeight + 'px';
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  function resizeToParent(){
+    const w = parent.clientWidth;
+    const h = parent.clientHeight;
+    canvas.style.width  = w + 'px';
+    canvas.style.height = h + 'px';
+    canvas.width  = Math.floor(w * window.devicePixelRatio);
+    canvas.height = Math.floor(h * window.devicePixelRatio);
+    // After resizing the canvas, we need to recenter the skin
+    centerSkin();
+    requestRender();
+  }
+  resizeToParent();
+
+  // keep in sync on layout changes
+  if (!canvas.__ro){
+    const ro = new ResizeObserver(() => resizeToParent());
+    ro.observe(parent);
+    canvas.__ro = ro;
+  }
 
   // Reset state for new images
   skinImg = null;
@@ -74,6 +91,7 @@ function init(skinDataURL, tattooURL) {
 
   // 1. Load skin image first
   skinImg = new Image();
+  skinImg.crossOrigin = 'anonymous';
   skinImg.onload = () => {
     // 2. Once skin is loaded, center the camera
     centerSkin();
@@ -81,19 +99,26 @@ function init(skinDataURL, tattooURL) {
 
     // 3. Then, load the tattoo image
     tattooImg = new Image();
+    tattooImg.crossOrigin = 'anonymous';   // avoids toDataURL taint if stencil is remote
     tattooImg.onload = () => {
-      tattoo.width = tattooImg.width;
+      tattoo.width  = tattooImg.width;
       tattoo.height = tattooImg.height;
 
-      // 4. Position and scale the tattoo relative to the now-centered skin
-      const skinWidthInWorld = skinImg.width;
-      const desiredTattooWidth = skinWidthInWorld * 0.25; // Start at 25% of skin width
-      tattoo.scale = desiredTattooWidth / tattoo.width;
+      // fit to ~25% of the skin’s shorter side
+      const skinShort = Math.min(skinImg.width, skinImg.height);
+      const desiredTattooW = skinShort * 0.25;
+      baseTattooScale = desiredTattooW / tattoo.width;
+      tattoo.scale = baseTattooScale;
 
-      const centerX_css = canvas.clientWidth / 2;
-      const centerY_css = canvas.clientHeight / 2;
-      tattoo.x = (centerX_css - camera.x) / camera.scale;
-      tattoo.y = (centerY_css - camera.y) / camera.scale;
+      // place in the visual center
+      const cx = canvas.clientWidth  / 2;
+      const cy = canvas.clientHeight / 2;
+      tattoo.x = (cx - camera.x) / camera.scale;
+      tattoo.y = (cy - camera.y) / camera.scale;
+
+      // reflect 100% in the UI
+      const sizeValue = document.getElementById('sizeValue');
+      if (sizeValue) sizeValue.textContent = '100%';
 
       requestRender();
     };
@@ -344,13 +369,17 @@ window.drawing = window.drawing || {};
 window.drawing.setPanMode = setPanMode;
 window.drawing.init = init;
 window.drawing.updateMask = updateMask;
-window.drawing.setTattooRotation = (angle) => {
-    tattoo.angle = angle * (Math.PI / 180);
-    requestRender();
+window.drawing.setTattooRotation = (deg) => {
+  tattoo.angle = deg * Math.PI / 180;
+  const rotationValue = document.getElementById('rotationValue');
+  if (rotationValue) rotationValue.textContent = Math.round(deg) + '°';
+  requestRender();
 };
-window.drawing.setTattooScale = (scale) => {
-    tattoo.scale = scale;
-    requestRender();
+window.drawing.setTattooScale = (factor /* 0.2..2.0 from slider */) => {
+  tattoo.scale = baseTattooScale * factor;
+  const sizeValue = document.getElementById('sizeValue');
+  if (sizeValue) sizeValue.textContent = Math.round(factor * 100) + '%';
+  requestRender();
 };
 window.drawing.clearCanvas = () => {
     if (ctx) {

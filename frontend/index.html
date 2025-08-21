@@ -18,6 +18,15 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/jwt-decode/build/jwt-decode.js"></script> 
+<style>
+  .drawing-container { position: relative; }
+  #drawingCanvas {
+    touch-action: none;   /* allow custom pan/zoom on mobile */
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+  .btn.active { outline: 2px solid #444; }
+</style>
 </head>
 <body>
     <nav class="navbar">
@@ -86,6 +95,10 @@
 
                 <div class="drawing-tools">
                     <button id="changeSkinPhotoBtn" class="btn btn-outline btn-sm">Change Skin Photo</button>
+
+                    <!-- NEW: toggle pan mode -->
+                    <button id="togglePanBtn" class="btn btn-outline btn-sm">Move Skin</button>
+
                     <div class="rotation-control">
                         <label for="rotationSlider">Rotate Tattoo: <span id="rotationValue">0°</span></label>
                         <input type="range" id="rotationSlider" min="-180" max="180" value="0">
@@ -256,55 +269,57 @@
             }
         }
 
-        /**
-         * Resizes an image Data URL to a maximum width/height while maintaining aspect ratio.
-         * Returns a Promise that resolves with the new Data URL.
-         * @param {string} dataURL The input image data URL.
-         * @param {string} originalMimeType The original MIME type of the file (e.g., 'image/png').
-         * @param {number} maxWidth Max width for the resized image.
-         * @param {number} maxHeight Max height for the resized image.
-         * @param {number} quality JPEG compression quality (0-1), ignored for PNG.
-         * @returns {Promise<string>} Promise resolving with the resized image Data URL.
-         */
-        function resizeImage(dataURL, originalMimeType, maxWidth, maxHeight, quality = 0.9) {
-            return new Promise((resolve) => {
-                const img = new Image();
-                img.onload = () => {
-                    let width = img.width;
-                    let height = img.height;
+  async function resizeImage(dataURL, originalMimeType, maxWidth, maxHeight, quality = 0.9) {
+    // Turn dataURL into a Blob
+    const blob = await (await fetch(dataURL)).blob();
 
-                    // Calculate new dimensions
-                    if (width > height) {
-                        if (width > maxWidth) {
-                            height *= maxWidth / width;
-                            width = maxWidth;
-                        }
-                    } else {
-                        if (height > maxHeight) {
-                            width *= maxHeight / height;
-                            height = maxHeight;
-                        }
-                    }
+    // Prefer createImageBitmap (applies EXIF orientation with the option below)
+    let sourceW, sourceH, draw;
+    if ('createImageBitmap' in window) {
+      const bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+      sourceW = bitmap.width;
+      sourceH = bitmap.height;
+      draw = (ctx, w, h) => ctx.drawImage(bitmap, 0, 0, w, h);
+    } else {
+      // Fallback path
+      const img = await new Promise((resolve) => {
+        const im = new Image();
+        im.onload = () => resolve(im);
+        im.src = URL.createObjectURL(blob);
+      });
+      sourceW = img.width;
+      sourceH = img.height;
+      draw = (ctx, w, h) => ctx.drawImage(img, 0, 0, w, h);
+    }
 
-                    const canvas = document.createElement('canvas');
-                    canvas.width = width;
-                    canvas.height = height;
-                    const ctx = canvas.getContext('2d');
+    // Contain-fit into the target box (no cropping)
+    const srcAR = sourceW / sourceH;
+    const boxAR = maxWidth / maxHeight;
+    let targetW, targetH;
+    if (srcAR > boxAR) {
+      targetW = maxWidth;
+      targetH = Math.round(maxWidth / srcAR);
+    } else {
+      targetH = maxHeight;
+      targetW = Math.round(maxHeight * srcAR);
+    }
 
-                    // Crucial for transparency: Clear canvas to transparent black
-                    ctx.clearRect(0, 0, canvas.width, canvas.height); // Clears to transparent black
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d', { alpha: true });
 
-                    ctx.drawImage(img, 0, 0, width, height);
+    ctx.clearRect(0, 0, targetW, targetH);
+    draw(ctx, targetW, targetH);
 
-                    // If original was PNG or WebP, aim for PNG output to preserve transparency, otherwise JPEG
-                    const outputMimeType = (originalMimeType === 'image/png' || originalMimeType === 'image/webp') ? 'image/png' : 'image/jpeg';
-                    const outputQuality = outputMimeType === 'image/jpeg' ? quality : undefined;
+    const outputMimeType =
+      (originalMimeType === 'image/png' || originalMimeType === 'image/webp')
+        ? 'image/png'
+        : 'image/jpeg';
+    const outputQuality = outputMimeType === 'image/jpeg' ? quality : undefined;
 
-                    resolve(canvas.toDataURL(outputMimeType, outputQuality));
-                };
-                img.src = dataURL;
-            });
-        }
+    return canvas.toDataURL(outputMimeType, outputQuality);
+  }
 
 
         // --- Artist Loading and Filtering Functions (MOVED TO GLOBAL SCOPE) ---
@@ -690,6 +705,33 @@
             const resultsSection = document.getElementById('resultsSection');
             const artistsSection = document.getElementById('artistsSection');
 
+            const togglePanBtn = document.getElementById('togglePanBtn');
+            let panMode = false;
+
+            togglePanBtn?.addEventListener('click', () => {
+              panMode = !panMode;
+              togglePanBtn.classList.toggle('active', panMode);
+              togglePanBtn.textContent = panMode ? 'Done Moving Skin' : 'Move Skin';
+              if (window.drawing && drawing.setPanMode) {
+                drawing.setPanMode(panMode);
+              }
+            });
+
+            const rotationSlider = document.getElementById('rotationSlider');
+            const sizeSlider = document.getElementById('sizeSlider');
+
+            rotationSlider?.addEventListener('input', (e) => {
+                if (window.drawing && drawing.setTattooRotation) {
+                    drawing.setTattooRotation(e.target.value);
+                }
+            });
+
+            sizeSlider?.addEventListener('input', (e) => {
+                if (window.drawing && drawing.setTattooScale) {
+                    drawing.setTattooScale(e.target.value / 100);
+                }
+            });
+
 
             // --- Core Logic & State Management ---
 
@@ -996,10 +1038,10 @@
                 if (STATE.selectedStencil && STATE.selectedStencil.artist && artistContactSection) {
                     const whatsappLink = document.getElementById('whatsappLink');
                     const artistName = STATE.selectedStencil.artist.name;
-                    const introText = `Hi ${artistName},\n\nI got this stunning AI tattoo from your catalog.\n\nHere are the previews:\n`;
+                    const messageBody = `Hi ${artistName},\n\nI got this stunning AI tattoo from your catalog. Can you share more details about yourself and the tattoo?\n\nThanks!`;
+                    const previewsHeader = `\n\nHere are the previews I generated:\n`;
                     const imageUrlsText = STATE.generatedImages.join('\n\n');
-                    const outroText = `\n\nCan you share more details about yourself and the tattoo?\n\nThanks!`;
-                    const fullMessage = introText + imageUrlsText + outroText;
+                    const fullMessage = messageBody + previewsHeader + imageUrlsText;
 
                     whatsappLink.href = `https://wa.me/${STATE.selectedStencil.artist.whatsapp}?text=${encodeURIComponent(fullMessage)}`;
                     whatsappLink.onclick = () => logUserEvent('WHATSAPP_CONTACT', STATE.selectedStencil.artist.id, STATE.selectedStencil.id);

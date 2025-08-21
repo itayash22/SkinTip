@@ -356,12 +356,13 @@ body {
     border: 1px solid #dee2e6;
     border-radius: 0.5rem;
     overflow: hidden; /* Hide any overflow from drawing */
+    aspect-ratio: 1 / 1; /* Ensure a square aspect ratio */
 }
 
 #drawingCanvas {
     display: block;
     width: 100%;
-    height: auto;
+    height: 100%; /* Fill the container */
     background-color: #e9ecef; /* Fallback background for canvas */
     touch-action: none; /* Prevent browser touch gestures on canvas */
 }

@@ -26,42 +26,14 @@ const FLUX_API_KEY = process.env.FLUX_API_KEY;
 // -----------------------------
 const ADAPTIVE_SCALE_ENABLED  = (process.env.ADAPTIVE_SCALE_ENABLED  ?? 'true').toLowerCase() === 'true';
 const ADAPTIVE_ENGINE_ENABLED = (process.env.ADAPTIVE_ENGINE_ENABLED ?? 'true').toLowerCase() === 'true';
-const GLOBAL_SCALE_UP         = Number(process.env.MODEL_SCALE_UP   || '1.00');
-const FLUX_SHRINK_FIX         = Number(process.env.FLUX_SHRINK_FIX  || '1.12');
+const GLOBAL_SCALE_UP         = Number(process.env.MODEL_SCALE_UP   || '1.00'); // optional global bump
+const FLUX_SHRINK_FIX         = Number(process.env.FLUX_SHRINK_FIX  || '1.12'); // <— new: corrects consistent FLUX downsizing
 const FLUX_ENGINE_DEFAULT     = (process.env.FLUX_ENGINE || 'kontext').toLowerCase(); // 'kontext' | 'fill'
-
-// NEW: lock exact size/angle via ring mask
-const LOCK_SILHOUETTE    = (process.env.LOCK_SILHOUETTE ?? 'true').toLowerCase() === 'true';
-const EDGE_RING_OUTER_PX = Number(process.env.EDGE_RING_OUTER_PX || '18'); // how far outside edge to edit
-const EDGE_FEATHER_PX    = Number(process.env.EDGE_FEATHER_PX    || '8');  // softness of ring
 
 // -----------------------------
 // Small helpers
 // -----------------------------
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
-
-// NEW: build a thin editable ring around the placed tattoo
-async function makeEdgeRingMaskFromPositionedCanvas(positionedCanvasBuffer, outerPx = 18, featherPx = 8) {
-  // 1) alpha of placed tattoo
-  const alpha = await sharp(positionedCanvasBuffer).extractChannel('alpha').png().toBuffer();
-
-  // 2) original solid silhouette (binary)
-  const orig = await sharp(alpha).threshold(1).png().toBuffer();
-
-  // 3) "dilated" silhouette by blurring, then thresholding low
-  const dilated = await sharp(alpha).blur(Math.max(0.5, outerPx / 2)).threshold(1).png().toBuffer();
-
-  // 4) ring = dilated - orig  (dest-out subtracts the inner silhouette)
-  const ring = await sharp(dilated)
-    .composite([{ input: orig, blend: 'dest-out' }])
-    .png()
-    .toBuffer();
-
-  // 5) feather the ring to avoid hard seams
-  const feathered = await sharp(ring).blur(Math.max(0.5, featherPx)).toColourspace('b-w').png().toBuffer();
-
-  return feathered; // grayscale PNG (white ~ edit, black ~ preserve)
-}
 
 async function uploadDebug(imageBuffer, userId, name, contentType = 'image/png', folder = 'debug') {
   try {
@@ -363,9 +335,15 @@ const fluxPlacementHandler = {
     console.log(`[ADAPT] coverage=${stats.coverage.toFixed(4)} thinness=${stats.thinness.toFixed(4)} solidity=${stats.solidity.toFixed(4)} bbox=${stats.bbox ? stats.bbox.w+'x'+stats.bbox.h : 'NA'}`);
 
     // --- Adaptive scale & engine pick ---
-    const baseEngine = FLUX_ENGINE_DEFAULT;
     const { scale: adaptScale, isThinLine, hasHaloSplash } =
       ADAPTIVE_SCALE_ENABLED ? chooseAdaptiveScale(stats) : { scale: 1.00, isThinLine: false, hasHaloSplash: false };
+
+    let engine;
+    if (LOCK_SILHOUETTE) {
+      engine = 'fill';
+    } else {
+      engine = pickEngine(FLUX_ENGINE_DEFAULT, ADAPTIVE_ENGINE_ENABLED, isThinLine);
+    }
 
     // final scale factor used when sizing to mask region
     const EFFECTIVE_SCALE = tattooScale * GLOBAL_SCALE_UP * FLUX_SHRINK_FIX * adaptScale;
@@ -445,16 +423,6 @@ const fluxPlacementHandler = {
     await uploadDebug(positionedCanvas, userId, 'tattoo_canvas_positioned');
     await uploadDebug(compositedForPreview, userId, 'debug_sharp_composite');
 
-    // Make ring mask that edits only around edges
-    let maskForFluxB64;
-    if (LOCK_SILHOUETTE) {
-      const ringMaskPng = await makeEdgeRingMaskFromPositionedCanvas(positionedCanvas, EDGE_RING_OUTER_PX, EDGE_FEATHER_PX);
-      await uploadDebug(ringMaskPng, userId, 'mask_edge_ring'); // optional debug
-      maskForFluxB64 = ringMaskPng.toString('base64');
-    } else {
-      maskForFluxB64 = maskBase64; // your original (looser) mask behavior
-    }
-
     // -----------------------------
     // FLUX call(s)
     // -----------------------------
@@ -464,44 +432,41 @@ const fluxPlacementHandler = {
 
     const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
 
-    // If we are locking silhouette, prefer the inpainting engine explicitly
-    const engine = LOCK_SILHOUETTE ? 'fill' : pickEngine(FLUX_ENGINE_DEFAULT, ADAPTIVE_ENGINE_ENABLED, isThinLine);
-
     const endpoint = engine === 'fill'
       ? 'https://api.bfl.ai/v1/flux-fill'
       : 'https://api.bfl.ai/v1/flux-kontext-pro';
 
     const inputBase64 = compositedForPreview.toString('base64');
+    const maskB64 = maskBase64;
 
     console.log(`Making ${numVariations} calls to FLUX (${endpoint.split('/').pop()})...`);
 
     for (let i = 0; i < numVariations; i++) {
       const seed = Date.now() + i;
 
-      // Important: send the ring mask to FLUX (white = edit ring, black = preserve interior)
       const payload = engine === 'fill'
         ? {
             prompt: basePrompt,
             input_image: inputBase64,
-            mask_image: maskForFluxB64,
+            mask_image: maskB64,
             output_format: 'png',
             n: 1,
-            guidance_scale: 7.5,
+            guidance_scale: 8.0,
             prompt_upsampling: true,
             safety_tolerance: 2,
-            seed: Date.now()
+            seed
           }
         : {
             prompt: basePrompt,
             input_image: inputBase64,
-            mask_image: maskForFluxB64,
+            mask_image: maskB64,
             output_format: 'png',
             n: 1,
-            fidelity: 0.90,         // keep your original kontext tuning
-            guidance_scale: 7.5,
+            fidelity: 0.90,           // slightly higher = a bit more faithful size retention
+            guidance_scale: 8.0,
             prompt_upsampling: true,
             safety_tolerance: 2,
-            seed: Date.now()
+            seed
           };
 
       let task;

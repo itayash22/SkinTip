@@ -1,502 +1,355 @@
-import * as THREE from 'three';
+// === drawing.js (additions) ================================================
 
-/* ============================================================
-   Client-side white → alpha knockout for preview
-   - Detects near-uniform white and converts it to transparency
-   - Preserves edges to avoid chewing through linework
-   - Decontaminates RGB to remove white halos
-   Returns a dataURL('image/png')
-   ============================================================ */
-async function knockoutWhiteToAlphaClient(imageOrDataURL, opts = {}) {
-    const soft = opts.soft ?? 235;   // start fading above this
-    const hard = opts.hard ?? 252;   // fully transparent above this
-    const edgeT = opts.edgeT ?? 20;  // edge threshold
+// module-level state (add these near your other state vars)
+let canvas, ctx;
+let skinImg = null, tattooImg = null; // assume you already set these in init
+const camera = { x: 0, y: 0, scale: 1 };
+let panMode = false;
 
-    const img = await new Promise((res, rej) => {
-        const im = new Image();
-        im.crossOrigin = 'anonymous';
-        im.onload = () => res(im);
-        im.onerror = rej;
-        im.src = typeof imageOrDataURL === 'string'
-            ? imageOrDataURL
-            : URL.createObjectURL(imageOrDataURL);
-    });
+let tattoo = {
+    x: 0,
+    y: 0,
+    scale: 1,
+    angle: 0,
+    width: 0,
+    height: 0
+};
 
-    const w = img.naturalWidth, h = img.naturalHeight;
-    const canvas = document.createElement('canvas');
-    canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(img, 0, 0);
+let pointerDown = false;
+let isDraggingTattoo = false;
+let lastX = 0, lastY = 0;
 
-    // Quick uniform-white check from the four corners
-    function cornerStats(x, y, size) {
-        const d = ctx.getImageData(x, y, size, size).data;
-        let r=0,g=0,b=0, n = size*size;
-        for (let i=0;i<n;i++){ r+=d[i*4]; g+=d[i*4+1]; b+=d[i*4+2]; }
-        return [r/n, g/n, b/n];
-    }
-    const s = Math.max(4, Math.floor(Math.min(w, h) * 0.05));
-    const c1 = cornerStats(0,0,s), c2 = cornerStats(w-s,0,s),
-          c3 = cornerStats(0,h-s,s), c4 = cornerStats(w-s,h-s,s);
-    const mean = [
-        (c1[0]+c2[0]+c3[0]+c4[0])/4,
-        (c1[1]+c2[1]+c3[1]+c4[1])/4,
-        (c1[2]+c2[2]+c3[2]+c4[2])/4
-    ];
-    const nearWhite = (mean[0] >= 242 && mean[1] >= 242 && mean[2] >= 242);
+// For pinch
+const pointers = new Map();
+let pinchStartDist = 0;
+let pinchStartScale = 1;
+let pinchCenter = { x: 0, y: 0 };
+let pinchStartRotation = 0;
+let initialTattooAngle = 0;
 
-    // If not near-white, just return original (backend will handle complex cases)
-    if (!nearWhite) {
-        return canvas.toDataURL('image/png');
-    }
-
-    // Pixel buffers
-    const imgData = ctx.getImageData(0, 0, w, h);
-    const d = imgData.data;
-
-    // Build crude edge mask (3x3 Laplacian on luminance) to protect lines
-    const gray = new Uint8ClampedArray(w*h);
-    for (let i=0, p=0; i<gray.length; i++, p+=4) {
-        const R=d[p], G=d[p+1], B=d[p+2];
-        gray[i] = (0.2126*R + 0.7152*G + 0.0722*B) | 0;
-    }
-    const edge = new Uint8ClampedArray(w*h);
-    const k = [0,-1,0,-1,4,-1,0,-1,0];
-    for (let y=1; y<h-1; y++){
-        for (let x=1; x<w-1; x++){
-            let acc=0, idx = y*w+x, i=0;
-            for (let ky=-1; ky<=1; ky++){
-                for (let kx=-1; kx<=1; kx++){
-                    acc += gray[idx + ky*w + kx] * k[i++];
-                }
-            }
-            edge[idx] = acc > edgeT ? 255 : 0;
-        }
-    }
-
-    // Color-to-alpha with decontamination (remove white matte)
-    const ramp = Math.max(1, hard - soft);
-    const bgR = mean[0], bgG = mean[1], bgB = mean[2];
-
-    for (let i=0, p=0; i<w*h; i++, p+=4) {
-        const R=d[p], G=d[p+1], B=d[p+2], A=d[p+3];
-        const wmax = Math.max(R,G,B);
-        let alpha = A;
-
-        if (wmax >= soft) {
-            const cut = Math.max(0, Math.min(1, (wmax - soft) / ramp)); // 0..1
-            alpha = Math.round(A * (1 - cut));
-            if (wmax >= hard) alpha = 0;
-        }
-        // Preserve edges (don’t erase lines)
-        if (edge[i] === 255) alpha = Math.max(alpha, A);
-
-        // Decontaminate RGB from white matte: F=(C-(1-a)*bg)/a
-        if (alpha > 0 && alpha < 255) {
-            const a = alpha / 255;
-            d[p  ] = Math.max(0, Math.min(255, Math.round((R - (1 - a) * bgR) / a)));
-            d[p+1] = Math.max(0, Math.min(255, Math.round((G - (1 - a) * bgG) / a)));
-            d[p+2] = Math.max(0, Math.min(255, Math.round((B - (1 - a) * bgB) / a)));
-        }
-        d[p+3] = alpha;
-    }
-
-    ctx.putImageData(imgData, 0, 0);
-    return canvas.toDataURL('image/png');
+// --- helpers ---
+function getDistance(p1, p2) {
+  const dx = p1.x - p2.x, dy = p1.y - p2.y;
+  return Math.sqrt(dx*dx + dy*dy);
+}
+function canvasPointFromClient(e) {
+  const rect = canvas.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
 }
 
-const drawing = {
-    renderer: null,
-    scene: null,
-    camera: null,
-    skinMesh: null,
-    tattooMesh: null,
-    isDraggingTattoo: false,
-    isDraggingSkin: false,
-    dragOffset: new THREE.Vector3(),
-    skinPanBounds: { x: 0, y: 0 },
-    dragStartPoint: new THREE.Vector3(),
-    initialSkinPosition: new THREE.Vector3(),
-    raycaster: new THREE.Raycaster(),
-    pointer: new THREE.Vector2(),
-    selectedArea: null,
-    originalImage: null,
-    initialPinchDistance: 0,
-    initialRotation: 0,
-    initialPinchScale: new THREE.Vector3(1, 1, 1),
-    baseRotation: 0,
-    isPinching: false,
+// Call this anytime something changes
+let rafId = 0;
+function requestRender() {
+  if (rafId) return;
+  rafId = requestAnimationFrame(() => {
+    rafId = 0;
+    render();
+  });
+}
 
-    init: (skinImageUrl, tattooImageUrl) => {
-        // --- Renderer & Scene ---
-        const canvas = document.getElementById('drawingCanvas');
-        if (!canvas) {
-            console.error("DEBUG: drawingCanvas not found!");
-            return;
-        }
-        drawing.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true, alpha: true });
-        drawing.renderer.setSize(600, 450); // Initial size, will be adjusted
-        drawing.scene = new THREE.Scene();
-        drawing.scene.background = new THREE.Color(0xeeeeee);
+// === PUBLIC: enable/disable pan mode ===
+function setPanMode(enabled) {
+  panMode = !!enabled;
+}
 
-        // --- Camera & Light ---
-        drawing.camera = new THREE.PerspectiveCamera(75, 600 / 450, 0.1, 1000);
-        drawing.camera.position.z = 100;
-        drawing.scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+// === INIT: extend your existing init to capture canvas/context refs ===
+function init(skinDataURL, tattooURL) {
+  // your existing init work...
+  canvas = document.getElementById('drawingCanvas');
+  ctx = canvas.getContext('2d');
 
-        // --- Skin & Tattoo meshes ---
-        drawing.skinMesh = new THREE.Mesh(
-            new THREE.PlaneGeometry(100, 100),
-            new THREE.MeshBasicMaterial({ color: 0xcccccc, side: THREE.DoubleSide })
-        );
-        drawing.scene.add(drawing.skinMesh);
+  // ensure canvas size matches container width on load
+  const parent = canvas.parentElement;
+  canvas.width  = Math.floor(parent.clientWidth  * window.devicePixelRatio);
+  canvas.height = Math.floor(parent.clientHeight * window.devicePixelRatio);
+  canvas.style.width  = parent.clientWidth + 'px';
+  canvas.style.height = parent.clientHeight + 'px';
+  ctx.setTransform(1,0,0,1,0,0);
 
-        drawing.tattooMesh = new THREE.Mesh(
-            new THREE.PlaneGeometry(50, 50),
-            new THREE.MeshBasicMaterial({ transparent: true, opacity: 1, side: THREE.DoubleSide })
-        );
-        drawing.tattooMesh.visible = false;
-        drawing.tattooMesh.position.z = 1; // Ensure tattoo is in front of skin
-        drawing.scene.add(drawing.tattooMesh);
+  // load images
+  skinImg = new Image();
+  skinImg.onload = () => {
+      centerSkin();
+      requestRender();
+  };
+  skinImg.src = skinDataURL;
 
-        // --- Load Textures ---
-        drawing.loadTexture(skinImageUrl, (tex, img) => {
-            drawing.originalImage = img; // Store the original image element
-            const ar = img.width / img.height;
-            const canvasWidth = 600;
-            const canvasHeight = canvasWidth / ar;
+  tattooImg = new Image();
+  tattooImg.onload = () => {
+      tattoo.width = tattooImg.width;
+      tattoo.height = tattooImg.height;
+      // Place tattoo in the center of the visible part of the canvas, in world coordinates
+      const centerX_css = canvas.clientWidth / 2;
+      const centerY_css = canvas.clientHeight / 2;
+      tattoo.x = (centerX_css - camera.x) / camera.scale;
+      tattoo.y = (centerY_css - camera.y) / camera.scale;
+      requestRender();
+  };
+  tattooImg.src = tattooURL;
 
-            drawing.renderer.setSize(canvasWidth, canvasHeight);
-            drawing.camera.aspect = canvasWidth / canvasHeight;
-            drawing.camera.updateProjectionMatrix();
+  // attach pan / pinch handlers once
+  attachPanHandlers();
 
-            const vFOV = THREE.MathUtils.degToRad(drawing.camera.fov);
-            const viewHeight = 2 * Math.tan(vFOV / 2) * 100;
-            const viewWidth = viewHeight * drawing.camera.aspect;
+  // Optionally start with the skin centered
+  centerSkin();
+  requestRender();
+}
 
-            const imageAspect = img.width / img.height;
+function centerSkin() {
+  // center the skin image at 1:1 scale if larger than canvas; adjust to fit width
+  if (!skinImg || !skinImg.width) return;
+  const cw = canvas.width, ch = canvas.height;
+  const sw = skinImg.width, sh = skinImg.height;
 
-            let planeWidth, planeHeight;
-            if (imageAspect > drawing.camera.aspect) {
-                planeHeight = viewHeight;
-                planeWidth = planeHeight * imageAspect;
-            } else {
-                planeWidth = viewWidth;
-                planeHeight = planeWidth / imageAspect;
-            }
+  // fit width by default (you already resized to ~768, but mobile DPR may vary)
+  const scaleX = cw / sw, scaleY = ch / sh;
+  camera.scale = Math.min(scaleX, scaleY); // contain-fit
+  // place centered
+  camera.x = (cw - sw * camera.scale) * 0.5;
+  camera.y = (ch - sh * camera.scale) * 0.5;
+}
 
-            drawing.skinPanBounds.x = Math.max(0, (planeWidth - viewWidth) / 2);
-            drawing.skinPanBounds.y = Math.max(0, (planeHeight - viewHeight) / 2);
+function attachPanHandlers() {
+  // Avoid duplicate listeners
+  if (canvas.__panHandlersAttached) return;
+  canvas.__panHandlersAttached = true;
 
-            drawing.skinMesh.geometry.dispose();
-            drawing.skinMesh.geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
-            drawing.skinMesh.material.map = tex;
-            drawing.skinMesh.material.color.set(0xffffff);
-            drawing.skinMesh.material.needsUpdate = true;
-        });
+  // Use pointer events for both mouse and touch
+  canvas.addEventListener('pointerdown', onPointerDown, { passive: false });
+  canvas.addEventListener('pointermove', onPointerMove, { passive: false });
+  canvas.addEventListener('pointerup',   onPointerUp,   { passive: false });
+  canvas.addEventListener('pointercancel', onPointerUp, { passive: false });
+  canvas.addEventListener('wheel', onWheelZoom, { passive: false }); // desktop wheel zoom
+}
 
-        // IMPORTANT: for the tattoo we first knock out white → transparent (preview-only)
-        drawing.loadTattooTexture(tattooImageUrl, (tex, img) => {
-            const ar = img.width / img.height;
-            const tattooHeight = 50; // Base size
-            const tattooWidth = tattooHeight * ar;
+function onPointerDown(e) {
+  e.preventDefault();
+  const pt = canvasPointFromClient(e);
+  pointers.set(e.pointerId, pt);
+  canvas.setPointerCapture(e.pointerId);
 
-            drawing.tattooMesh.geometry.dispose();
-            drawing.tattooMesh.geometry = new THREE.PlaneGeometry(tattooWidth, tattooHeight);
-            drawing.tattooMesh.material.map = tex;
-            drawing.tattooMesh.visible = true;
-            drawing.tattooMesh.material.needsUpdate = true;
-        });
+  if (panMode) {
+    if (pointers.size === 1) {
+      pointerDown = true;
+      lastX = pt.x;
+      lastY = pt.y;
+    } else if (pointers.size === 2) {
+      pointerDown = false; // Stop single-finger panning
+      const [a, b] = [...pointers.values()];
+      pinchStartDist = getDistance(a, b);
+      pinchStartScale = camera.scale;
+      pinchCenter = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    }
+  } else { // Tattoo mode
+    if (pointers.size === 1) {
+      isDraggingTattoo = true;
+      lastX = pt.x;
+      lastY = pt.y;
+    } else if (pointers.size === 2) {
+      isDraggingTattoo = false; // Stop single-finger dragging
+      const [a, b] = [...pointers.values()];
+      pinchStartDist = getDistance(a, b);
+      pinchStartScale = tattoo.scale;
+      pinchCenter = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      pinchStartRotation = Math.atan2(b.y - a.y, b.x - a.x);
+      initialTattooAngle = tattoo.angle;
+    }
+  }
+}
 
-        // --- Animation loop ---
-        drawing.renderer.setAnimationLoop(() => drawing.renderer.render(drawing.scene, drawing.camera));
+function onPointerMove(e) {
+  e.preventDefault();
+  if (!pointers.has(e.pointerId)) return;
+  const pt = canvasPointFromClient(e);
+  pointers.set(e.pointerId, pt);
 
-        document.getElementById('drawingSection').style.display = 'block';
-        document.getElementById('drawingSection').scrollIntoView({ behavior: 'smooth' });
+  if (panMode) {
+    if (pointers.size === 1 && pointerDown) {
+      const dx = pt.x - lastX;
+      const dy = pt.y - lastY;
+      camera.x += dx;
+      camera.y += dy;
+      lastX = pt.x;
+      lastY = pt.y;
+      requestRender();
+    } else if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      const dist = getDistance(a, b);
+      if (pinchStartDist > 0) {
+        const scaleFactor = dist / pinchStartDist;
+        const newScale = Math.max(0.3, Math.min(5, pinchStartScale * scaleFactor));
+        const cx = pinchCenter.x, cy = pinchCenter.y;
+        camera.x = cx - (cx - camera.x) * (newScale / camera.scale);
+        camera.y = cy - (cy - camera.y) * (newScale / camera.scale);
+        camera.scale = newScale;
+        requestRender();
+      }
+    }
+  } else { // Tattoo manipulation
+    if (pointers.size === 1 && isDraggingTattoo) {
+      const dx = (pt.x - lastX) / camera.scale;
+      const dy = (pt.y - lastY) / camera.scale;
+      tattoo.x += dx;
+      tattoo.y += dy;
+      lastX = pt.x;
+      lastY = pt.y;
+      requestRender();
+    } else if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      const dist = getDistance(a, b);
+      if (pinchStartDist > 0) {
+        const scaleFactor = dist / pinchStartDist;
+        const newScale = Math.max(0.1, Math.min(5, pinchStartScale * scaleFactor));
 
-        drawing.setupEventListeners();
-    },
+        const canvasPinchX = (a.x + b.x) / 2;
+        const canvasPinchY = (a.y + b.y) / 2;
 
-    loadTexture: (url, cb) => {
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.onload = () => {
-            const tex = new THREE.Texture(img);
-            tex.colorSpace = THREE.SRGBColorSpace;
-            tex.needsUpdate = true;
-            cb(tex, img);
-        };
-        img.src = url;
-    },
+        // Convert pinch center to world coordinates
+        const worldPinchX = (canvasPinchX - camera.x) / camera.scale;
+        const worldPinchY = (canvasPinchY - camera.y) / camera.scale;
 
-    // NEW: tattoo loader that runs client-side white→alpha before creating the texture
-    loadTattooTexture: (url, cb) => {
-        (async () => {
-            try {
-                const cleanedDataUrl = await knockoutWhiteToAlphaClient(url);
-                const img = new Image();
-                img.crossOrigin = "anonymous";
-                img.onload = () => {
-                    const tex = new THREE.Texture(img);
-                    tex.colorSpace = THREE.SRGBColorSpace;
-                    tex.needsUpdate = true;
-                    cb(tex, img);
-                };
-                img.src = cleanedDataUrl;
-            } catch (e) {
-                console.warn('CTA preview cleanup failed, using original tattoo image:', e);
-                // Fallback: load original
-                drawing.loadTexture(url, cb);
-            }
-        })();
-    },
+        // Adjust tattoo position to zoom towards the pinch center
+        tattoo.x = worldPinchX - (worldPinchX - tattoo.x) * (newScale / tattoo.scale);
+        tattoo.y = worldPinchY - (worldPinchY - tattoo.y) * (newScale / tattoo.scale);
 
-    setupEventListeners: () => {
-        const canvas = drawing.renderer.domElement;
-        const rotationSlider = document.getElementById('rotationSlider');
-        const sizeSlider = document.getElementById('sizeSlider');
-        const rotationValue = document.getElementById('rotationValue');
-        const sizeValue = document.getElementById('sizeValue');
-        const drawingTools = document.querySelector('.drawing-tools');
+        tattoo.scale = newScale;
 
-        const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+        const currentRotation = Math.atan2(b.y - a.y, b.x - a.x);
+        const rotationDelta = currentRotation - pinchStartRotation;
+        tattoo.angle = initialTattooAngle + rotationDelta;
 
-        if (isTouchDevice) {
-            drawingTools.style.display = 'none';
-            // Touch event listeners will be added in the next step
-        } else {
-            // Sliders for desktop
-            rotationSlider.addEventListener('input', (e) => {
-                const angle = parseInt(e.target.value, 10);
-                drawing.tattooMesh.rotation.z = THREE.MathUtils.degToRad(angle);
-                rotationValue.textContent = `${angle}°`;
-            });
-            sizeSlider.addEventListener('input', (e) => {
-                const scale = parseFloat(e.target.value) / 100;
-                drawing.tattooMesh.scale.set(scale, scale, scale);
-                sizeValue.textContent = `${Math.round(scale * 100)}%`;
-            });
-        }
+        requestRender();
+      }
+    }
+  }
+}
 
-        // Sliders
-        rotationSlider.addEventListener('input', (e) => {
-            const angle = parseInt(e.target.value, 10);
-            drawing.tattooMesh.rotation.z = THREE.MathUtils.degToRad(angle);
-            rotationValue.textContent = `${angle}°`;
-        });
-        sizeSlider.addEventListener('input', (e) => {
-            const scale = parseFloat(e.target.value) / 100;
-            drawing.tattooMesh.scale.set(scale, scale, scale);
-            sizeValue.textContent = `${Math.round(scale * 100)}%`;
-        });
+function onPointerUp(e) {
+  e.preventDefault();
+  canvas.releasePointerCapture?.(e.pointerId);
+  pointers.delete(e.pointerId);
 
-        // Dragging
-        canvas.addEventListener('pointerdown', drawing.onPointerDown);
-        canvas.addEventListener('pointermove', drawing.onPointerMove);
-        canvas.addEventListener('pointerup', drawing.onPointerUp);
-        canvas.addEventListener('pointerleave', drawing.onPointerUp);
+  // Reset state when no pointers are left
+  if (pointers.size === 0) {
+    pointerDown = false;
+    isDraggingTattoo = false;
+  }
+  // If one pointer remains, transition from pinch to drag
+  else if (pointers.size === 1) {
+    const remainingPointer = [...pointers.values()][0];
+    lastX = remainingPointer.x;
+    lastY = remainingPointer.y;
 
-        // Touch Gestures
-        canvas.addEventListener('touchstart', drawing.onTouchStart);
-        canvas.addEventListener('touchmove', drawing.onTouchMove);
-        canvas.addEventListener('touchend', drawing.onTouchEnd);
-    },
+    // Re-enable the correct drag mode
+    if (panMode) {
+        pointerDown = true;
+        isDraggingTattoo = false; // ensure tattoo drag is off
+    } else {
+        isDraggingTattoo = true;
+        pointerDown = false; // ensure pan drag is off
+    }
+    // Reset pinch state
+    pinchStartDist = 0;
+  }
+}
 
-    onPointerDown: (event) => {
-        if (event.button !== 0) return;
-        const pointer = drawing.pointer;
-        pointer.x = (event.offsetX / drawing.renderer.domElement.clientWidth) * 2 - 1;
-        pointer.y = -(event.offsetY / drawing.renderer.domElement.clientHeight) * 2 + 1;
+function onWheelZoom(e) {
+  if (!panMode) return;
+  e.preventDefault();
+  const pt = canvasPointFromClient(e);
+  const zoom = Math.exp(-e.deltaY / 300); // smooth
+  const newScale = Math.max(0.3, Math.min(5, camera.scale * zoom));
 
-        drawing.raycaster.setFromCamera(pointer, drawing.camera);
-        const tattooIntersects = drawing.raycaster.intersectObject(drawing.tattooMesh);
+  // zoom to cursor
+  const cx = pt.x, cy = pt.y;
+  camera.x = cx - (cx - camera.x) * (newScale / camera.scale);
+  camera.y = cy - (cy - camera.y) * (newScale / camera.scale);
+  camera.scale = newScale;
 
-        if (tattooIntersects.length > 0) {
-            drawing.isDraggingTattoo = true;
-            const intersectPoint = tattooIntersects[0].point;
-            drawing.dragOffset.copy(intersectPoint).sub(drawing.tattooMesh.position);
-        } else {
-            const skinIntersects = drawing.raycaster.intersectObject(drawing.skinMesh);
-            if (skinIntersects.length > 0) {
-                drawing.isDraggingSkin = true;
-                drawing.dragStartPoint.copy(skinIntersects[0].point);
-                drawing.initialSkinPosition.copy(drawing.skinMesh.position);
-            }
-        }
-    },
+  requestRender();
+}
 
-    onPointerMove: (event) => {
-        const pointer = drawing.pointer;
-        pointer.x = (event.offsetX / drawing.renderer.domElement.clientWidth) * 2 - 1;
-        pointer.y = -(event.offsetY / drawing.renderer.domElement.clientHeight) * 2 + 1;
-        drawing.raycaster.setFromCamera(pointer, drawing.camera);
+// === RENDER: apply camera transform to draw skin and tattoo in the same space ===
+function render() {
+  if (!ctx || !canvas) return;
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        if (drawing.isDraggingTattoo) {
-            const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -drawing.tattooMesh.position.z);
-            const intersect = new THREE.Vector3();
-            if (drawing.raycaster.ray.intersectPlane(plane, intersect)) {
-                drawing.tattooMesh.position.copy(intersect).sub(drawing.dragOffset);
-            }
-        } else if (drawing.isDraggingSkin) {
-            const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
-            const intersect = new THREE.Vector3();
-            if (drawing.raycaster.ray.intersectPlane(plane, intersect)) {
-                const delta = new THREE.Vector3().copy(intersect).sub(drawing.dragStartPoint);
-                const newPosition = new THREE.Vector3().copy(drawing.initialSkinPosition).add(delta);
+  // world transform (skin + tattoo move together)
+  ctx.setTransform(camera.scale, 0, 0, camera.scale, camera.x, camera.y);
 
-                drawing.skinMesh.position.x = THREE.MathUtils.clamp(newPosition.x, -drawing.skinPanBounds.x, drawing.skinPanBounds.x);
-                drawing.skinMesh.position.y = THREE.MathUtils.clamp(newPosition.y, -drawing.skinPanBounds.y, drawing.skinPanBounds.y);
-            }
-        }
-    },
+  // draw skin first
+  if (skinImg) {
+    ctx.drawImage(skinImg, 0, 0);
+  }
 
-    onPointerUp: () => {
-        drawing.isDraggingTattoo = false;
-        drawing.isDraggingSkin = false;
-    },
+  // draw tattoo
+  if (tattooImg) {
+    ctx.save();
+    ctx.translate(tattoo.x, tattoo.y);
+    ctx.rotate(tattoo.angle);
+    ctx.scale(tattoo.scale, tattoo.scale);
+    ctx.drawImage(tattooImg, -tattoo.width / 2, -tattoo.height / 2);
+    ctx.restore();
+  }
 
-    onTouchStart: (event) => {
-        event.preventDefault();
-        const canvas = drawing.renderer.domElement;
-        const rect = canvas.getBoundingClientRect();
+  // if you draw guides/selection, draw them here (still in world coords)
+}
 
-        if (event.touches.length === 2) {
-            drawing.isPinching = true;
-            const t0 = event.touches[0];
-            const t1 = event.touches[1];
-            const dx = (t1.clientX - rect.left) - (t0.clientX - rect.left);
-            const dy = (t1.clientY - rect.top) - (t0.clientY - rect.top);
-            drawing.initialPinchDistance = Math.sqrt(dx * dx + dy * dy);
-            drawing.initialRotation = Math.atan2(dy, dx);
-            // Store the state at the beginning of the pinch
-            drawing.initialPinchScale.copy(drawing.tattooMesh.scale);
-            drawing.baseRotation = drawing.tattooMesh.rotation.z;
-        } else if (event.touches.length === 1) {
-            const touch = event.touches[0];
-            const offsetX = touch.clientX - rect.left;
-            const offsetY = touch.clientY - rect.top;
-            drawing.onPointerDown({ button: 0, offsetX, offsetY });
-        }
-    },
+// === MASK: make sure the same camera transform is considered ===
+async function updateMask() {
+  if (!skinImg) return;
+  const offscreenCanvas = document.createElement('canvas');
+  offscreenCanvas.width = skinImg.width;
+  offscreenCanvas.height = skinImg.height;
+  const offscreenCtx = offscreenCanvas.getContext('2d');
 
-    onTouchMove: (event) => {
-        event.preventDefault();
-        const canvas = drawing.renderer.domElement;
-        const rect = canvas.getBoundingClientRect();
+  if (tattooImg) {
+    offscreenCtx.save();
+    // Use the tattoo's world coordinates, scale, and rotation directly
+    offscreenCtx.translate(tattoo.x, tattoo.y);
+    offscreenCtx.rotate(tattoo.angle);
+    offscreenCtx.scale(tattoo.scale, tattoo.scale);
+    offscreenCtx.drawImage(tattooImg, -tattoo.width / 2, -tattoo.height / 2);
+    offscreenCtx.restore();
+  }
 
-        if (drawing.isPinching && event.touches.length === 2) {
-            const t0 = event.touches[0];
-            const t1 = event.touches[1];
-            const dx = (t1.clientX - rect.left) - (t0.clientX - rect.left);
-            const dy = (t1.clientY - rect.top) - (t0.clientY - rect.top);
-            const currentPinchDistance = Math.sqrt(dx * dx + dy * dy);
-            const currentRotation = Math.atan2(dy, dx);
+  const imageData = offscreenCtx.getImageData(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+  const data = imageData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const alpha = data[i + 3];
+    if (alpha > 0) {
+      data[i] = 255;
+      data[i + 1] = 255;
+      data[i + 2] = 255;
+      data[i + 3] = 255;
+    }
+  }
+  offscreenCtx.putImageData(imageData, 0, 0);
 
-            // Scale
-            if (drawing.initialPinchDistance > 0) { // Avoid division by zero
-                const scaleFactor = currentPinchDistance / drawing.initialPinchDistance;
-                drawing.tattooMesh.scale.copy(drawing.initialPinchScale).multiplyScalar(scaleFactor);
-            }
+  window.drawing.selectedArea = offscreenCanvas.toDataURL('image/png');
+}
 
-            // Rotation
-            const rotationDelta = currentRotation - drawing.initialRotation;
-            drawing.tattooMesh.rotation.z = drawing.baseRotation + rotationDelta;
-
-        } else if (event.touches.length === 1) { // Pan with one finger
-            const touch = event.touches[0];
-            const offsetX = touch.clientX - rect.left;
-            const offsetY = touch.clientY - rect.top;
-            drawing.onPointerMove({ offsetX, offsetY });
-        }
-    },
-
-    onTouchEnd: (event) => {
-        event.preventDefault();
-        if (event.touches.length < 2) {
-            drawing.isPinching = false;
-        }
-        drawing.onPointerUp();
-    },
-
-    updateMask: () => {
-        return new Promise((resolve) => {
-            console.log("DEBUG: updateMask started.");
-            if (!drawing.renderer || !drawing.originalImage || !drawing.skinMesh) {
-                console.error("DEBUG: Cannot generate mask: components not initialized.");
-                return resolve();
-            }
-
-            const planeWidth = drawing.skinMesh.geometry.parameters.width;
-            const planeHeight = drawing.skinMesh.geometry.parameters.height;
-            const maskWidth = drawing.originalImage.width;
-            const maskHeight = drawing.originalImage.height;
-
-            console.log(`DEBUG: Generating mask with dimensions: ${maskWidth}x${maskHeight}`);
-
-            const orthoCamera = new THREE.OrthographicCamera(-planeWidth / 2, planeWidth / 2, planeHeight / 2, -planeHeight / 2, 1, 1000);
-            orthoCamera.position.z = 100;
-
-            const maskScene = new THREE.Scene();
-            // The background is intentionally left transparent
-
-            // Clone the tattoo mesh, but use its original material (with the texture)
-            const maskTattoo = drawing.tattooMesh.clone();
-
-            // Manually copy transformations to the clone (position and scale, but not rotation)
-            maskTattoo.position.copy(drawing.tattooMesh.position);
-            maskTattoo.rotation.set(0, 0, 0);
-            maskTattoo.scale.copy(drawing.tattooMesh.scale);
-
-            maskScene.add(maskTattoo);
-
-            const currentRenderTarget = drawing.renderer.getRenderTarget();
-            const renderTarget = new THREE.WebGLRenderTarget(maskWidth, maskHeight);
-            drawing.renderer.setRenderTarget(renderTarget);
-
-            // Clear the render target to transparent before rendering
-            drawing.renderer.setClearColor(0x000000, 0);
-            drawing.renderer.clear();
-
-            drawing.renderer.render(maskScene, orthoCamera);
-
-            const pixels = new Uint8Array(maskWidth * maskHeight * 4);
-            drawing.renderer.readRenderTargetPixels(renderTarget, 0, 0, maskWidth, maskHeight, pixels);
-
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = maskWidth;
-            tempCanvas.height = maskHeight;
-            const ctx = tempCanvas.getContext('2d');
-            const imageData = new ImageData(new Uint8ClampedArray(pixels.buffer), maskWidth, maskHeight);
-
-            createImageBitmap(imageData).then(bitmap => {
-                ctx.scale(1, -1);
-                ctx.translate(0, -maskHeight);
-                ctx.drawImage(bitmap, 0, 0);
-
-                drawing.selectedArea = tempCanvas.toDataURL('image/png');
-                console.log("DEBUG: Mask with transformed texture generated and stored.");
-                console.log(`DEBUG: Generated Mask Data URL: ${drawing.selectedArea}`);
-
-                drawing.renderer.setRenderTarget(currentRenderTarget);
-                renderTarget.dispose();
-
-                resolve();
-            });
-        });
-    },
-
-    clearCanvas: () => {
-        if (drawing.renderer) {
-            drawing.renderer.setAnimationLoop(null);
-            drawing.renderer.dispose();
-            drawing.renderer = null;
-        }
-        drawing.scene = null;
-        drawing.camera = null;
-        drawing.skinMesh = null;
-        drawing.tattooMesh = null;
-        drawing.selectedArea = null;
+// === EXPORT the new API ===
+window.drawing = window.drawing || {};
+window.drawing.setPanMode = setPanMode;
+window.drawing.init = init;
+window.drawing.updateMask = updateMask;
+window.drawing.setTattooRotation = (angle) => {
+    tattoo.angle = angle * (Math.PI / 180);
+    requestRender();
+};
+window.drawing.setTattooScale = (scale) => {
+    tattoo.scale = scale;
+    requestRender();
+};
+window.drawing.clearCanvas = () => {
+    if (ctx) {
+        ctx.setTransform(1,0,0,1,0,0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
 };
 
-window.drawing = drawing;
+
+// If you export via ES module, also export named:
+export { setPanMode, init, updateMask };

@@ -864,6 +864,7 @@
                 STATE.currentImage = resizedFile;
 
                 skinPhotoUploadSection.style.display = 'none';
+                document.getElementById('drawingSection').style.display = 'block';
 
                 if (window.drawing && drawing.init) {
                     const tattooImageUrl = STATE.selectedStencil ? STATE.selectedStencil.imageUrl : STATE.uploadedTattooDesignBase64;

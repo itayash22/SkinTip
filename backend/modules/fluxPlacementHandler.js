@@ -233,15 +233,13 @@ const fluxPlacementHandler = {
   removeImageBackground: async (imageBuffer) => {
     if (!REMOVE_BG_API_KEY) {
       try {
-        const { isUniformWhite } = await detectUniformWhiteBackground(imageBuffer);
-        if (isUniformWhite) {
-          console.log('[BG] Uniform white detected → converting to alpha locally.');
-          return await colorToAlphaWhite(imageBuffer);
-        }
+        // Always try to convert white to alpha as a fallback
+        console.log('[BG] No API key. Attempting local white-to-alpha conversion.');
+        return await colorToAlphaWhite(imageBuffer);
       } catch (e) {
-        console.warn('[BG] local white→alpha probe failed, passing-through:', e.message);
+        console.warn('[BG] local white-to-alpha conversion failed, passing-through:', e.message);
+        return await sharp(imageBuffer).png().toBuffer();
       }
-      return await sharp(imageBuffer).png().toBuffer();
     }
 
     try {
@@ -259,10 +257,13 @@ const fluxPlacementHandler = {
     } catch (error) {
       console.warn('[BG] remove.bg failed; fallback to local:', error.message);
       try {
-        const { isUniformWhite } = await detectUniformWhiteBackground(imageBuffer);
-        if (isUniformWhite) return await colorToAlphaWhite(imageBuffer);
-      } catch (e) {}
-      return await sharp(imageBuffer).png().toBuffer();
+        // As a final fallback, still try the local conversion
+        console.log('[BG] remove.bg failed. Attempting local white-to-alpha conversion.');
+        return await colorToAlphaWhite(imageBuffer);
+      } catch (e) {
+        console.warn('[BG] Final fallback failed. Passing through as PNG.', e.message);
+        return await sharp(imageBuffer).png().toBuffer();
+      }
     }
   },
 

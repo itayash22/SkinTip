@@ -248,6 +248,22 @@
     <script type="module">
         console.log('Main inline script starting...');
 
+        const { call } = await import('https://cdn.jsdelivr.net/npm/wasm-imagemagick/dist/bundles/magick.es.js');
+
+        async function cleanWithMagick(urlOrDataUrl) {
+          const ab = await (await fetch(urlOrDataUrl, { mode: 'cors' })).arrayBuffer();
+          const files = [{ name: 'in.png', content: new Uint8Array(ab) }];
+
+          // -fuzz 10% lets “almost white” go transparent; tweak 5–20% as needed
+          const { outputFiles } = await call(files, ['convert', 'in.png',
+            '-fuzz', '10%', '-transparent', 'white', '-alpha', 'on', 'out.png'
+          ]);
+
+          const out = outputFiles[0];
+          const blob = new Blob([out.content], { type: 'image/png' });
+          return URL.createObjectURL(blob); // or convert to dataURL if you prefer
+        }
+
         async function logUserEvent(eventType, artistId, stencilId) {
             if (!STATE.token) return; // Don't log events for anonymous users
 
@@ -955,7 +971,7 @@
             try {
                 const formData = new FormData();
                 formData.append('skinImage', STATE.currentImage);
-                const tattooImageUrl = STATE.selectedStencil ? STATE.selectedStencil.imageUrl : STATE.uploadedTattooDesignBase64;
+                const tattooImageUrl = window.drawing?.cleanedTattooDataURL || (STATE.selectedStencil ? STATE.selectedStencil.imageUrl : STATE.uploadedTattooDesignBase64);
                 const tattooDesignBlob = await (await fetch(tattooImageUrl)).blob();
                 // Crucial fix: Use the correct original file type, not hardcoded 'image/jpeg'
                 // Ensure the name also suggests PNG if the type is PNG

@@ -97,32 +97,49 @@ function init(skinDataURL, tattooURL) {
     centerSkin();
     requestRender(); // Render the skin immediately
 
-    // 3. Then, load the tattoo image
-    tattooImg = new Image();
-    tattooImg.crossOrigin = 'anonymous';   // avoids toDataURL taint if stencil is remote
-    tattooImg.onload = () => {
-      tattoo.width  = tattooImg.width;
-      tattoo.height = tattooImg.height;
+    // 3. Then, load the tattoo image after cleaning it
+    (async () => {
+        utils.showLoading('Cleaning tattoo image...');
+        try {
+            const cleanedURL = await cleanWithMagick(tattooURL);
+            window.drawing.cleanedTattooDataURL = cleanedURL; // reuse later when posting to backend
 
-      // fit to ~25% of the skin’s shorter side
-      const skinShort = Math.min(skinImg.width, skinImg.height);
-      const desiredTattooW = skinShort * 0.25;
-      baseTattooScale = desiredTattooW / tattoo.width;
-      tattoo.scale = baseTattooScale;
+            tattooImg = new Image();
+            tattooImg.crossOrigin = 'anonymous';
+            tattooImg.onload = () => {
+              utils.hideLoading();
+              tattoo.width  = tattooImg.width;
+              tattoo.height = tattooImg.height;
 
-      // place in the visual center
-      const cx = canvas.clientWidth  / 2;
-      const cy = canvas.clientHeight / 2;
-      tattoo.x = (cx - camera.x) / camera.scale;
-      tattoo.y = (cy - camera.y) / camera.scale;
+              // fit to ~25% of the skin’s shorter side
+              const skinShort = Math.min(skinImg.width, skinImg.height);
+              const desiredTattooW = skinShort * 0.25;
+              baseTattooScale = desiredTattooW / tattoo.width;
+              tattoo.scale = baseTattooScale;
 
-      // reflect 100% in the UI
-      const sizeValue = document.getElementById('sizeValue');
-      if (sizeValue) sizeValue.textContent = '100%';
+              // place in the visual center
+              const cx = canvas.clientWidth  / 2;
+              const cy = canvas.clientHeight / 2;
+              tattoo.x = (cx - camera.x) / camera.scale;
+              tattoo.y = (cy - camera.y) / camera.scale;
 
-      requestRender();
-    };
-    tattooImg.src = tattooURL;
+              // reflect 100% in the UI
+              const sizeValue = document.getElementById('sizeValue');
+              if (sizeValue) sizeValue.textContent = '100%';
+
+              requestRender();
+            };
+            tattooImg.onerror = () => {
+                utils.hideLoading();
+                utils.showError('Failed to load the cleaned tattoo image.');
+            };
+            tattooImg.src = cleanedURL;
+        } catch (error) {
+            utils.hideLoading();
+            utils.showError('Failed to process the tattoo image with ImageMagick.');
+            console.error('ImageMagick error:', error);
+        }
+    })();
   };
   skinImg.src = skinDataURL;
 

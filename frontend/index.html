@@ -248,34 +248,69 @@
     <script type="module">
         console.log('Main inline script starting...');
 
-        // Pin to a specific version
-        const MAGICK_BASE = 'https://cdn.jsdelivr.net/npm/wasm-imagemagick@1.2.0/dist/';
-        // (magickApi.js will fetch magick.js and magick.wasm from this same folder)
-        const { buildInputFile, execute } = await import('https://cdn.jsdelivr.net/npm/wasm-imagemagick@1.2.0/dist/magickApi.js');
+        // ---- White/near-white → alpha (no libs) ----
+        async function cleanStencilWhiteBg(urlOrDataUrl, { soft = 235, hard = 252 } = {}) {
+          // 1) Fetch as blob so we avoid tainted canvas (works for cross-origin URLs)
+          const resp = await fetch(urlOrDataUrl, { mode: 'cors' });
+          const srcBlob = await resp.blob();
 
-        // Make it reachable from your inline code if you prefer:
-        window.Magick = { buildInputFile, execute };
-
-        async function stripStencilBackground(urlOrDataUrl) {
-            // Ensure we have a Blob (avoid tainted canvas; works even for cross-origin stencils)
-            const srcBlob = await (await fetch(urlOrDataUrl, { mode: 'cors' })).blob();
-
-            // Build IM input file from blob
-            const inputFile = await window.Magick.buildInputFile(srcBlob, 'stencil.png');
-
-            // Convert near-white background to transparent; tweak fuzz % as needed
-            const { outputFiles } = await window.Magick.execute({
-              inputFiles: [inputFile],
-              commands: [
-                'convert stencil.png -alpha on -fuzz 10% -transparent white out.png'
-              ]
+          // 2) Decode with EXIF orientation if possible
+          let bmpOrImg;
+          if ('createImageBitmap' in window) {
+            bmpOrImg = await createImageBitmap(srcBlob, { imageOrientation: 'from-image' });
+          } else {
+            bmpOrImg = await new Promise((resolve) => {
+              const im = new Image();
+              im.onload = () => resolve(im);
+              im.src = URL.createObjectURL(srcBlob);
             });
+          }
 
-            // Return a same-origin blob URL you can feed to <img> safely
-            return URL.createObjectURL(outputFiles[0].blob);
+          const w = bmpOrImg.width || bmpOrImg.naturalWidth;
+          const h = bmpOrImg.height || bmpOrImg.naturalHeight;
+
+          // 3) Draw and read pixels
+          const c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          const x = c.getContext('2d', { willReadFrequently: true });
+          x.clearRect(0, 0, w, h);
+          x.drawImage(bmpOrImg, 0, 0, w, h);
+
+          const imgData = x.getImageData(0, 0, w, h);
+          const d = imgData.data;
+
+          // Gentle white→alpha like your backend's colorToAlphaWhite()
+          const ramp = Math.max(1, hard - soft); // softness of the transition
+          for (let i = 0; i < d.length; i += 4) {
+            const R = d[i], G = d[i + 1], B = d[i + 2];
+            const A = d[i + 3];
+
+            const wmax = Math.max(R, G, B);
+            let alpha = A;
+
+            if (wmax >= soft) {
+              const cut = Math.max(0, Math.min(1, (wmax - soft) / ramp)); // 0..1
+              alpha = Math.round(A * (1 - cut));
+              if (wmax >= hard) alpha = 0;
+            }
+
+            // Decontaminate fringing: un-premultiply white from RGB where 0<alpha<255
+            if (alpha > 0 && alpha < 255) {
+              const a = alpha / 255;
+              d[i]     = Math.max(0, Math.min(255, Math.round((R - (1 - a) * 255) / a)));
+              d[i + 1] = Math.max(0, Math.min(255, Math.round((G - (1 - a) * 255) / a)));
+              d[i + 2] = Math.max(0, Math.min(255, Math.round((B - (1 - a) * 255) / a)));
+            }
+
+            d[i + 3] = alpha;
+          }
+
+          x.putImageData(imgData, 0, 0);
+
+          // 4) Return a safe, same-origin blob URL (PNG keeps transparency)
+          const blob = await new Promise(res => c.toBlob(res, 'image/png'));
+          return URL.createObjectURL(blob);
         }
-
-        window.stripStencilBackground = stripStencilBackground;
 
         async function logUserEvent(eventType, artistId, stencilId) {
             if (!STATE.token) return; // Don't log events for anonymous users
@@ -584,35 +619,46 @@
             const stencilGrid = document.getElementById('stencilGrid');
             const closeStencilModalBtn = document.getElementById('closeStencilModalBtn');
 
-            styleChipsContainer.addEventListener('click', (e) => {
+            styleChipsContainer.addEventListener('click', async (e) => {
                 const tattooOfTheDay = e.target.closest('.tattoo-of-the-day');
-                if (tattooOfTheDay) {
-                    const stencilId = tattooOfTheDay.dataset.stencilId;
-                    if (stencilId) {
-                        // Find the stencil in the data
-                        let selectedStencil = null;
-                        for (const style in stencilData) {
-                            const found = stencilData[style].find(s => s.id == stencilId);
-                            if (found) {
-                                selectedStencil = found;
-                                break;
-                            }
+                if (!tattooOfTheDay) return;
+
+                const stencilId = tattooOfTheDay.dataset.stencilId;
+                if (stencilId) {
+                    // Find the stencil in the data
+                    let selectedStencil = null;
+                    for (const style in stencilData) {
+                        const found = stencilData[style].find(s => s.id == stencilId);
+                        if (found) {
+                            selectedStencil = found;
+                            break;
+                        }
+                    }
+
+                    if (selectedStencil) {
+                        logUserEvent('SKETCH_CLICK', selectedStencil.artist.id, selectedStencil.id);
+                        STATE.selectedStencil = selectedStencil;
+
+                        // Clean white background now and store it
+                        try {
+                            utils.showLoading('Cleaning stencil...');
+                            STATE.selectedStencil.cleanedUrl = await cleanStencilWhiteBg(selectedStencil.imageUrl);
+                            utils.hideLoading();
+                        } catch (err) {
+                            utils.hideLoading();
+                            console.warn('BG clean failed; using original:', err);
+                            STATE.selectedStencil.cleanedUrl = selectedStencil.imageUrl;
                         }
 
-                        if (selectedStencil) {
-                            logUserEvent('SKETCH_CLICK', selectedStencil.artist.id, selectedStencil.id);
-                            STATE.selectedStencil = selectedStencil;
+                        // --- Show selected stencil preview ---
+                        const selectedStencilPreview = document.getElementById('selectedStencilPreview');
+                        const selectedStencilPreviewImg = document.getElementById('selectedStencilPreviewImg');
+                        selectedStencilPreviewImg.src = STATE.selectedStencil.cleanedUrl;
+                        selectedStencilPreview.style.display = 'block';
+                        // ---
 
-                            // --- Show selected stencil preview ---
-                            const selectedStencilPreview = document.getElementById('selectedStencilPreview');
-                            const selectedStencilPreviewImg = document.getElementById('selectedStencilPreviewImg');
-                            selectedStencilPreviewImg.src = selectedStencil.imageUrl;
-                            selectedStencilPreview.style.display = 'block';
-                            // ---
-
-                            document.getElementById('styleSelectionSection').style.display = 'none';
-                            document.getElementById('skinPhotoUploadSection').style.display = 'block';
-                        }
+                        document.getElementById('styleSelectionSection').style.display = 'none';
+                        document.getElementById('skinPhotoUploadSection').style.display = 'block';
                     }
                 }
             });
@@ -636,7 +682,7 @@
                 });
             }
 
-            stencilGrid.addEventListener('click', (e) => {
+            stencilGrid.addEventListener('click', async (e) => {
                 const sketchCard = e.target.closest('.sketch-card');
                 if (!sketchCard) return;
 
@@ -656,10 +702,20 @@
                     logUserEvent('SKETCH_CLICK', selectedStencil.artist.id, selectedStencil.id);
                     STATE.selectedStencil = selectedStencil;
 
+                    try {
+                        utils.showLoading('Cleaning stencil...');
+                        STATE.selectedStencil.cleanedUrl = await cleanStencilWhiteBg(selectedStencil.imageUrl);
+                        utils.hideLoading();
+                    } catch (err) {
+                        utils.hideLoading();
+                        console.warn('BG clean failed; using original:', err);
+                        STATE.selectedStencil.cleanedUrl = selectedStencil.imageUrl;
+                    }
+
                     // --- Show selected stencil preview ---
                     const selectedStencilPreview = document.getElementById('selectedStencilPreview');
                     const selectedStencilPreviewImg = document.getElementById('selectedStencilPreviewImg');
-                    selectedStencilPreviewImg.src = selectedStencil.imageUrl;
+                    selectedStencilPreviewImg.src = STATE.selectedStencil.cleanedUrl;
                     selectedStencilPreview.style.display = 'block';
                     // ---
 
@@ -698,7 +754,7 @@
                 reader.onload = async (e) => {
                     const originalDataURL = e.target.result;
                     const resizedDataURL = await resizeImage(originalDataURL, file.type, 768, 768, 0.9);
-                    STATE.uploadedTattooDesignBase64 = resizedDataURL;
+                    STATE.uploadedTattooDesignBase64 = await cleanStencilWhiteBg(resizedDataURL);
 
                     document.getElementById('styleSelectionSection').style.display = 'none';
                     document.getElementById('skinPhotoUploadSection').style.display = 'block';
@@ -896,19 +952,18 @@
                 document.getElementById('drawingSection').style.display = 'block';
 
                 if (window.drawing && drawing.init) {
-                    let tattooImageUrl = STATE.selectedStencil ? STATE.selectedStencil.imageUrl : STATE.uploadedTattooDesignBase64;
+                    const tattooImageUrl =
+                      STATE.selectedStencil?.cleanedUrl
+                      ?? STATE.uploadedTattooDesignBase64
+                      ?? STATE.selectedStencil?.imageUrl;
+
                     if (!tattooImageUrl) {
                         utils.showError('No stencil selected or uploaded. Please go back and choose a stencil or upload one.');
                         return;
                     }
 
-                    // Clean background before initializing the drawing canvas
-                    utils.showLoading('Cleaning tattoo background...');
-                    const cleanedTattooUrl = await window.stripStencilBackground(tattooImageUrl);
-                    utils.hideLoading();
-
                     // Pass both skin and tattoo image URLs to the new init function
-                    drawing.init(resizedDataURL, cleanedTattooUrl);
+                    drawing.init(resizedDataURL, tattooImageUrl);
                 } else {
                     console.error("drawing.js module not loaded correctly or 'drawing' object not exposed.");
                 }
@@ -990,7 +1045,10 @@
             try {
                 const formData = new FormData();
                 formData.append('skinImage', STATE.currentImage);
-                const tattooImageUrl = window.drawing?.cleanedTattooDataURL || (STATE.selectedStencil ? STATE.selectedStencil.imageUrl : STATE.uploadedTattooDesignBase64);
+                const tattooImageUrl =
+                  STATE.selectedStencil?.cleanedUrl
+                  ?? STATE.uploadedTattooDesignBase64
+                  ?? STATE.selectedStencil?.imageUrl;
                 const tattooDesignBlob = await (await fetch(tattooImageUrl)).blob();
                 // Crucial fix: Use the correct original file type, not hardcoded 'image/jpeg'
                 // Ensure the name also suggests PNG if the type is PNG

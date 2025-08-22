@@ -34,6 +34,80 @@ const FLUX_ENGINE_DEFAULT     = (process.env.FLUX_ENGINE || 'kontext').toLowerCa
 // -----------------------------
 // Small helpers
 // -----------------------------
+const FLUX_PROVIDER = (process.env.FLUX_PROVIDER || 'bfl').toLowerCase();
+
+// Candidate endpoints (newer first, legacy second)
+const FLUX_ENDPOINTS = {
+  fill: [
+    'https://api.bfl.ai/v1/flux/inpaint',  // newer naming on many accounts
+    'https://api.bfl.ai/v1/flux-fill'      // legacy naming
+  ],
+  kontext: [
+    'https://api.bfl.ai/v1/flux/kontext-pro', // newer naming
+    'https://api.bfl.ai/v1/flux-kontext-pro'  // legacy naming
+  ]
+};
+
+// Unified headers: send both styles
+function fluxHeaders(key) {
+  const h = { 'Content-Type': 'application/json' };
+  if (key) {
+    h['x-key'] = key;
+    h['Authorization'] = `Bearer ${key}`;
+  }
+  return h;
+}
+
+// Build payloads for both “new” and “legacy” field names
+function buildFillPayloads({ prompt, inputBase64, maskBase64, seed, guidance=5.5 }) {
+  // “new style” (image/mask) first
+  const p1 = {
+    prompt,
+    image: inputBase64,         // PNG/JPG base64 (no data: prefix)
+    mask: maskBase64,           // PNG base64 (no data: prefix)
+    output_format: 'png',
+    n: 1,
+    guidance_scale: guidance,
+    prompt_upsampling: true,
+    safety_tolerance: 2,
+    seed
+  };
+  // “legacy style”
+  const p2 = {
+    prompt,
+    input_image: inputBase64,
+    mask_image: maskBase64,
+    output_format: 'png',
+    n: 1,
+    guidance_scale: guidance,
+    prompt_upsampling: true,
+    safety_tolerance: 2,
+    seed
+  };
+  return [p1, p2];
+}
+
+// Try a list of endpoints and payload shapes until one works
+async function callFluxFillTryAll({ key, endpoints, payloads }) {
+  const headers = fluxHeaders(key);
+  let lastErr;
+  for (const url of endpoints) {
+    for (const body of payloads) {
+      try {
+        const res = await axios.post(url, body, { headers, timeout: 90000 });
+        return { url, data: res.data };
+      } catch (e) {
+        const code = e.response?.status;
+        const msg  = e.response?.data || e.message;
+        console.warn('FLUX post failed', url, code, msg);
+        lastErr = e;
+        // only continue on 404/405/400; throw on 401/403/5xx to surface auth/net issues quickly
+        if (![400,404,405].includes(code)) throw e;
+      }
+    }
+  }
+  throw lastErr || new Error('All FLUX fill endpoints rejected the request.');
+}
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
 async function uploadDebug(imageBuffer, userId, name, contentType = 'image/png', folder = 'debug') {
@@ -503,81 +577,93 @@ const fluxPlacementHandler = {
     const basePrompt =
       'Do not move the tattoo boundary; keep the exact silhouette and footprint. Only change ink texture, tone, and slight feathering at the edge.';
 
-    const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
-
-    const endpoint = 'https://api.bfl.ai/v1/flux-fill'; // Forced to fill engine
-
-    const inputBase64 = compositedForPreview.toString('base64');
-
-    console.log(`Making ${numVariations} calls to FLUX (${endpoint.split('/').pop()})...`);
-
     for (let i = 0; i < numVariations; i++) {
       const seed = Date.now() + i;
 
-      const payload = {
+      // ---- FLUX call(s) (replace your current endpoint/payload build) ----
+      const inputBase64 = compositedForPreview.toString('base64');
+      const maskForFluxB64 = fluxMaskPNG.toString('base64'); // from the earlier mask-prep step we added
+      const fillPayloads = buildFillPayloads({
         prompt: basePrompt,
-        input_image: inputBase64,
-        mask_image: maskForFluxB64,
-        output_format: 'png',
-        n: 1,
-        guidance_scale: 5.5,     // softer than 8.0
-        prompt_upsampling: true,
-        safety_tolerance: 2,
-        seed
-      };
+        inputBase64,
+        maskBase64: maskForFluxB64,
+        seed,
+        guidance: 5.5
+      });
+
+      // prefer inpaint/fill. If you still want kontext fallback, try that afterward.
+      const endpoints = FLUX_ENDPOINTS.fill;
 
       let task;
       try {
-        const res = await axios.post(endpoint, payload, { headers: fluxHeaders, timeout: 90000 });
-        task = res.data;
-        console.log(`DEBUG: FLUX POST status=${res.status} id=${task.id}`);
+        const r = await callFluxFillTryAll({
+          key: fluxApiKey || FLUX_API_KEY,
+          endpoints,
+          payloads: fillPayloads
+        });
+        task = r.data;
+        console.log(`DEBUG: FLUX POST ok via ${r.url} id=${task.id || '(no id)'}`);
       } catch (e) {
-        console.error('FLUX post failed:', e.response?.data || e.message);
-        continue;
+        // optional: try kontext as a second chance
+        console.warn('Fill failed, trying kontext...', e.message);
+        const kontextPayloads = buildFillPayloads({
+          prompt: basePrompt,
+          inputBase64,
+          maskBase64: maskForFluxB64,
+          seed,
+          guidance: 5.5
+        });
+        const r2 = await callFluxFillTryAll({
+          key: fluxApiKey || FLUX_API_KEY,
+          endpoints: FLUX_ENDPOINTS.kontext,
+          payloads: kontextPayloads
+        });
+        task = r2.data;
+        console.log(`DEBUG: FLUX KONTEST POST ok via ${r2.url} id=${task.id || '(no id)'}`);
       }
 
-      if (!task?.polling_url) {
-        console.warn('FLUX: missing polling_url');
-        continue;
-      }
+      if (task?.result?.sample) {
+        const url = task.result.sample;
+        const fluxOutputBuffer = Buffer.from(await (await axios.get(url, { responseType: 'arraybuffer' })).data);
+        const ringMask = await buildEdgeRingMaskPNG(bwMask, 2);
+        const precompositeRing = await sharp(compositedForPreview).composite([{ input: ringMask, blend: 'dest-in' }]).png().toBuffer();
+        const fluxWithAnchoredEdge = await sharp(fluxOutputBuffer).composite([{ input: precompositeRing, blend: 'over' }]).png().toBuffer();
+        const watermarked = await fluxPlacementHandler.applyWatermark(fluxWithAnchoredEdge);
+        const fileName = `tattoo-${uuidv4()}.png`;
+        const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarked, fileName, userId, '', 'image/png');
+        generatedImageUrls.push(publicUrl);
 
-      // Poll
-      let attempts = 0, done = false;
-      while (!done && attempts < 60) {
-        attempts++;
-        await new Promise(r => setTimeout(r, 2000));
-        const poll = await axios.get(task.polling_url, { headers: { 'x-key': fluxApiKey || FLUX_API_KEY }, timeout: 15000 });
-        const data = poll.data;
+      } else if (task?.polling_url) {
+        // your existing polling loop
+        let attempts = 0, done = false;
+        while (!done && attempts < 60) {
+          attempts++;
+          await new Promise(r => setTimeout(r, 2000));
+          const poll = await axios.get(task.polling_url, { headers: fluxHeaders(fluxApiKey || FLUX_API_KEY), timeout: 15000 });
+          const data = poll.data;
 
-        if (data.status === 'Ready') {
-          const url = data.result?.sample;
-          if (!url) { done = true; break; }
-          const fluxOutputBuffer = Buffer.from(await (await axios.get(url, { responseType: 'arraybuffer' })).data);
+          if (data.status === 'Ready') {
+            const url = data.result?.sample;
+            if (!url) { done = true; break; }
+            const fluxOutputBuffer = Buffer.from(await (await axios.get(url, { responseType: 'arraybuffer' })).data);
 
-          // Edge anchor: restore the exact boundary so size cannot drift
-          const ringMask = await buildEdgeRingMaskPNG(bwMask, 2); // 2px ring
+            const ringMask = await buildEdgeRingMaskPNG(bwMask, 2);
+            const precompositeRing = await sharp(compositedForPreview).composite([{ input: ringMask, blend: 'dest-in' }]).png().toBuffer();
+            const fluxWithAnchoredEdge = await sharp(fluxOutputBuffer).composite([{ input: precompositeRing, blend: 'over' }]).png().toBuffer();
+            const watermarked = await fluxPlacementHandler.applyWatermark(fluxWithAnchoredEdge);
 
-          // 1) Cut the “ring only” from the precomposite (the image you sent to FLUX)
-          const precompositeRing = await sharp(compositedForPreview)
-            .composite([{ input: ringMask, blend: 'dest-in' }])
-            .png().toBuffer();
-
-          // 2) Lay that ring OVER the FLUX output
-          const fluxWithAnchoredEdge = await sharp(fluxOutputBuffer) // <- buffer you downloaded from FLUX
-            .composite([{ input: precompositeRing, blend: 'over' }])
-            .png().toBuffer();
-
-          // then watermark + upload this buffer instead of the raw FLUX output
-          const watermarked = await fluxPlacementHandler.applyWatermark(fluxWithAnchoredEdge);
-
-          const fileName = `tattoo-${uuidv4()}.png`;
-          const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarked, fileName, userId, '', 'image/png');
-          generatedImageUrls.push(publicUrl);
-          done = true;
-        } else if (data.status === 'Error' || data.status === 'Content Moderated') {
-          console.warn('FLUX polling end:', data.status, data.details || '');
-          done = true;
+            const fileName = `tattoo-${uuidv4()}.png`;
+            const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarked, fileName, userId, '', 'image/png');
+            generatedImageUrls.push(publicUrl);
+            done = true;
+          } else if (data.status === 'Error' || data.status === 'Content Moderated') {
+            console.warn('FLUX polling end:', data.status, data.details || '');
+            done = true;
+          }
         }
+      } else {
+        console.warn('FLUX: neither result.sample nor polling_url returned.');
+        continue;
       }
     }
 

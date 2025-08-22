@@ -329,7 +329,7 @@ async function updateMask() {
   const offscreenCanvas = document.createElement('canvas');
   offscreenCanvas.width = skinImg.width;
   offscreenCanvas.height = skinImg.height;
-  const offscreenCtx = offscreenCanvas.getContext('2d');
+  const offscreenCtx = offscreenCanvas.getContext('2d', { willReadFrequently: true });
 
   if (tattooImg) {
     offscreenCtx.save();

@@ -248,21 +248,34 @@
     <script type="module">
         console.log('Main inline script starting...');
 
-        const { call } = await import('https://cdn.jsdelivr.net/npm/wasm-imagemagick/dist/bundles/magick.es.js');
+        // Pin to a specific version
+        const MAGICK_BASE = 'https://cdn.jsdelivr.net/npm/wasm-imagemagick@1.2.0/dist/';
+        // (magickApi.js will fetch magick.js and magick.wasm from this same folder)
+        const { buildInputFile, execute } = await import('https://cdn.jsdelivr.net/npm/wasm-imagemagick@1.2.0/dist/magickApi.js');
 
-        async function cleanWithMagick(urlOrDataUrl) {
-          const ab = await (await fetch(urlOrDataUrl, { mode: 'cors' })).arrayBuffer();
-          const files = [{ name: 'in.png', content: new Uint8Array(ab) }];
+        // Make it reachable from your inline code if you prefer:
+        window.Magick = { buildInputFile, execute };
 
-          // -fuzz 10% lets “almost white” go transparent; tweak 5–20% as needed
-          const { outputFiles } = await call(files, ['convert', 'in.png',
-            '-fuzz', '10%', '-transparent', 'white', '-alpha', 'on', 'out.png'
-          ]);
+        async function stripStencilBackground(urlOrDataUrl) {
+            // Ensure we have a Blob (avoid tainted canvas; works even for cross-origin stencils)
+            const srcBlob = await (await fetch(urlOrDataUrl, { mode: 'cors' })).blob();
 
-          const out = outputFiles[0];
-          const blob = new Blob([out.content], { type: 'image/png' });
-          return URL.createObjectURL(blob); // or convert to dataURL if you prefer
+            // Build IM input file from blob
+            const inputFile = await window.Magick.buildInputFile(srcBlob, 'stencil.png');
+
+            // Convert near-white background to transparent; tweak fuzz % as needed
+            const { outputFiles } = await window.Magick.execute({
+              inputFiles: [inputFile],
+              commands: [
+                'convert stencil.png -alpha on -fuzz 10% -transparent white out.png'
+              ]
+            });
+
+            // Return a same-origin blob URL you can feed to <img> safely
+            return URL.createObjectURL(outputFiles[0].blob);
         }
+
+        window.stripStencilBackground = stripStencilBackground;
 
         async function logUserEvent(eventType, artistId, stencilId) {
             if (!STATE.token) return; // Don't log events for anonymous users
@@ -883,13 +896,19 @@
                 document.getElementById('drawingSection').style.display = 'block';
 
                 if (window.drawing && drawing.init) {
-                    const tattooImageUrl = STATE.selectedStencil ? STATE.selectedStencil.imageUrl : STATE.uploadedTattooDesignBase64;
+                    let tattooImageUrl = STATE.selectedStencil ? STATE.selectedStencil.imageUrl : STATE.uploadedTattooDesignBase64;
                     if (!tattooImageUrl) {
                         utils.showError('No stencil selected or uploaded. Please go back and choose a stencil or upload one.');
                         return;
                     }
+
+                    // Clean background before initializing the drawing canvas
+                    utils.showLoading('Cleaning tattoo background...');
+                    const cleanedTattooUrl = await window.stripStencilBackground(tattooImageUrl);
+                    utils.hideLoading();
+
                     // Pass both skin and tattoo image URLs to the new init function
-                    drawing.init(resizedDataURL, tattooImageUrl);
+                    drawing.init(resizedDataURL, cleanedTattooUrl);
                 } else {
                     console.error("drawing.js module not loaded correctly or 'drawing' object not exposed.");
                 }

@@ -495,8 +495,6 @@ const fluxPlacementHandler = {
 
     // Solid BW + small feather
     const bwMask = await makeBinaryBWMask(originalMaskBuffer);
-    const fluxMaskPNG = await featherMask(bwMask, 0.8);
-    const maskForFluxB64 = fluxMaskPNG.toString('base64');
 
     let maskMeta, maskGrayRaw;
     try {
@@ -586,7 +584,7 @@ const fluxPlacementHandler = {
       const fillPayloads = buildFillPayloads({
         prompt: basePrompt,
         inputBase64,
-        maskBase64: maskForFluxB64,
+        maskBase64: maskBase64, // Use the original mask for the API call
         seed,
         guidance: 5.5
       });
@@ -609,7 +607,7 @@ const fluxPlacementHandler = {
         const kontextPayloads = buildFillPayloads({
           prompt: basePrompt,
           inputBase64,
-          maskBase64: maskForFluxB64,
+          maskBase64: maskBase64, // Use the original mask for the API call
           seed,
           guidance: 5.5
         });

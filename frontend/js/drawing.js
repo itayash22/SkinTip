@@ -354,6 +354,29 @@ async function updateMask() {
   }
   offscreenCtx.putImageData(imageData, 0, 0);
 
+  // --- Erode mask by 1px to tighten it ---
+  const id = offscreenCtx.getImageData(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+  const d = id.data;
+  const w = id.width, h = id.height;
+  const copy = new Uint8ClampedArray(d); // snapshot for neighbors
+
+  const isOn = (x,y) => {
+    if (x<0||y<0||x>=w||y>=h) return 0;
+    return copy[(y*w + x)*4 + 3] > 0 ? 1 : 0;
+  };
+
+  // 3x3 min filter (erode by 1px)
+  for (let y=0; y<h; y++) {
+    for (let x=0; x<w; x++) {
+      const a = isOn(x-1,y-1)&isOn(x,y-1)&isOn(x+1,y-1)&
+                isOn(x-1,y  )&isOn(x,y  )&isOn(x+1,y  )&
+                isOn(x-1,y+1)&isOn(x,y+1)&isOn(x+1,y+1);
+      const p = (y*w + x)*4;
+      if (a===0) { d[p]=0; d[p+1]=0; d[p+2]=0; d[p+3]=0; }
+    }
+  }
+  offscreenCtx.putImageData(id, 0, 0);
+
   window.drawing.selectedArea = offscreenCanvas.toDataURL('image/png');
 }
 
@@ -380,6 +403,12 @@ window.drawing.clearCanvas = () => {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
 };
+
+window.drawing.getTattooAngleDeg = () => (tattoo.angle * 180 / Math.PI);
+window.drawing.getPlacedTattooSize = () => ({
+  w: tattoo.width * tattoo.scale,
+  h: tattoo.height * tattoo.scale
+});
 
 
 // If you export via ES module, also export named:

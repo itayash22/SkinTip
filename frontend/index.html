@@ -1063,14 +1063,12 @@
                 }
                 formData.append('mask', maskToSend);
                 formData.append('prompt', '');
-                const rotationSlider = document.getElementById('rotationSlider');
-                const angle = -rotationSlider.value; // Invert the angle for the backend
-                console.log(`DEBUG: Inverting angle. Appending tattooAngle to form data: ${angle}`);
-                formData.append('tattooAngle', angle);
+                // Use the *actual* angle the user placed (pinch or slider), invert to match backend/sharp
+                const actualAngleDeg = (window.drawing.getTattooAngleDeg?.() ?? 0);
+                formData.append('tattooAngle', -actualAngleDeg);
 
-                const sizeSlider = document.getElementById('sizeSlider');
-                const scale = (parseFloat(sizeSlider.value) / 100) * 1.4; // Increase size by another 20% (total 40%)
-                formData.append('tattooScale', scale);
+                // Size is already encoded by your mask. Tell backend "do not rescale".
+                formData.append('tattooScale', '1.0');
 
                 const response = await fetch(`${CONFIG.API_URL}/generate-final-tattoo`, {
                     method: 'POST',

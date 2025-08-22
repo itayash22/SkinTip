@@ -26,6 +26,7 @@ const FLUX_API_KEY = process.env.FLUX_API_KEY;
 // -----------------------------
 const ADAPTIVE_SCALE_ENABLED  = (process.env.ADAPTIVE_SCALE_ENABLED  ?? 'true').toLowerCase() === 'true';
 const ADAPTIVE_ENGINE_ENABLED = (process.env.ADAPTIVE_ENGINE_ENABLED ?? 'true').toLowerCase() === 'true';
+const RESPECT_MASK_SIZE = (process.env.RESPECT_MASK_SIZE ?? 'false').toLowerCase() === 'true';
 const GLOBAL_SCALE_UP         = Number(process.env.MODEL_SCALE_UP   || '1.00'); // optional global bump
 const FLUX_SHRINK_FIX         = Number(process.env.FLUX_SHRINK_FIX  || '1.12'); // <— new: corrects consistent FLUX downsizing
 const FLUX_ENGINE_DEFAULT     = (process.env.FLUX_ENGINE || 'kontext').toLowerCase(); // 'kontext' | 'fill'
@@ -340,10 +341,12 @@ const fluxPlacementHandler = {
       ADAPTIVE_SCALE_ENABLED ? chooseAdaptiveScale(stats) : { scale: 1.00, isThinLine: false, hasHaloSplash: false };
 
     const LOCK_SILHOUETTE = (process.env.LOCK_SILHOUETTE ?? 'false').toLowerCase() === 'true';
-    let engine = LOCK_SILHOUETTE ? 'fill' : pickEngine(FLUX_ENGINE_DEFAULT, ADAPTIVE_ENGINE_ENABLED, isThinLine);
+    const engine = LOCK_SILHOUETTE ? 'fill' : pickEngine(FLUX_ENGINE_DEFAULT, ADAPTIVE_ENGINE_ENABLED, isThinLine);
 
     // final scale factor used when sizing to mask region
-    const EFFECTIVE_SCALE = tattooScale * GLOBAL_SCALE_UP * FLUX_SHRINK_FIX * adaptScale;
+    const shrinkFixUsed = RESPECT_MASK_SIZE ? 1.00 : FLUX_SHRINK_FIX;
+    const adaptScaleUsed = RESPECT_MASK_SIZE ? 1.00 : adaptScale;
+    const EFFECTIVE_SCALE = tattooScale * GLOBAL_SCALE_UP * shrinkFixUsed * adaptScaleUsed;
     console.log(`[ENGINE] chosen=${engine} | tattooScale=${tattooScale.toFixed(3)} | GLOBAL_SCALE_UP=${GLOBAL_SCALE_UP} | FLUX_SHRINK_FIX=${FLUX_SHRINK_FIX} | adaptiveScale=${adaptScale.toFixed(3)} | EFFECTIVE_SCALE=${EFFECTIVE_SCALE.toFixed(3)} | thinLine=${isThinLine} halo=${hasHaloSplash}`);
 
     // --- Prepare mask ---

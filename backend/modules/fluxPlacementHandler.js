@@ -226,6 +226,71 @@ function pickEngine(baseEngine, adaptiveEnabled, isThinLine) {
   return isThinLine ? 'fill' : baseEngine;
 }
 
+async function makeBinaryBWMask(maskPNGBuffer) {
+  const meta = await sharp(maskPNGBuffer).metadata();
+  const w = meta.width|0, h = meta.height|0;
+  const alpha = await sharp(maskPNGBuffer).ensureAlpha().extractChannel('alpha').raw().toBuffer();
+  const N = w*h;
+
+  // Build solid black/white RGBA (opaque)
+  const rgba = Buffer.alloc(N*4);
+  for (let i=0; i<N; i++) {
+    const a = alpha[i] > 0 ? 255 : 0;
+    const p = i*4;
+    rgba[p] = a ? 255 : 0;         // R
+    rgba[p+1] = a ? 255 : 0;       // G
+    rgba[p+2] = a ? 255 : 0;       // B
+    rgba[p+3] = 255;               // fully opaque
+  }
+  return await sharp(rgba, { raw: { width: w, height: h, channels: 4 } }).png().toBuffer();
+}
+
+async function featherMask(maskPNGBuffer, sigma = 0.8) {
+  return sharp(maskPNGBuffer).blur(sigma).png().toBuffer();
+}
+
+async function buildEdgeRingMaskPNG(maskPNGBuffer, ringPx = 2) {
+  const m = await sharp(maskPNGBuffer).metadata();
+  const w = m.width|0, h = m.height|0;
+
+  // binary core (1 inside, 0 outside)
+  const alpha = await sharp(maskPNGBuffer).ensureAlpha().extractChannel('alpha').raw().toBuffer();
+  const N = w*h; const core = new Uint8Array(N);
+  for (let i=0;i<N;i++) core[i] = alpha[i] > 0 ? 1 : 0;
+
+  // cheap dilation by r
+  function dilate(src, r){
+    let cur = Uint8Array.from(src);
+    for (let pass=0; pass<r; pass++){
+      const nxt = Uint8Array.from(cur);
+      for (let y=0;y<h;y++){
+        for (let x=0;x<w;x++){
+          const i = y*w+x;
+          if (cur[i]) continue;
+          for (let yy=-1;yy<=1;yy++){
+            const ny=y+yy; if(ny<0||ny>=h) continue;
+            for (let xx=-1;xx<=1;xx++){
+              const nx=x+xx; if(nx<0||nx>=w) continue;
+              if (cur[ny*w+nx]) { nxt[i]=1; yy=2; break; }
+            }
+          }
+        }
+      }
+      cur = nxt;
+    }
+    return cur;
+  }
+
+  const dil = dilate(core, Math.max(1, Math.round(ringPx)));
+  const ring = Buffer.alloc(N*4); // RGBA
+  for (let i=0;i<N;i++){
+    const on = dil[i] && !core[i] ? 255 : 0;
+    const p=i*4;
+    ring[p]=255; ring[p+1]=255; ring[p+2]=255; ring[p+3]=on;
+  }
+  return sharp(ring, { raw: { width:w, height:h, channels:4 } }).png().toBuffer();
+}
+
 // -----------------------------
 // Public module
 // -----------------------------
@@ -341,16 +406,24 @@ const fluxPlacementHandler = {
       ADAPTIVE_SCALE_ENABLED ? chooseAdaptiveScale(stats) : { scale: 1.00, isThinLine: false, hasHaloSplash: false };
 
     const LOCK_SILHOUETTE = (process.env.LOCK_SILHOUETTE ?? 'false').toLowerCase() === 'true';
-    const engine = LOCK_SILHOUETTE ? 'fill' : pickEngine(FLUX_ENGINE_DEFAULT, ADAPTIVE_ENGINE_ENABLED, isThinLine);
+    let engine = LOCK_SILHOUETTE ? 'fill' : pickEngine(FLUX_ENGINE_DEFAULT, ADAPTIVE_ENGINE_ENABLED, isThinLine);
+    // For this “edit tattoo but keep silhouette” flow, force fill:
+    engine = 'fill';
 
     // final scale factor used when sizing to mask region
     const shrinkFixUsed = RESPECT_MASK_SIZE ? 1.00 : FLUX_SHRINK_FIX;
     const adaptScaleUsed = RESPECT_MASK_SIZE ? 1.00 : adaptScale;
     const EFFECTIVE_SCALE = tattooScale * GLOBAL_SCALE_UP * shrinkFixUsed * adaptScaleUsed;
-    console.log(`[ENGINE] chosen=${engine} | tattooScale=${tattooScale.toFixed(3)} | GLOBAL_SCALE_UP=${GLOBAL_SCALE_UP} | FLUX_SHRINK_FIX=${FLUX_SHRINK_FIX} | adaptiveScale=${adaptScale.toFixed(3)} | EFFECTIVE_SCALE=${EFFECTIVE_SCALE.toFixed(3)} | thinLine=${isThinLine} halo=${hasHaloSplash}`);
+    console.log(`[ENGINE] chosen=${engine} | tattooScale=${tattooScale.toFixed(3)} | GLOBAL_SCALE_UP=${GLOBAL_SCALE_UP} | FLUX_SHRINK_FIX=${shrinkFixUsed.toFixed(3)} | adaptiveScale=${adaptScaleUsed.toFixed(3)} | EFFECTIVE_SCALE=${EFFECTIVE_SCALE.toFixed(3)} | thinLine=${isThinLine} halo=${hasHaloSplash}`);
 
     // --- Prepare mask ---
     const originalMaskBuffer = Buffer.from(maskBase64, 'base64');
+
+    // Solid BW + small feather
+    const bwMask = await makeBinaryBWMask(originalMaskBuffer);
+    const fluxMaskPNG = await featherMask(bwMask, 0.8);
+    const maskForFluxB64 = fluxMaskPNG.toString('base64');
+
     let maskMeta, maskGrayRaw;
     try {
       maskMeta   = await sharp(originalMaskBuffer).metadata();
@@ -428,46 +501,30 @@ const fluxPlacementHandler = {
     // -----------------------------
     const generatedImageUrls = [];
     const basePrompt =
-      'Preserve the exact silhouette, linework, proportions and interior details of the tattoo. Only relight and blend the existing tattoo into the skin. Add realistic lighting, micro-shadowing, slight ink diffusion, and subtle skin texture. Do not redraw or restyle.';
+      'Do not move the tattoo boundary; keep the exact silhouette and footprint. Only change ink texture, tone, and slight feathering at the edge.';
 
     const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
 
-    const endpoint = engine === 'fill'
-      ? 'https://api.bfl.ai/v1/flux-fill'
-      : 'https://api.bfl.ai/v1/flux-kontext-pro';
+    const endpoint = 'https://api.bfl.ai/v1/flux-fill'; // Forced to fill engine
 
     const inputBase64 = compositedForPreview.toString('base64');
-    const maskB64 = maskBase64;
 
     console.log(`Making ${numVariations} calls to FLUX (${endpoint.split('/').pop()})...`);
 
     for (let i = 0; i < numVariations; i++) {
       const seed = Date.now() + i;
 
-      const payload = engine === 'fill'
-        ? {
-            prompt: basePrompt,
-            input_image: inputBase64,
-            mask_image: maskB64,
-            output_format: 'png',
-            n: 1,
-            guidance_scale: 8.0,
-            prompt_upsampling: true,
-            safety_tolerance: 2,
-            seed
-          }
-        : {
-            prompt: basePrompt,
-            input_image: inputBase64,
-            mask_image: maskB64,
-            output_format: 'png',
-            n: 1,
-            fidelity: 0.90,           // slightly higher = a bit more faithful size retention
-            guidance_scale: 8.0,
-            prompt_upsampling: true,
-            safety_tolerance: 2,
-            seed
-          };
+      const payload = {
+        prompt: basePrompt,
+        input_image: inputBase64,
+        mask_image: maskForFluxB64,
+        output_format: 'png',
+        n: 1,
+        guidance_scale: 5.5,     // softer than 8.0
+        prompt_upsampling: true,
+        safety_tolerance: 2,
+        seed
+      };
 
       let task;
       try {
@@ -495,9 +552,24 @@ const fluxPlacementHandler = {
         if (data.status === 'Ready') {
           const url = data.result?.sample;
           if (!url) { done = true; break; }
-          const imgRes = await axios.get(url, { responseType: 'arraybuffer' });
-          const buf = Buffer.from(imgRes.data);
-          const watermarked = await fluxPlacementHandler.applyWatermark(buf);
+          const fluxOutputBuffer = Buffer.from(await (await axios.get(url, { responseType: 'arraybuffer' })).data);
+
+          // Edge anchor: restore the exact boundary so size cannot drift
+          const ringMask = await buildEdgeRingMaskPNG(bwMask, 2); // 2px ring
+
+          // 1) Cut the “ring only” from the precomposite (the image you sent to FLUX)
+          const precompositeRing = await sharp(compositedForPreview)
+            .composite([{ input: ringMask, blend: 'dest-in' }])
+            .png().toBuffer();
+
+          // 2) Lay that ring OVER the FLUX output
+          const fluxWithAnchoredEdge = await sharp(fluxOutputBuffer) // <- buffer you downloaded from FLUX
+            .composite([{ input: precompositeRing, blend: 'over' }])
+            .png().toBuffer();
+
+          // then watermark + upload this buffer instead of the raw FLUX output
+          const watermarked = await fluxPlacementHandler.applyWatermark(fluxWithAnchoredEdge);
+
           const fileName = `tattoo-${uuidv4()}.png`;
           const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarked, fileName, userId, '', 'image/png');
           generatedImageUrls.push(publicUrl);

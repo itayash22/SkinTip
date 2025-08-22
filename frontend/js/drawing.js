@@ -55,7 +55,7 @@ function setPanMode(enabled) {
 }
 
 // === INIT: extend your existing init to capture canvas/context refs ===
-function init(skinDataURL, tattooURL) {
+function init(skinDataURL, cleanedTattooUrl) {
   canvas = document.getElementById('drawingCanvas');
   ctx = canvas.getContext('2d');
 
@@ -68,13 +68,11 @@ function init(skinDataURL, tattooURL) {
     canvas.style.height = h + 'px';
     canvas.width  = Math.floor(w * window.devicePixelRatio);
     canvas.height = Math.floor(h * window.devicePixelRatio);
-    // After resizing the canvas, we need to recenter the skin
     centerSkin();
     requestRender();
   }
   resizeToParent();
 
-  // keep in sync on layout changes
   if (!canvas.__ro){
     const ro = new ResizeObserver(() => resizeToParent());
     ro.observe(parent);
@@ -88,60 +86,38 @@ function init(skinDataURL, tattooURL) {
   Object.assign(camera, { x: 0, y: 0, scale: 1 });
   Object.assign(tattoo, { x: 0, y: 0, scale: 1, angle: 0, width: 0, height: 0 });
 
-
-  // 1. Load skin image first
+  // Load skin image
   skinImg = new Image();
   skinImg.crossOrigin = 'anonymous';
   skinImg.onload = () => {
-    // 2. Once skin is loaded, center the camera
     centerSkin();
-    requestRender(); // Render the skin immediately
-
-    // 3. Then, load the tattoo image after cleaning it
-    (async () => {
-        utils.showLoading('Cleaning tattoo image...');
-        try {
-            const cleanedURL = await cleanWithMagick(tattooURL);
-            window.drawing.cleanedTattooDataURL = cleanedURL; // reuse later when posting to backend
-
-            tattooImg = new Image();
-            tattooImg.crossOrigin = 'anonymous';
-            tattooImg.onload = () => {
-              utils.hideLoading();
-              tattoo.width  = tattooImg.width;
-              tattoo.height = tattooImg.height;
-
-              // fit to ~25% of the skin’s shorter side
-              const skinShort = Math.min(skinImg.width, skinImg.height);
-              const desiredTattooW = skinShort * 0.25;
-              baseTattooScale = desiredTattooW / tattoo.width;
-              tattoo.scale = baseTattooScale;
-
-              // place in the visual center
-              const cx = canvas.clientWidth  / 2;
-              const cy = canvas.clientHeight / 2;
-              tattoo.x = (cx - camera.x) / camera.scale;
-              tattoo.y = (cy - camera.y) / camera.scale;
-
-              // reflect 100% in the UI
-              const sizeValue = document.getElementById('sizeValue');
-              if (sizeValue) sizeValue.textContent = '100%';
-
-              requestRender();
-            };
-            tattooImg.onerror = () => {
-                utils.hideLoading();
-                utils.showError('Failed to load the cleaned tattoo image.');
-            };
-            tattooImg.src = cleanedURL;
-        } catch (error) {
-            utils.hideLoading();
-            utils.showError('Failed to process the tattoo image with ImageMagick.');
-            console.error('ImageMagick error:', error);
-        }
-    })();
+    requestRender();
   };
   skinImg.src = skinDataURL;
+
+  // Load the (already cleaned) tattoo image
+  tattooImg = new Image();
+  tattooImg.onload = () => {
+    tattoo.width  = tattooImg.width;
+    tattoo.height = tattooImg.height;
+
+    // Use a fallback for skin dimensions in case tattoo loads first
+    const skinShort = Math.min(skinImg.width || canvas.width, skinImg.height || canvas.height);
+    const desiredTattooW = skinShort * 0.25;
+    baseTattooScale = desiredTattooW / tattoo.width;
+    tattoo.scale = baseTattooScale;
+
+    const cx = canvas.clientWidth  / 2;
+    const cy = canvas.clientHeight / 2;
+    tattoo.x = (cx - camera.x) / camera.scale;
+    tattoo.y = (cy - camera.y) / camera.scale;
+
+    const sizeValue = document.getElementById('sizeValue');
+    if (sizeValue) sizeValue.textContent = '100%';
+
+    requestRender();
+  };
+  tattooImg.src = cleanedTattooUrl;
 
   attachPanHandlers();
 }

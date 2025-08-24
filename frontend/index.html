@@ -761,6 +761,7 @@
                         console.warn('BG clean failed for uploaded stencil; using original:', err);
                         STATE.uploadedTattooDesignBase64 = resizedDataURL; // Fallback
                     }
+                    STATE.selectedStencil = null; // Clear any gallery selection
 
                     document.getElementById('styleSelectionSection').style.display = 'none';
                     document.getElementById('skinPhotoUploadSection').style.display = 'block';

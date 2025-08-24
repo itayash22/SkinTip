@@ -754,7 +754,13 @@
                 reader.onload = async (e) => {
                     const originalDataURL = e.target.result;
                     const resizedDataURL = await resizeImage(originalDataURL, file.type, 768, 768, 0.9);
-                    STATE.uploadedTattooDesignBase64 = await cleanStencilWhiteBg(resizedDataURL);
+
+                    try {
+                        STATE.uploadedTattooDesignBase64 = await cleanStencilWhiteBg(resizedDataURL);
+                    } catch (err) {
+                        console.warn('BG clean failed for uploaded stencil; using original:', err);
+                        STATE.uploadedTattooDesignBase64 = resizedDataURL; // Fallback
+                    }
 
                     document.getElementById('styleSelectionSection').style.display = 'none';
                     document.getElementById('skinPhotoUploadSection').style.display = 'block';

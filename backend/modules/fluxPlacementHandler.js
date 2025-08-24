@@ -580,11 +580,10 @@ const fluxPlacementHandler = {
 
       // ---- FLUX call(s) (replace your current endpoint/payload build) ----
       const inputBase64 = compositedForPreview.toString('base64');
-      const maskForFluxB64 = fluxMaskPNG.toString('base64'); // from the earlier mask-prep step we added
       const fillPayloads = buildFillPayloads({
         prompt: basePrompt,
         inputBase64,
-        maskBase64: maskBase64, // Use the original mask for the API call
+        maskBase64: maskBase64,
         seed,
         guidance: 5.5
       });

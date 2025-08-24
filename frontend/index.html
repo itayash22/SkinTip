@@ -376,11 +376,8 @@
     ctx.clearRect(0, 0, targetW, targetH);
     draw(ctx, targetW, targetH);
 
-    const outputMimeType =
-      (originalMimeType === 'image/png' || originalMimeType === 'image/webp')
-        ? 'image/png'
-        : 'image/jpeg';
-    const outputQuality = outputMimeType === 'image/jpeg' ? quality : undefined;
+    const outputMimeType = 'image/png';
+    const outputQuality = undefined; // Quality is only for JPEG
 
     return canvas.toDataURL(outputMimeType, outputQuality);
   }

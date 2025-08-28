@@ -327,6 +327,23 @@ const fluxPlacementHandler = {
     const maskMeta = await sharp(originalMaskBuffer).metadata();
     const maskGrayRaw = await sharp(originalMaskBuffer).grayscale().raw().toBuffer();
 
+    function getMaskBBox(buf, w, h) {
+      let minX = w, minY = h, maxX = -1, maxY = -1, found = false;
+      for (let y = 0; y < h; y++) {
+        const row = y * w;
+        for (let x = 0; x < w; x++) {
+          if (buf[row + x] > 0) {
+            found = true;
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+      if (!found) return { isEmpty: true };
+      return { isEmpty: false, minX, minY, maxX, maxY, width: maxX - minX + 1, height: maxY - minY + 1 };
+    }
     const maskBBox = getMaskBBox(maskGrayRaw, maskMeta.width, maskMeta.height);
     if (maskBBox.isEmpty) throw new Error('Mask area is empty.');
 

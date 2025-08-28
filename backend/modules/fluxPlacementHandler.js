@@ -271,7 +271,7 @@ try {
 
         // 4. Prepare for multiple Flux API calls
         const generatedImageUrls = [];
-        const basePrompt = `Make the tattoo look naturally placed on the skin, blend seamlessly on curved skin area, adjust lighting and shadows for realism. Realistic photo, professional tattoo photography, high detail.`; // UserPrompt removed
+        const basePrompt = `Make the tattoo look naturally placed on the skin, blend seamlessly on a curved skin area, adjust lighting and shadows for realism. Realistic photo, professional tattoo photography, high detail.`;
 
         console.log(`Making ${numVariations} calls to Flux API...`);
 

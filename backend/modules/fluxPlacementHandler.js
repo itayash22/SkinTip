@@ -591,33 +591,13 @@ const fluxPlacementHandler = {
       // prefer inpaint/fill. If you still want kontext fallback, try that afterward.
       const endpoints = FLUX_ENDPOINTS.fill;
 
-      let task;
-      try {
-        const r = await callFluxFillTryAll({
-          key: fluxApiKey || FLUX_API_KEY,
-          endpoints,
-          payloads: fillPayloads
-        });
-        task = r.data;
-        console.log(`DEBUG: FLUX POST ok via ${r.url} id=${task.id || '(no id)'}`);
-      } catch (e) {
-        // optional: try kontext as a second chance
-        console.warn('Fill failed, trying kontext...', e.message);
-        const kontextPayloads = buildFillPayloads({
-          prompt: basePrompt,
-          inputBase64,
-          maskBase64: maskBase64, // Use the original mask for the API call
-          seed,
-          guidance: 5.5
-        });
-        const r2 = await callFluxFillTryAll({
-          key: fluxApiKey || FLUX_API_KEY,
-          endpoints: FLUX_ENDPOINTS.kontext,
-          payloads: kontextPayloads
-        });
-        task = r2.data;
-        console.log(`DEBUG: FLUX KONTEST POST ok via ${r2.url} id=${task.id || '(no id)'}`);
-      }
+      const r = await callFluxFillTryAll({
+        key: fluxApiKey || FLUX_API_KEY,
+        endpoints,
+        payloads: fillPayloads
+      });
+      const task = r.data;
+      console.log(`DEBUG: FLUX POST ok via ${r.url} id=${task.id || '(no id)'}`);
 
       if (task?.result?.sample) {
         const url = task.result.sample;

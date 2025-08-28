@@ -1010,6 +1010,7 @@
             STATE.currentMask = drawing.selectedArea;
 
             // --- Display artist info in loading overlay ---
+            console.log('DEBUG: Checking for artist info. STATE.selectedStencil:', STATE.selectedStencil);
             const artistInfo = document.getElementById('artistInfo');
             const artistName = document.getElementById('artistName');
             const artistSketchesGrid = document.getElementById('artistSketchesGrid');

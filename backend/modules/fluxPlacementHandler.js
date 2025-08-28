@@ -324,45 +324,19 @@ async function featherMask(maskPNGBuffer, sigma = 0.8) {
 }
 
 async function buildEdgeRingMaskPNG(maskPNGBuffer, ringPx = 2) {
-  const m = await sharp(maskPNGBuffer).metadata();
-  const w = m.width|0, h = m.height|0;
+  // The core mask (already binary from makeBinaryBWMask)
+  const core = await sharp(maskPNGBuffer).ensureAlpha().toBuffer();
 
-  // binary core (1 inside, 0 outside)
-  const alpha = await sharp(maskPNGBuffer).ensureAlpha().extractChannel('alpha').raw().toBuffer();
-  const N = w*h; const core = new Uint8Array(N);
-  for (let i=0;i<N;i++) core[i] = alpha[i] > 0 ? 1 : 0;
+  // Dilate the core mask to create a slightly larger version
+  const dilated = await sharp(core).dilate(ringPx).toBuffer();
 
-  // cheap dilation by r
-  function dilate(src, r){
-    let cur = Uint8Array.from(src);
-    for (let pass=0; pass<r; pass++){
-      const nxt = Uint8Array.from(cur);
-      for (let y=0;y<h;y++){
-        for (let x=0;x<w;x++){
-          const i = y*w+x;
-          if (cur[i]) continue;
-          for (let yy=-1;yy<=1;yy++){
-            const ny=y+yy; if(ny<0||ny>=h) continue;
-            for (let xx=-1;xx<=1;xx++){
-              const nx=x+xx; if(nx<0||nx>=w) continue;
-              if (cur[ny*w+nx]) { nxt[i]=1; yy=2; break; }
-            }
-          }
-        }
-      }
-      cur = nxt;
-    }
-    return cur;
-  }
+  // Subtract the core from the dilated version to get just the ring
+  const ring = await sharp(dilated)
+    .composite([{ input: core, blend: 'out' }])
+    .png()
+    .toBuffer();
 
-  const dil = dilate(core, Math.max(1, Math.round(ringPx)));
-  const ring = Buffer.alloc(N*4); // RGBA
-  for (let i=0;i<N;i++){
-    const on = dil[i] && !core[i] ? 255 : 0;
-    const p=i*4;
-    ring[p]=255; ring[p+1]=255; ring[p+2]=255; ring[p+3]=on;
-  }
-  return sharp(ring, { raw: { width:w, height:h, channels:4 } }).png().toBuffer();
+  return ring;
 }
 
 // -----------------------------

@@ -371,7 +371,7 @@ const fluxPlacementHandler = {
     const basePrompt = "Blend ONLY inside the mask. Keep the silhouette, proportions and details of the existing tattoo overlay. Do not add or move tattoos outside the masked region. Match lighting, micro-shadows and subtle ink diffusion."; // [CHANGED]
 
     const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
-    const endpoint = 'https://api.bfl.ai/v1/flux-fill'; // [CHANGED] force fill endpoint
+    const endpoint = 'https://api.bfl.ai/v1/flux-pro-1.0-fill'; // [FIXED] force fill endpoint
 
     // [CHANGED] Ensure mask exactly matches input size and is binary 0/255 (white = edit)
     const skin = sharp(skinImageBuffer).ensureAlpha();

@@ -96,7 +96,7 @@ async function detectUniformWhiteBackground(pngBuffer) {
   const mean = [
     (s1.mean[0] + s2.mean[0] + s3.mean[0] + s4.mean[0]) / 4,
     (s1.mean[1] + s2.mean[1] + s3.mean[1] + s4.mean[1]) / 4,
-    (s1.mean[2] + s2.mean[2] + s3.mean[2] + s4.mean[2]) / 4,
+  (s1.mean[2] + s2.mean[2] + s3.mean[2] + s4.mean[2]) / 4,
   ];
   const std = [
     (s1.std[0] + s2.std[0] + s3.std[0] + s4.std[0]) / 4,
@@ -319,8 +319,8 @@ const fluxPlacementHandler = {
     const { scale: adaptScale, isThinLine } = ADAPTIVE_SCALE_ENABLED ? chooseAdaptiveScale(stats) : { scale: 1.0, isThinLine: false };
 
     const LOCK_SILHOUETTE = (process.env.LOCK_SILHOUETTE ?? 'false').toLowerCase() === 'true';
-    const engine = LOCK_SILHOUETTE ? 'fill' : pickEngine(FLUX_ENGINE_DEFAULT, ADAPTIVE_ENGINE_ENABLED, isThinLine);
-
+    // const engine = LOCK_SILHOUETTE ? 'fill' : pickEngine(FLUX_ENGINE_DEFAULT, ADAPTIVE_ENGINE_ENABLED, isThinLine);
+    const engine = 'fill'; // [CHANGED] Hard-lock to masked inpainting
     const EFFECTIVE_SCALE = tattooScale * GLOBAL_SCALE_UP * FLUX_SHRINK_FIX * adaptScale;
 
     const originalMaskBuffer = Buffer.from(maskBase64, 'base64');
@@ -364,19 +364,43 @@ const fluxPlacementHandler = {
       .composite([{ input: rotatedTattoo, left: placementLeft, top: placementTop }])
       .png().toBuffer();
 
-    const compositedForPreview = await sharp(skinImageBuffer).composite([{ input: positionedCanvas, blend: 'over', mask: maskGrayRaw }]).png().toBuffer();
+    const compositedForPreview = await sharp(skinImageBuffer).composite([{ input: positionedCanvas, blend: 'over' /* mask preview not enforced here */ }]).png().toBuffer();
 
     const generatedImageUrls = [];
-    const basePrompt = 'Preserve the exact silhouette, linework, proportions and interior details of the tattoo. Only relight and blend the existing tattoo into the skin. Add realistic lighting, micro-shadowing, slight ink diffusion, and subtle skin texture. Do not redraw or restyle.';
-    //const basePrompt = "put the tattoo over the woman's arm. make it look like a real life tattoo. adjust lighting etc.";
+    // const basePrompt = 'Preserve the exact silhouette, linework, proportions and interior details of the tattoo. Only relight and blend the existing tattoo into the skin. Add realistic lighting, micro-shadowing, slight ink diffusion, and subtle skin texture. Do not redraw or restyle.';
+    const basePrompt = "Blend ONLY inside the mask. Keep the silhouette, proportions and details of the existing tattoo overlay. Do not add or move tattoos outside the masked region. Match lighting, micro-shadows and subtle ink diffusion."; // [CHANGED]
+
     const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
-    const endpoint = engine === 'fill' ? 'https://api.bfl.ai/v1/flux-fill' : 'https://api.bfl.ai/v1/flux-kontext-pro';
+    const endpoint = 'https://api.bfl.ai/v1/flux-fill'; // [CHANGED] force fill endpoint
+
+    // [CHANGED] Ensure mask exactly matches input size and is binary 0/255 (white = edit)
+    const skin = sharp(skinImageBuffer).ensureAlpha();
+    const fixedMaskPng = await sharp(originalMaskBuffer)
+      .ensureAlpha()
+      .resize({ width: (await skin.metadata()).width, height: (await skin.metadata()).height, fit: 'fill' })
+      .threshold(1)
+      .toColourspace('b-w')
+      .png()
+      .toBuffer();
+
     const inputBase64 = compositedForPreview.toString('base64');
+    const maskBase64Fixed = fixedMaskPng.toString('base64');
 
     for (let i = 0; i < numVariations; i++) {
       const seed = Date.now() + i;
-      const payload = engine === 'fill' ? { prompt: basePrompt, input_image: inputBase64, mask_image: maskBase64, output_format: 'png', n: 1, guidance_scale: 8.0, prompt_upsampling: true, safety_tolerance: 2, seed }
-                                        : { prompt: basePrompt, input_image: inputBase64, mask_image: maskBase64, output_format: 'png', n: 1, fidelity: 0.90, guidance_scale: 8.0, prompt_upsampling: true, safety_tolerance: 2, seed };
+
+      // [CHANGED] lower guidance + disable prompt_upsampling to reduce creativity
+      const payload = {
+        prompt: basePrompt,
+        input_image: inputBase64,
+        mask_image: maskBase64Fixed,
+        output_format: 'png',
+        n: 1,
+        guidance_scale: 4.0,       // [CHANGED]
+        prompt_upsampling: false,  // [CHANGED]
+        safety_tolerance: 2,
+        seed
+      };
 
       try {
         const res = await axios.post(endpoint, payload, { headers: fluxHeaders, timeout: 90000 });

@@ -20,7 +20,6 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 // -----------------------------
 const REMOVE_BG_API_KEY = process.env.REMOVE_BG_API_KEY;
 const FLUX_API_KEY = process.env.FLUX_API_KEY;
-const FLUX_API_URL = process.env.FLUX_API_URL;
 
 // -----------------------------
 // Behavior flags
@@ -371,7 +370,7 @@ const fluxPlacementHandler = {
     //const basePrompt = 'Preserve the exact silhouette, linework, proportions and interior details of the tattoo. Only relight and blend the existing tattoo into the skin. Add realistic lighting, micro-shadowing, slight ink diffusion, and subtle skin texture. Do not redraw or restyle.';
     const basePrompt = "put the tattoo over the woman's arm. make it look like a real life tattoo. adjust lighting etc.";
     const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
-    const endpoint = engine === 'fill' ? `${FLUX_API_URL}/flux-fill` : `${FLUX_API_URL}/flux-kontext-pro`;
+    const endpoint = engine === 'fill' ? 'https://api.bfl.ai/v1/flux-fill' : 'https://api.bfl.ai/v1/flux-kontext-pro';
     const inputBase64 = compositedForPreview.toString('base64');
 
     for (let i = 0; i < numVariations; i++) {

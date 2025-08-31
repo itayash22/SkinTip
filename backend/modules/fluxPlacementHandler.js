@@ -26,9 +26,9 @@ const FLUX_API_KEY = process.env.FLUX_API_KEY;
 // -----------------------------
 const ADAPTIVE_SCALE_ENABLED  = (process.env.ADAPTIVE_SCALE_ENABLED  ?? 'true').toLowerCase() === 'true';
 const ADAPTIVE_ENGINE_ENABLED = (process.env.ADAPTIVE_ENGINE_ENABLED ?? 'true').toLowerCase() === 'true';
-const RESPECT_MASK_SIZE       = (process.env.RESPECT_MASK_SIZE ?? 'false').toLowerCase() === 'true';
+const RESPECT_MASK_SIZE = (process.env.RESPECT_MASK_SIZE ?? 'false').toLowerCase() === 'true';
 const GLOBAL_SCALE_UP         = Number(process.env.MODEL_SCALE_UP   || '1.00'); // optional global bump
-const FLUX_SHRINK_FIX         = Number(process.env.FLUX_SHRINK_FIX  || '1.12'); // corrects consistent FLUX downsizing
+const FLUX_SHRINK_FIX         = Number(process.env.FLUX_SHRINK_FIX  || '1.12'); // <— new: corrects consistent FLUX downsizing
 const FLUX_ENGINE_DEFAULT     = (process.env.FLUX_ENGINE || 'kontext').toLowerCase(); // 'kontext' | 'fill'
 
 // -----------------------------
@@ -37,113 +37,63 @@ const FLUX_ENGINE_DEFAULT     = (process.env.FLUX_ENGINE || 'kontext').toLowerCa
 // Weighted mask from placed tattoo alpha
 async function buildWeightedMaskFromPositioned(positionedCanvasPNG) {
   const meta = await sharp(positionedCanvasPNG).metadata();
-  const w = meta.width;
-  const h = meta.height;
+  const w = meta.width, h = meta.height;
 
-  const alpha = await sharp(positionedCanvasPNG)
-    .ensureAlpha()
-    .extractChannel('alpha')
-    .raw()
-    .toBuffer();
+  const alpha = await sharp(positionedCanvasPNG).ensureAlpha().extractChannel('alpha').raw().toBuffer();
+  const hard = await sharp(alpha, { raw: { width: w, height: h, channels: 1 } }).threshold(1).raw().toBuffer();
 
-  // Hard silhouette as 0/255 (raw 1-channel)
-  const hard = await sharp(alpha, { raw: { width: w, height: h, channels: 1 } })
-    .threshold(1)
-    .raw()
-    .toBuffer();
+  const dilated = await sharp(hard, { raw: { width: w, height: h, channels: 1 } }).blur(1.6).threshold(1).raw().toBuffer();
 
-  // Simple "dilate" with blur->threshold
-  const dilated = await sharp(hard, { raw: { width: w, height: h, channels: 1 } })
-    .blur(1.6)
-    .threshold(1)
-    .raw()
-    .toBuffer();
+  const eroded  = await sharp(hard, { raw: { width: w, height: h, channels: 1 } }).blur(1.0).threshold(200).raw().toBuffer();
 
-  // Simple "erode" with stronger threshold
-  const eroded = await sharp(hard, { raw: { width: w, height: h, channels: 1 } })
-    .blur(1.0)
-    .threshold(200)
-    .raw()
-    .toBuffer();
-
-  // Build ring + interior weights
   const N = w * h;
   const ring   = Buffer.alloc(N);
   const inside = Buffer.alloc(N);
   for (let i = 0; i < N; i++) {
     const r = Math.max(0, dilated[i] - eroded[i]); // edge band
-    ring[i]   = r ? 255 : 0;        // strong at edges
-    inside[i] = eroded[i] ? 96 : 0; // soft interior
+    ring[i]   = r ? 255 : 0;   // full strength at edges
+    inside[i] = eroded[i] ? 96 : 0; // soft interior (~38%)
   }
-
   const weighted = Buffer.alloc(N);
   for (let i = 0; i < N; i++) weighted[i] = Math.max(ring[i], inside[i]);
 
-  // Greyscale weighted mask (1-channel PNG)
-  const weightedMaskPNG = await sharp(weighted, { raw: { width: w, height: h, channels: 1 } })
-    .png()
-    .toBuffer();
-
-  // RGBA overlay: black RGB + ring as alpha (for multiply edge restore)
-  const edgeRingRGBAraw = Buffer.alloc(N * 4);
-  for (let i = 0; i < N; i++) {
-    const p = i * 4;
-    edgeRingRGBAraw[p + 0] = 0;
-    edgeRingRGBAraw[p + 1] = 0;
-    edgeRingRGBAraw[p + 2] = 0;
-    edgeRingRGBAraw[p + 3] = ring[i]; // alpha
-  }
-  const edgeRingRGBA = await sharp(edgeRingRGBAraw, { raw: { width: w, height: h, channels: 4 } })
-    .png()
-    .toBuffer();
-
-  // RGBA alpha-only mask for dest-in clamp (white RGB, alpha = hard)
-  const hardSilAlphaRAW = Buffer.alloc(N * 4);
-  for (let i = 0; i < N; i++) {
-    const p = i * 4;
-    hardSilAlphaRAW[p + 0] = 255;
-    hardSilAlphaRAW[p + 1] = 255;
-    hardSilAlphaRAW[p + 2] = 255;
-    hardSilAlphaRAW[p + 3] = hard[i];
-  }
-  const hardSilAlphaPNG = await sharp(hardSilAlphaRAW, { raw: { width: w, height: h, channels: 4 } })
-    .png()
-    .toBuffer();
-
-  return { weightedMaskPNG, edgeRingRGBA, hardSilAlphaPNG, w, h };
+  return {
+    weightedMaskPNG: await sharp(weighted, { raw: { width: w, height: h, channels: 1 } }).png().toBuffer(),
+    edgeRingPNG:     await sharp(ring,     { raw: { width: w, height: h, channels: 1 } }).png().toBuffer(),
+    hardSilPNG:      await sharp(eroded,   { raw: { width: w, height: h, channels: 1 } }).png().toBuffer(),
+    w, h
+  };
 }
 
 // Bake an “already inked” guide (multiply + soft-light)
+// FIX: keep both layers in sRGB with alpha; desaturate instead of converting to "b-w"
 async function bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvasPNG) {
-  // Keep RGBA (not single-channel) so blends respect alpha correctly
-  const tattooGrayRGBA = await sharp(positionedCanvasPNG)
+  const base = sharp(skinImageBuffer).ensureAlpha().toColourspace('srgb');
+
+  const tattooGray = await sharp(positionedCanvasPNG)
     .ensureAlpha()
-    .toColourspace('rgb')
-    .modulate({ brightness: 0.32, saturation: 0 })
+    .toColourspace('srgb')           // stay in sRGB to avoid srgb→rgb route errors
+    .modulate({ saturation: 0, brightness: 0.32 }) // grayscale look without b-w conversion
     .png()
     .toBuffer();
 
-  return sharp(skinImageBuffer)
+  return base
     .composite([
-      { input: tattooGrayRGBA, blend: 'multiply',   opacity: 0.9 },
-      { input: tattooGrayRGBA, blend: 'soft-light', opacity: 0.35 }
+      { input: tattooGray, blend: 'multiply',   opacity: 0.9 },
+      { input: tattooGray, blend: 'soft-light', opacity: 0.35 }
     ])
     .png()
     .toBuffer();
 }
 
 // Clamp FLUX result back to original silhouette + subtle edge restore
-async function clampToSilhouette(fluxPNG, hardSilAlphaPNG, edgeRingRGBA) {
+async function clampToSilhouette(fluxPNG, hardSilPNG, edgeRingPNG) {
   const clamped = await sharp(fluxPNG)
-    .ensureAlpha()
-    .composite([{ input: hardSilAlphaPNG, blend: 'dest-in' }])
-    .png()
-    .toBuffer();
-
+    .composite([{ input: hardSilPNG, blend: 'dest-in' }])
+    .png().toBuffer();
   return sharp(clamped)
-    .composite([{ input: edgeRingRGBA, blend: 'multiply', opacity: 0.15 }])
-    .png()
-    .toBuffer();
+    .composite([{ input: edgeRingPNG, blend: 'multiply', opacity: 0.15 }])
+    .png().toBuffer();
 }
 
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
@@ -208,7 +158,7 @@ async function detectUniformWhiteBackground(pngBuffer) {
   const mean = [
     (s1.mean[0] + s2.mean[0] + s3.mean[0] + s4.mean[0]) / 4,
     (s1.mean[1] + s2.mean[1] + s3.mean[1] + s4.mean[1]) / 4,
-    (s1.mean[2] + s2.mean[2] + s3.mean[2] + s4.mean[2]) / 4,
+  (s1.mean[2] + s2.mean[2] + s3.mean[2] + s4.mean[2]) / 4,
   ];
   const std = [
     (s1.std[0] + s2.std[0] + s3.std[0] + s4.std[0]) / 4,
@@ -260,8 +210,7 @@ async function analyzeTattooAlpha(pngBuffer) {
   // returns { coverage, thinness, solidity, bbox, width, height }
   const img = sharp(pngBuffer).ensureAlpha();
   const meta = await img.metadata();
-  const w = meta.width | 0;
-  const h = meta.height | 0;
+  const w = meta.width | 0, h = meta.height | 0;
 
   const alpha = await img.extractChannel('alpha').raw().toBuffer(); // 1 ch
   const N = w * h;
@@ -275,8 +224,7 @@ async function analyzeTattooAlpha(pngBuffer) {
     mask[i] = v;
     if (v) {
       area++;
-      const y = (i / w) | 0;
-      const x = i - y * w;
+      const y = (i / w) | 0, x = i - y * w;
       if (x < minX) minX = x;
       if (y < minY) minY = y;
       if (x > maxX) maxX = x;
@@ -294,10 +242,9 @@ async function analyzeTattooAlpha(pngBuffer) {
   const solidity = bboxArea > 0 ? area / bboxArea : 0;
 
   // Thinness proxy: average absolute gradient of alpha within bbox
-  let gradAcc = 0;
-  let gradCount = 0;
+  let gradAcc = 0, gradCount = 0;
   for (let y = minY + 1; y < maxY; y++) {
-    const row = y * w;
+    let row = y * w;
     for (let x = minX + 1; x < maxX; x++) {
       const i = row + x;
       gradAcc += Math.abs(alpha[i] - alpha[i - 1]) + Math.abs(alpha[i] - alpha[i - w]);
@@ -373,6 +320,7 @@ const fluxPlacementHandler = {
     } catch (error) {
       console.warn('[BG] remove.bg failed; fallback to local:', error.message);
       try {
+        // As a final fallback, still try the local conversion
         console.log('[BG] remove.bg failed. Attempting local white-to-alpha conversion.');
         return await colorToAlphaWhite(imageBuffer);
       } catch (e) {
@@ -425,26 +373,16 @@ const fluxPlacementHandler = {
     return pub.publicUrl;
   },
 
-  placeTattooOnSkin: async function (
-    skinImageBuffer,
-    tattooDesignImageBase64,
-    maskBase64,
-    userId,
-    numVariations,
-    fluxApiKey,
-    tattooAngle = 0,
-    tattooScale = 1.0
-  ) {
+  placeTattooOnSkin: async function(skinImageBuffer, tattooDesignImageBase64, maskBase64, userId, numVariations, fluxApiKey, tattooAngle = 0, tattooScale = 1.0) {
     const tattooDesignOriginalBuffer = Buffer.from(tattooDesignImageBase64, 'base64');
     const tattooDesignPng = await this.removeImageBackground(tattooDesignOriginalBuffer);
 
     const stats = await analyzeTattooAlpha(tattooDesignPng);
-    const { scale: adaptScale, isThinLine } =
-      ADAPTIVE_SCALE_ENABLED ? chooseAdaptiveScale(stats) : { scale: 1.0, isThinLine: false };
+    const { scale: adaptScale, isThinLine } = ADAPTIVE_SCALE_ENABLED ? chooseAdaptiveScale(stats) : { scale: 1.0, isThinLine: false };
 
     const LOCK_SILHOUETTE = (process.env.LOCK_SILHOUETTE ?? 'false').toLowerCase() === 'true';
     // const engine = LOCK_SILHOUETTE ? 'fill' : pickEngine(FLUX_ENGINE_DEFAULT, ADAPTIVE_ENGINE_ENABLED, isThinLine);
-    const engine = 'fill'; // hard-lock to masked inpainting
+    const engine = 'fill'; // [CHANGED] Hard-lock to masked inpainting
     const EFFECTIVE_SCALE = tattooScale * GLOBAL_SCALE_UP * FLUX_SHRINK_FIX * adaptScale;
 
     const originalMaskBuffer = Buffer.from(maskBase64, 'base64');
@@ -474,143 +412,134 @@ const fluxPlacementHandler = {
     const targetW = Math.round(maskBBox.width * EFFECTIVE_SCALE);
     const targetH = Math.round(maskBBox.height * EFFECTIVE_SCALE);
 
-    const resizedTattoo = await sharp(tattooDesignPng)
-      .resize({ width: targetW, height: targetH, fit: 'inside', withoutEnlargement: false })
-      .toBuffer();
-
-    const rotatedTattoo = await sharp(resizedTattoo)
-      .rotate(tattooAngle, { background: { r: 0, g: 0, b: 0, alpha: 0 } })
-      .toBuffer();
-
+    const resizedTattoo = await sharp(tattooDesignPng).resize({ width: targetW, height: targetH, fit: 'inside', withoutEnlargement: false }).toBuffer();
+    const rotatedTattoo = await sharp(resizedTattoo).rotate(tattooAngle, { background: { r: 0, g: 0, b: 0, alpha: 0 } }).toBuffer();
     const rotMeta = await sharp(rotatedTattoo).metadata();
 
     const centeredLeft = maskBBox.minX + (maskBBox.width - targetW) / 2;
-    const centeredTop  = maskBBox.minY + (maskBBox.height - targetH) / 2;
+    const centeredTop = maskBBox.minY + (maskBBox.height - targetH) / 2;
     const placementLeft = Math.round(centeredLeft - (rotMeta.width - targetW) / 2);
-    const placementTop  = Math.round(centeredTop  - (rotMeta.height - targetH) / 2);
+    const placementTop = Math.round(centeredTop - (rotMeta.height - targetH) / 2);
 
     const skinMeta = await sharp(skinImageBuffer).metadata();
-    const positionedCanvas = await sharp({
-      create: { width: skinMeta.width, height: skinMeta.height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } }
-    })
+    const positionedCanvas = await sharp({ create: { width: skinMeta.width, height: skinMeta.height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
       .composite([{ input: rotatedTattoo, left: placementLeft, top: placementTop }])
-      .png()
-      .toBuffer();
+      .png().toBuffer();
 
-    // Build realism guide + weighted mask so FLUX preserves geometry
-    const generatedImageUrls = [];
+   // Build realism guide + weighted mask so FLUX preserves geometry
+const generatedImageUrls = [];
 
-    const { weightedMaskPNG, edgeRingRGBA, hardSilAlphaPNG } =
-      await buildWeightedMaskFromPositioned(positionedCanvas);
-    await uploadDebug(weightedMaskPNG, userId, 'mask_weighted');
-    await uploadDebug(edgeRingRGBA,     userId, 'mask_edge_ring');
-    await uploadDebug(hardSilAlphaPNG,  userId, 'mask_hard_silhouette');
+const { weightedMaskPNG, edgeRingPNG, hardSilPNG } =
+  await buildWeightedMaskFromPositioned(positionedCanvas);
+await uploadDebug(weightedMaskPNG, userId, 'mask_weighted');
+await uploadDebug(edgeRingPNG,     userId, 'mask_edge_ring');
+await uploadDebug(hardSilPNG,      userId, 'mask_hard_silhouette');
 
-    const guideComposite = await bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvas);
-    await uploadDebug(guideComposite, userId, 'guide_baked');
+const guideComposite = await bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvas);
+await uploadDebug(guideComposite, userId, 'guide_baked');
 
-    // Prompting tuned for "keep pixels, add realism only"
-    const prompt =
-      'Keep the tattoo’s exact geometry and proportions pixel-perfect. Only add realistic under-skin ink diffusion, subtle micro-bleed, lighting and skin texture. No restyle, no resize, no new elements.';
-    const negative =
-      'no redraw, no restyle, no resizing, no thicker lines, no thinner lines, no ornaments, no extra text, no new colors';
+// Prompting tuned for “keep pixels, add realism only”
+const prompt =
+  'Keep the tattoo’s exact geometry and proportions pixel-perfect. Only add realistic under-skin ink diffusion, subtle micro-bleed, lighting and skin texture. No restyle, no resize, no new elements.';
+const negative =
+  'no redraw, no restyle, no resizing, no thicker lines, no thinner lines, no ornaments, no extra text, no new colors';
 
-    const headers = {
-      'Content-Type': 'application/json',
-      'x-key': fluxApiKey || FLUX_API_KEY,
-      'Authorization': `Bearer ${fluxApiKey || FLUX_API_KEY}`
-    };
+const headers = {
+  'Content-Type': 'application/json',
+  'x-key': fluxApiKey || FLUX_API_KEY,
+  'Authorization': `Bearer ${fluxApiKey || FLUX_API_KEY}`
+};
 
-    // Prefer KONText (img2img with fidelity); fall back to fill
-    const imgB64  = guideComposite.toString('base64');
-    const maskB64 = weightedMaskPNG.toString('base64');
+// Prefer KONText (img2img with fidelity); fall back to fill
+const imgB64  = guideComposite.toString('base64');
+const maskB64 = weightedMaskPNG.toString('base64');
 
-    for (let i = 0; i < numVariations; i++) {
-      const seed = Date.now() + i;
+for (let i = 0; i < numVariations; i++) {
+  const seed = Date.now() + i;
 
-      // Try KONText first
-      const kontextPayload = {
-        prompt,
-        negative_prompt: negative,
-        image: imgB64,
-        mask: maskB64,
-        output_format: 'png',
-        fidelity: 0.99,
-        guidance_scale: 5.0,
-        strength: 0.25,
-        prompt_upsampling: true,
-        safety_tolerance: 2,
-        seed
-      };
+  // Try KONText first
+  const kontextPayload = {
+    prompt,
+    negative_prompt: negative,
+    image: imgB64,
+    mask: maskB64,
+    output_format: 'png',
+    fidelity: 0.99,
+    guidance_scale: 5.0,
+    strength: 0.25,
+    prompt_upsampling: true,
+    safety_tolerance: 2,
+    seed
+  };
 
-      let task = null;
-      try {
-        task = (await axios.post('https://api.bfl.ai/v1/flux/kontext-pro', kontextPayload, { headers, timeout: 90000 })).data;
-      } catch (e1) {
-        try {
-          task = (await axios.post('https://api.bfl.ai/v1/flux-kontext-pro', kontextPayload, { headers, timeout: 90000 })).data;
-        } catch (e2) {
-          // fall through to fill
-        }
-      }
-
-      // Fallback to fill with LOW guidance (so it won’t redraw)
-      if (!task) {
-        const fillPayload = {
-          prompt,
-          negative_prompt: negative,
-          image: imgB64,
-          mask: maskB64,
-          output_format: 'png',
-          steps: 28,
-          guidance: 5,
-          safety_tolerance: 2,
-          seed
-        };
-        try {
-          task = (await axios.post('https://api.bfl.ai/v1/flux/fill', fillPayload, { headers, timeout: 90000 })).data;
-        } catch (e3) {
-          try {
-            task = (await axios.post('https://api.bfl.ai/v1/flux-fill', fillPayload, { headers, timeout: 90000 })).data;
-          } catch (e4) {
-            try {
-              task = (await axios.post('https://api.bfl.ai/v1/flux-pro-1.0-fill', fillPayload, { headers, timeout: 90000 })).data;
-            } catch (e5) {
-              // no-op; task stays null
-            }
-          }
-        }
-      }
-      if (!task) continue;
-
-      // Get the image (direct or by polling)
-      let fluxBuf = null;
-      if (task.result?.sample) {
-        const imgRes = await axios.get(task.result.sample, { responseType: 'arraybuffer' });
-        fluxBuf = Buffer.from(imgRes.data);
-      } else if (task.polling_url) {
-        for (let tries = 0; tries < 60 && !fluxBuf; tries++) {
-          await new Promise(r => setTimeout(r, 2000));
-          const poll = await axios.get(task.polling_url, { headers, timeout: 15000 });
-          if (poll.data.status === 'Ready' && poll.data.result?.sample) {
-            const imgRes = await axios.get(poll.data.result.sample, { responseType: 'arraybuffer' });
-            fluxBuf = Buffer.from(imgRes.data);
-            break;
-          }
-          if (poll.data.status === 'Error' || poll.data.status === 'Content Moderated') break;
-        }
-      }
-      if (!fluxBuf) continue;
-
-      // Final safety net: clamp back to your original silhouette
-      const clamped = await clampToSilhouette(fluxBuf, hardSilAlphaPNG, edgeRingRGBA);
-
-      // Watermark + upload
-      const watermarked = await this.applyWatermark(clamped);
-      const fileName = `tattoo-${uuidv4()}.png`;
-      const publicUrl = await this.uploadToSupabaseStorage(watermarked, fileName, userId, '', 'image/png');
-      generatedImageUrls.push(publicUrl);
+  let task = null;
+  try {
+    task = (await axios.post('https://api.bfl.ai/v1/flux/kontext-pro', kontextPayload, { headers, timeout: 90000 })).data;
+  } catch (e1) {
+    try {
+      task = (await axios.post('https://api.bfl.ai/v1/flux-kontext-pro', kontextPayload, { headers, timeout: 90000 })).data;
+    } catch (e2) {
+      // fall through to fill
     }
+  }
+
+  // Fallback to fill with LOW guidance (so it won’t redraw)
+  if (!task) {
+    const fillPayload = {
+      prompt,
+      negative_prompt: negative,
+      image: imgB64,
+      mask: maskB64,
+      output_format: 'png',
+      steps: 28,
+      guidance: 5,
+      safety_tolerance: 2,
+      seed
+    };
+    try {
+      task = (await axios.post('https://api.bfl.ai/v1/flux/fill', fillPayload, { headers, timeout: 90000 })).data;
+    } catch (e3) {
+      try {
+        task = (await axios.post('https://api.bfl.ai/v1/flux-fill', fillPayload, { headers, timeout: 90000 })).data;
+      } catch (e4) {
+        try {
+          task = (await axios.post('https://api.bfl.ai/v1/flux-pro-1.0-fill', fillPayload, { headers, timeout: 90000 })).data;
+        } catch (e5) {
+          // no-op; task stays null
+        }
+      }
+    }
+  }
+  if (!task) continue;
+
+  // Get the image (direct or by polling)
+  let fluxBuf = null;
+  if (task.result?.sample) {
+    const imgRes = await axios.get(task.result.sample, { responseType: 'arraybuffer' });
+    fluxBuf = Buffer.from(imgRes.data);
+  } else if (task.polling_url) {
+    for (let tries = 0; tries < 60 && !fluxBuf; tries++) {
+      await new Promise(r => setTimeout(r, 2000));
+      const poll = await axios.get(task.polling_url, { headers, timeout: 15000 });
+      if (poll.data.status === 'Ready' && poll.data.result?.sample) {
+        const imgRes = await axios.get(poll.data.result.sample, { responseType: 'arraybuffer' });
+        fluxBuf = Buffer.from(imgRes.data);
+        break;
+      }
+      if (poll.data.status === 'Error' || poll.data.status === 'Content Moderated') break;
+    }
+  }
+  if (!fluxBuf) continue;
+
+  // Final safety net: clamp back to your original silhouette
+  const clamped = await clampToSilhouette(fluxBuf, hardSilPNG, edgeRingPNG);
+
+  // Watermark + upload
+  const watermarked = await this.applyWatermark(clamped);
+  const fileName = `tattoo-${uuidv4()}.png`;
+  const publicUrl = await this.uploadToSupabaseStorage(watermarked, fileName, userId, '', 'image/png');
+  generatedImageUrls.push(publicUrl);
+}
 
     if (generatedImageUrls.length === 0) throw new Error('Flux API: No images were generated.');
     return generatedImageUrls;

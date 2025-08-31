@@ -389,15 +389,14 @@ const fluxPlacementHandler = {
     for (let i = 0; i < numVariations; i++) {
       const seed = Date.now() + i;
 
-      // [CHANGED] lower guidance + disable prompt_upsampling to reduce creativity
+      // [FIXED] payload structure to match API documentation
       const payload = {
         prompt: basePrompt,
-        input_image: inputBase64,
-        mask_image: maskBase64Fixed,
+        image: inputBase64,
+        mask: maskBase64Fixed,
         output_format: 'png',
-        n: 1,
-        guidance_scale: 4.0,       // [CHANGED]
-        prompt_upsampling: false,  // [CHANGED]
+        steps: 50,
+        guidance: 30,
         safety_tolerance: 2,
         seed
       };

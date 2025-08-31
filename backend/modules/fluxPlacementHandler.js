@@ -34,6 +34,61 @@ const FLUX_ENGINE_DEFAULT     = (process.env.FLUX_ENGINE || 'kontext').toLowerCa
 // -----------------------------
 // Small helpers
 // -----------------------------
+// Weighted mask from placed tattoo alpha
+async function buildWeightedMaskFromPositioned(positionedCanvasPNG) {
+  const meta = await sharp(positionedCanvasPNG).metadata();
+  const w = meta.width, h = meta.height;
+
+  const alpha = await sharp(positionedCanvasPNG).ensureAlpha().extractChannel('alpha').toBuffer();
+  const hard = await sharp(alpha, { raw: { width: w, height: h, channels: 1 } }).threshold(1).toBuffer();
+
+  const dilated = await sharp(hard, { raw: { width: w, height: h, channels: 1 } }).blur(1.6).threshold(1).toBuffer();
+  const eroded  = await sharp(hard, { raw: { width: w, height: h, channels: 1 } }).blur(1.0).threshold(200).toBuffer();
+
+  const N = w * h;
+  const ring   = Buffer.alloc(N);
+  const inside = Buffer.alloc(N);
+  for (let i = 0; i < N; i++) {
+    const r = Math.max(0, dilated[i] - eroded[i]); // edge band
+    ring[i]   = r ? 255 : 0;   // full strength at edges
+    inside[i] = eroded[i] ? 96 : 0; // soft interior (~38%)
+  }
+  const weighted = Buffer.alloc(N);
+  for (let i = 0; i < N; i++) weighted[i] = Math.max(ring[i], inside[i]);
+
+  return {
+    weightedMaskPNG: await sharp(weighted, { raw: { width: w, height: h, channels: 1 } }).png().toBuffer(),
+    edgeRingPNG:     await sharp(ring,     { raw: { width: w, height: h, channels: 1 } }).png().toBuffer(),
+    hardSilPNG:      await sharp(eroded,   { raw: { width: w, height: h, channels: 1 } }).png().toBuffer(),
+    w, h
+  };
+}
+
+// Bake an “already inked” guide (multiply + soft-light)
+async function bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvasPNG) {
+  const tattooGray = await sharp(positionedCanvasPNG)
+    .toColourspace('b-w')
+    .modulate({ brightness: 0.32, saturation: 0 })
+    .png().toBuffer();
+
+  return sharp(skinImageBuffer)
+    .composite([
+      { input: tattooGray, blend: 'multiply',   opacity: 0.9 },
+      { input: tattooGray, blend: 'soft-light', opacity: 0.35 }
+    ])
+    .png().toBuffer();
+}
+
+// Clamp FLUX result back to original silhouette + subtle edge restore
+async function clampToSilhouette(fluxPNG, hardSilPNG, edgeRingPNG) {
+  const clamped = await sharp(fluxPNG)
+    .composite([{ input: hardSilPNG, blend: 'dest-in' }])
+    .png().toBuffer();
+  return sharp(clamped)
+    .composite([{ input: edgeRingPNG, blend: 'multiply', opacity: 0.15 }])
+    .png().toBuffer();
+}
+
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
 async function uploadDebug(imageBuffer, userId, name, contentType = 'image/png', folder = 'debug') {
@@ -364,74 +419,121 @@ const fluxPlacementHandler = {
       .composite([{ input: rotatedTattoo, left: placementLeft, top: placementTop }])
       .png().toBuffer();
 
-    const compositedForPreview = await sharp(skinImageBuffer).composite([{ input: positionedCanvas, blend: 'over' /* mask preview not enforced here */ }]).png().toBuffer();
+   // Build realism guide + weighted mask so FLUX preserves geometry
+const generatedImageUrls = [];
 
-    const generatedImageUrls = [];
-    // const basePrompt = 'Preserve the exact silhouette, linework, proportions and interior details of the tattoo. Only relight and blend the existing tattoo into the skin. Add realistic lighting, micro-shadowing, slight ink diffusion, and subtle skin texture. Do not redraw or restyle.';
-    const basePrompt = "Blend ONLY inside the mask. Keep the silhouette, proportions and details of the existing tattoo overlay. Do not add or move tattoos outside the masked region. Match lighting, micro-shadows and subtle ink diffusion."; // [CHANGED]
+const { weightedMaskPNG, edgeRingPNG, hardSilPNG } =
+  await buildWeightedMaskFromPositioned(positionedCanvas);
+await uploadDebug(weightedMaskPNG, userId, 'mask_weighted');
+await uploadDebug(edgeRingPNG,     userId, 'mask_edge_ring');
+await uploadDebug(hardSilPNG,      userId, 'mask_hard_silhouette');
 
-    const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
-    const endpoint = 'https://api.bfl.ai/v1/flux-pro-1.0-fill'; // [FIXED] force fill endpoint
+const guideComposite = await bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvas);
+await uploadDebug(guideComposite, userId, 'guide_baked');
 
-    // [CHANGED] Ensure mask exactly matches input size and is binary 0/255 (white = edit)
-    const skin = sharp(skinImageBuffer).ensureAlpha();
-    const fixedMaskPng = await sharp(originalMaskBuffer)
-      .ensureAlpha()
-      .resize({ width: (await skin.metadata()).width, height: (await skin.metadata()).height, fit: 'fill' })
-      .threshold(1)
-      .toColourspace('b-w')
-      .png()
-      .toBuffer();
+// Prompting tuned for “keep pixels, add realism only”
+const prompt =
+  'Keep the tattoo’s exact geometry and proportions pixel-perfect. Only add realistic under-skin ink diffusion, subtle micro-bleed, lighting and skin texture. No restyle, no resize, no new elements.';
+const negative =
+  'no redraw, no restyle, no resizing, no thicker lines, no thinner lines, no ornaments, no extra text, no new colors';
 
-    const inputBase64 = compositedForPreview.toString('base64');
-    const maskBase64Fixed = fixedMaskPng.toString('base64');
+const headers = {
+  'Content-Type': 'application/json',
+  'x-key': fluxApiKey || FLUX_API_KEY,
+  'Authorization': `Bearer ${fluxApiKey || FLUX_API_KEY}`
+};
 
-    for (let i = 0; i < numVariations; i++) {
-      const seed = Date.now() + i;
+// Prefer KONText (img2img with fidelity); fall back to fill
+const imgB64  = guideComposite.toString('base64');
+const maskB64 = weightedMaskPNG.toString('base64');
 
-      // [FIXED] payload structure to match API documentation
-      const payload = {
-        prompt: basePrompt,
-        image: inputBase64,
-        mask: maskBase64Fixed,
-        output_format: 'png',
-        steps: 50,
-        guidance: 30,
-        safety_tolerance: 2,
-        seed
-      };
+for (let i = 0; i < numVariations; i++) {
+  const seed = Date.now() + i;
 
+  // Try KONText first
+  const kontextPayload = {
+    prompt,
+    negative_prompt: negative,
+    image: imgB64,
+    mask: maskB64,
+    output_format: 'png',
+    fidelity: 0.99,
+    guidance_scale: 5.0,
+    strength: 0.25,
+    prompt_upsampling: true,
+    safety_tolerance: 2,
+    seed
+  };
+
+  let task = null;
+  try {
+    task = (await axios.post('https://api.bfl.ai/v1/flux/kontext-pro', kontextPayload, { headers, timeout: 90000 })).data;
+  } catch (e1) {
+    try {
+      task = (await axios.post('https://api.bfl.ai/v1/flux-kontext-pro', kontextPayload, { headers, timeout: 90000 })).data;
+    } catch (e2) {
+      // fall through to fill
+    }
+  }
+
+  // Fallback to fill with LOW guidance (so it won’t redraw)
+  if (!task) {
+    const fillPayload = {
+      prompt,
+      negative_prompt: negative,
+      image: imgB64,
+      mask: maskB64,
+      output_format: 'png',
+      steps: 28,
+      guidance: 5,
+      safety_tolerance: 2,
+      seed
+    };
+    try {
+      task = (await axios.post('https://api.bfl.ai/v1/flux/fill', fillPayload, { headers, timeout: 90000 })).data;
+    } catch (e3) {
       try {
-        const res = await axios.post(endpoint, payload, { headers: fluxHeaders, timeout: 90000 });
-        const task = res.data;
-        if (!task?.polling_url) continue;
-
-        let attempts = 0, done = false;
-        while (!done && attempts < 60) {
-          attempts++;
-          await new Promise(r => setTimeout(r, 2000));
-          const poll = await axios.get(task.polling_url, { headers: { 'x-key': fluxApiKey || FLUX_API_KEY }, timeout: 15000 });
-          const data = poll.data;
-          if (data.status === 'Ready') {
-            const url = data.result?.sample;
-            if (url) {
-              const imgRes = await axios.get(url, { responseType: 'arraybuffer' });
-              const buf = Buffer.from(imgRes.data);
-              const watermarked = await this.applyWatermark(buf);
-              const fileName = `tattoo-${uuidv4()}.png`;
-              const publicUrl = await this.uploadToSupabaseStorage(watermarked, fileName, userId, '', 'image/png');
-              generatedImageUrls.push(publicUrl);
-            }
-            done = true;
-          } else if (data.status === 'Error' || data.status === 'Content Moderated') {
-            done = true;
-          }
+        task = (await axios.post('https://api.bfl.ai/v1/flux-fill', fillPayload, { headers, timeout: 90000 })).data;
+      } catch (e4) {
+        try {
+          task = (await axios.post('https://api.bfl.ai/v1/flux-pro-1.0-fill', fillPayload, { headers, timeout: 90000 })).data;
+        } catch (e5) {
+          // no-op; task stays null
         }
-      } catch (e) {
-        console.error('FLUX post or poll failed:', e.response?.data || e.message);
-        continue;
       }
     }
+  }
+  if (!task) continue;
+
+  // Get the image (direct or by polling)
+  let fluxBuf = null;
+  if (task.result?.sample) {
+    const imgRes = await axios.get(task.result.sample, { responseType: 'arraybuffer' });
+    fluxBuf = Buffer.from(imgRes.data);
+  } else if (task.polling_url) {
+    for (let tries = 0; tries < 60 && !fluxBuf; tries++) {
+      await new Promise(r => setTimeout(r, 2000));
+      const poll = await axios.get(task.polling_url, { headers, timeout: 15000 });
+      if (poll.data.status === 'Ready' && poll.data.result?.sample) {
+        const imgRes = await axios.get(poll.data.result.sample, { responseType: 'arraybuffer' });
+        fluxBuf = Buffer.from(imgRes.data);
+        break;
+      }
+      if (poll.data.status === 'Error' || poll.data.status === 'Content Moderated') break;
+    }
+  }
+  if (!fluxBuf) continue;
+
+  // Final safety net: clamp back to your original silhouette
+  const clamped = await clampToSilhouette(fluxBuf, hardSilPNG, edgeRingPNG);
+
+  // Watermark + upload
+  const watermarked = await this.applyWatermark(clamped);
+  const fileName = `tattoo-${uuidv4()}.png`;
+  const publicUrl = await this.uploadToSupabaseStorage(watermarked, fileName, userId, '', 'image/png');
+  generatedImageUrls.push(publicUrl);
+}
+
     if (generatedImageUrls.length === 0) throw new Error('Flux API: No images were generated.');
     return generatedImageUrls;
   }

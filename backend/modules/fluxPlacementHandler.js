@@ -39,7 +39,7 @@ async function buildWeightedMaskFromPositioned(positionedCanvasPNG) {
   const meta = await sharp(positionedCanvasPNG).metadata();
   const w = meta.width, h = meta.height;
 
-  const alpha = await sharp(positionedCanvasPNG).ensureAlpha().extractChannel('alpha').toBuffer();
+  const alpha = await sharp(positionedCanvasPNG).ensureAlpha().extractChannel('alpha').raw().toBuffer();
   const hard = await sharp(alpha, { raw: { width: w, height: h, channels: 1 } }).threshold(1).raw().toBuffer();
 
   const dilated = await sharp(hard, { raw: { width: w, height: h, channels: 1 } }).blur(1.6).threshold(1).raw().toBuffer();

@@ -44,7 +44,7 @@ async function buildWeightedMaskFromPositioned(positionedCanvasPNG) {
 
   const dilated = await sharp(hard, { raw: { width: w, height: h, channels: 1 } }).blur(1.6).threshold(1).raw().toBuffer();
 
-  // (kept your change) "eroded" from median; still used for the soft interior of the weighted mask
+  // (kept) median for soft interior weighting
   const eroded  = await sharp(hard, { raw: { width: w, height: h, channels: 1 } }).median(3).raw().toBuffer();
 
   const N = w * h;
@@ -58,7 +58,7 @@ async function buildWeightedMaskFromPositioned(positionedCanvasPNG) {
   const weighted = Buffer.alloc(N);
   for (let i = 0; i < N; i++) weighted[i] = Math.max(ring[i], inside[i]);
 
-  // NEW: produce a **hard binary mask** (slightly dilated) specifically for FLUX
+  // NEW: hard binary mask (slightly dilated) specifically for FLUX
   const hardBinaryPNG = await sharp(hard, { raw: { width: w, height: h, channels: 1 } }).png().toBuffer();
   const hardFluxMaskPNG = await sharp(hardBinaryPNG).blur(0.8).threshold(1).png().toBuffer();
 
@@ -66,27 +66,26 @@ async function buildWeightedMaskFromPositioned(positionedCanvasPNG) {
     weightedMaskPNG: await sharp(weighted, { raw: { width: w, height: h, channels: 1 } }).png().toBuffer(),
     edgeRingPNG:     await sharp(ring,     { raw: { width: w, height: h, channels: 1 } }).png().toBuffer(),
     hardSilPNG:      await sharp(eroded,   { raw: { width: w, height: h, channels: 1 } }).png().toBuffer(),
-    // NEW: the binary mask to actually send to FLUX
     hardFluxMaskPNG,
     w, h
   };
 }
 
 // Bake an “already inked” guide (multiply + soft-light)
-// FIX: keep both layers in sRGB with alpha; DESATURATE and keep it LIGHT, so the init image isn’t near-black.
+// keep sRGB, keep it LIGHT to avoid near-black init
 async function bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvasPNG) {
   const base = sharp(skinImageBuffer).ensureAlpha().toColourspace('srgb');
 
   const tattooGray = await sharp(positionedCanvasPNG)
     .ensureAlpha()
     .toColourspace('srgb')
-    .modulate({ saturation: 0, brightness: 0.6 }) // was 0.32 → too dark; keep it visible
+    .modulate({ saturation: 0, brightness: 0.6 }) // lighter than 0.32
     .png()
     .toBuffer();
 
   return base
     .composite([
-      { input: tattooGray, blend: 'multiply',   opacity: 0.55 }, // was 0.9 → too heavy
+      { input: tattooGray, blend: 'multiply',   opacity: 0.55 }, // lighter composite
       { input: tattooGray, blend: 'soft-light', opacity: 0.25 }
     ])
     .png()
@@ -441,7 +440,6 @@ const { weightedMaskPNG, edgeRingPNG, hardSilPNG, hardFluxMaskPNG } =
 await uploadDebug(weightedMaskPNG,  userId, 'mask_weighted');
 await uploadDebug(edgeRingPNG,      userId, 'mask_edge_ring');
 await uploadDebug(hardSilPNG,       userId, 'mask_hard_silhouette');
-// NEW: debug the actual mask we send to FLUX
 await uploadDebug(hardFluxMaskPNG,  userId, 'mask_flux_binary');
 
 const guideComposite = await bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvas);
@@ -459,10 +457,67 @@ const headers = {
   'Authorization': `Bearer ${fluxApiKey || FLUX_API_KEY}`
 };
 
+// util: some FLUX routes want a data URI, some return direct base64 or arrays
+const asDataUri = (buf) => `data:image/png;base64,${buf.toString('base64')}`;
+
+async function extractFluxImageBuffer(taskOrData) {
+  const data = taskOrData;
+
+  // direct sample URL
+  if (data?.result?.sample || data?.sample) {
+    const url = data?.result?.sample || data?.sample;
+    const imgRes = await axios.get(url, { responseType: 'arraybuffer' });
+    return Buffer.from(imgRes.data);
+  }
+
+  // direct base64 fields
+  const base64 =
+    data?.result?.image ||
+    data?.result?.images?.[0] ||
+    data?.image ||
+    data?.images?.[0] ||
+    data?.output?.[0]?.base64 ||
+    data?.result?.samples?.[0]?.base64;
+  if (base64) {
+    const b64 = base64.startsWith('data:') ? base64.split(',')[1] : base64;
+    return Buffer.from(b64, 'base64');
+  }
+
+  // task with polling_url
+  if (data?.polling_url) {
+    for (let tries = 0; tries < 60; tries++) {
+      await new Promise(r => setTimeout(r, 2000));
+      const poll = await axios.get(data.polling_url, { headers, timeout: 15000 });
+      const pd = poll.data;
+
+      if (pd.status === 'Ready') {
+        if (pd.result?.sample) {
+          const imgRes = await axios.get(pd.result.sample, { responseType: 'arraybuffer' });
+          return Buffer.from(imgRes.data);
+        }
+        const pb64 =
+          pd?.result?.image ||
+          pd?.result?.images?.[0] ||
+          pd?.image ||
+          pd?.images?.[0] ||
+          pd?.output?.[0]?.base64 ||
+          pd?.result?.samples?.[0]?.base64;
+        if (pb64) {
+          const b64 = pb64.startsWith('data:') ? pb64.split(',')[1] : pb64;
+          return Buffer.from(b64, 'base64');
+        }
+        break;
+      }
+      if (pd.status === 'Error' || pd.status === 'Content Moderated') break;
+    }
+  }
+
+  return null;
+}
+
 // Prefer KONText (img2img with fidelity); fall back to fill
-const imgB64  = guideComposite.toString('base64');
-// IMPORTANT: use the **binary** mask for FLUX
-const maskB64 = hardFluxMaskPNG.toString('base64');
+const imgDataUri  = asDataUri(guideComposite);      // data URI
+const maskDataUri = asDataUri(hardFluxMaskPNG);     // data URI (white=edit)
 
 for (let i = 0; i < numVariations; i++) {
   const seed = Date.now() + i;
@@ -471,73 +526,70 @@ for (let i = 0; i < numVariations; i++) {
   const kontextPayload = {
     prompt,
     negative_prompt: negative,
-    image: imgB64,
-    mask: maskB64,
+    image: imgDataUri,
+    mask: maskDataUri,
     output_format: 'png',
     fidelity: 0.99,
-    guidance_scale: 4.0,   // slightly lower; avoids over-darkening
-    strength: 0.15,        // lower than before; keeps original pixels
+    guidance_scale: 4.0,
+    strength: 0.15,
     prompt_upsampling: true,
-    safety_tolerance: 2,
+    safety_tolerance: 6,   // a bit looser so skin doesn’t get moderated
     seed
   };
 
   let task = null;
   try {
-    task = (await axios.post('https://api.bfl.ai/v1/flux/kontext-pro', kontextPayload, { headers, timeout: 90000 })).data;
+    const r1 = await axios.post('https://api.bfl.ai/v1/flux/kontext-pro', kontextPayload, { headers, timeout: 120000 });
+    task = r1.data;
   } catch (e1) {
+    console.warn('KONText POST failed (primary):', e1.response?.status, e1.response?.data || e1.message);
     try {
-      task = (await axios.post('https://api.bfl.ai/v1/flux-kontext-pro', kontextPayload, { headers, timeout: 90000 })).data;
+      const r2 = await axios.post('https://api.bfl.ai/v1/flux-kontext-pro', kontextPayload, { headers, timeout: 120000 });
+      task = r2.data;
     } catch (e2) {
-      // fall through to fill
+      console.warn('KONText POST failed (alt):', e2.response?.status, e2.response?.data || e2.message);
     }
   }
 
-  // Fallback to fill with LOW guidance (so it won’t redraw)
   if (!task) {
     const fillPayload = {
       prompt,
       negative_prompt: negative,
-      image: imgB64,
-      mask: maskB64,
+      image: imgDataUri,
+      mask: maskDataUri,
       output_format: 'png',
       steps: 28,
-      guidance: 4,          // lower guidance → less hallucination/black
-      safety_tolerance: 2,
+      guidance: 4,        // low guidance so it blends instead of redrawing
+      safety_tolerance: 6,
       seed
     };
     try {
-      task = (await axios.post('https://api.bfl.ai/v1/flux/fill', fillPayload, { headers, timeout: 90000 })).data;
+      const f1 = await axios.post('https://api.bfl.ai/v1/flux/fill', fillPayload, { headers, timeout: 120000 });
+      task = f1.data;
     } catch (e3) {
+      console.warn('Fill POST failed (primary):', e3.response?.status, e3.response?.data || e3.message);
       try {
-        task = (await axios.post('https://api.bfl.ai/v1/flux-fill', fillPayload, { headers, timeout: 90000 })).data;
+        const f2 = await axios.post('https://api.bfl.ai/v1/flux-fill', fillPayload, { headers, timeout: 120000 });
+        task = f2.data;
       } catch (e4) {
+        console.warn('Fill POST failed (alt1):', e4.response?.status, e4.response?.data || e4.message);
         try {
-          task = (await axios.post('https://api.bfl.ai/v1/flux-pro-1.0-fill', fillPayload, { headers, timeout: 90000 })).data;
+          const f3 = await axios.post('https://api.bfl.ai/v1/flux-pro-1.0-fill', fillPayload, { headers, timeout: 120000 });
+          task = f3.data;
         } catch (e5) {
-          // no-op; task stays null
+          console.warn('Fill POST failed (alt2):', e5.response?.status, e5.response?.data || e5.message);
         }
       }
     }
   }
   if (!task) continue;
 
-  // Get the image (direct or by polling)
+  // Get the image (direct, array, base64, or via polling)
   let fluxBuf = null;
-  if (task.result?.sample) {
-    const imgRes = await axios.get(task.result.sample, { responseType: 'arraybuffer' });
-    fluxBuf = Buffer.from(imgRes.data);
-  } else if (task.polling_url) {
-    for (let tries = 0; tries < 60 && !fluxBuf; tries++) {
-      await new Promise(r => setTimeout(r, 2000));
-      const poll = await axios.get(task.polling_url, { headers, timeout: 15000 });
-      if (poll.data.status === 'Ready' && poll.data.result?.sample) {
-        const imgRes = await axios.get(poll.data.result.sample, { responseType: 'arraybuffer' });
-        fluxBuf = Buffer.from(imgRes.data);
-        break;
-      }
-      if (poll.data.status === 'Error' || poll.data.status === 'Content Moderated') break;
-    }
+  try {
+    fluxBuf = await extractFluxImageBuffer(task);
+  } catch (ex) {
+    console.warn('extractFluxImageBuffer error:', ex.message);
   }
   if (!fluxBuf) continue;
 

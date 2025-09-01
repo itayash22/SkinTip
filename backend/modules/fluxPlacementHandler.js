@@ -44,7 +44,7 @@ async function buildWeightedMaskFromPositioned(positionedCanvasPNG) {
 
   const dilated = await sharp(hard, { raw: { width: w, height: h, channels: 1 } }).blur(1.6).threshold(1).raw().toBuffer();
 
-  const eroded  = await sharp(hard, { raw: { width: w, height: h, channels: 1 } }).blur(1.0).threshold(128).raw().toBuffer();
+  const eroded  = await sharp(hard, { raw: { width: w, height: h, channels:1 } }).morphology('erode', sharp.kernel('square', 3)).raw().toBuffer();
 
   const N = w * h;
   const ring   = Buffer.alloc(N);

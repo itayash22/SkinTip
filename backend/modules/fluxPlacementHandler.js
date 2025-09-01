@@ -519,6 +519,10 @@ async function extractFluxImageBuffer(taskOrData) {
 const imgDataUri  = asDataUri(guideComposite);      // data URI
 const maskDataUri = asDataUri(hardFluxMaskPNG);     // data URI (white=edit)
 
+// Raw base64 for specific endpoints that might reject data URIs
+const rawImgBase64  = guideComposite.toString('base64');
+const rawMaskBase64 = hardFluxMaskPNG.toString('base64');
+
 for (let i = 0; i < numVariations; i++) {
   const seed = Date.now() + i;
 
@@ -574,7 +578,14 @@ for (let i = 0; i < numVariations; i++) {
       } catch (e4) {
         console.warn('Fill POST failed (alt1):', e4.response?.status, e4.response?.data || e4.message);
         try {
-          const f3 = await axios.post('https://api.bfl.ai/v1/flux-pro-1.0-fill', fillPayload, { headers, timeout: 120000 });
+        // This specific endpoint was observed to fail with "Invalid base64"
+        // so we create a separate payload with raw base64 instead of a data URI.
+        const fillPayloadAlt2 = {
+          ...fillPayload,
+          image: rawImgBase64,
+          mask: rawMaskBase64,
+        };
+        const f3 = await axios.post('https://api.bfl.ai/v1/flux-pro-1.0-fill', fillPayloadAlt2, { headers, timeout: 120000 });
           task = f3.data;
         } catch (e5) {
           console.warn('Fill POST failed (alt2):', e5.response?.status, e5.response?.data || e5.message);

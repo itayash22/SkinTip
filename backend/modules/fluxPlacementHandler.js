@@ -44,6 +44,7 @@ async function buildWeightedMaskFromPositioned(positionedCanvasPNG) {
 
   const dilated = await sharp(hard, { raw: { width: w, height: h, channels: 1 } }).blur(1.6).threshold(1).raw().toBuffer();
 
+  // (kept your change) "eroded" from median; still used for the soft interior of the weighted mask
   const eroded  = await sharp(hard, { raw: { width: w, height: h, channels: 1 } }).median(3).raw().toBuffer();
 
   const N = w * h;
@@ -57,30 +58,36 @@ async function buildWeightedMaskFromPositioned(positionedCanvasPNG) {
   const weighted = Buffer.alloc(N);
   for (let i = 0; i < N; i++) weighted[i] = Math.max(ring[i], inside[i]);
 
+  // NEW: produce a **hard binary mask** (slightly dilated) specifically for FLUX
+  const hardBinaryPNG = await sharp(hard, { raw: { width: w, height: h, channels: 1 } }).png().toBuffer();
+  const hardFluxMaskPNG = await sharp(hardBinaryPNG).blur(0.8).threshold(1).png().toBuffer();
+
   return {
     weightedMaskPNG: await sharp(weighted, { raw: { width: w, height: h, channels: 1 } }).png().toBuffer(),
     edgeRingPNG:     await sharp(ring,     { raw: { width: w, height: h, channels: 1 } }).png().toBuffer(),
     hardSilPNG:      await sharp(eroded,   { raw: { width: w, height: h, channels: 1 } }).png().toBuffer(),
+    // NEW: the binary mask to actually send to FLUX
+    hardFluxMaskPNG,
     w, h
   };
 }
 
 // Bake an “already inked” guide (multiply + soft-light)
-// FIX: keep both layers in sRGB with alpha; desaturate instead of converting to "b-w"
+// FIX: keep both layers in sRGB with alpha; DESATURATE and keep it LIGHT, so the init image isn’t near-black.
 async function bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvasPNG) {
   const base = sharp(skinImageBuffer).ensureAlpha().toColourspace('srgb');
 
   const tattooGray = await sharp(positionedCanvasPNG)
     .ensureAlpha()
-    .toColourspace('srgb')           // stay in sRGB to avoid srgb→rgb route errors
-    .modulate({ saturation: 0, brightness: 0.32 }) // grayscale look without b-w conversion
+    .toColourspace('srgb')
+    .modulate({ saturation: 0, brightness: 0.6 }) // was 0.32 → too dark; keep it visible
     .png()
     .toBuffer();
 
   return base
     .composite([
-      { input: tattooGray, blend: 'multiply',   opacity: 0.9 },
-      { input: tattooGray, blend: 'soft-light', opacity: 0.35 }
+      { input: tattooGray, blend: 'multiply',   opacity: 0.55 }, // was 0.9 → too heavy
+      { input: tattooGray, blend: 'soft-light', opacity: 0.25 }
     ])
     .png()
     .toBuffer();
@@ -429,11 +436,13 @@ const fluxPlacementHandler = {
    // Build realism guide + weighted mask so FLUX preserves geometry
 const generatedImageUrls = [];
 
-const { weightedMaskPNG, edgeRingPNG, hardSilPNG } =
+const { weightedMaskPNG, edgeRingPNG, hardSilPNG, hardFluxMaskPNG } =
   await buildWeightedMaskFromPositioned(positionedCanvas);
-await uploadDebug(weightedMaskPNG, userId, 'mask_weighted');
-await uploadDebug(edgeRingPNG,     userId, 'mask_edge_ring');
-await uploadDebug(hardSilPNG,      userId, 'mask_hard_silhouette');
+await uploadDebug(weightedMaskPNG,  userId, 'mask_weighted');
+await uploadDebug(edgeRingPNG,      userId, 'mask_edge_ring');
+await uploadDebug(hardSilPNG,       userId, 'mask_hard_silhouette');
+// NEW: debug the actual mask we send to FLUX
+await uploadDebug(hardFluxMaskPNG,  userId, 'mask_flux_binary');
 
 const guideComposite = await bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvas);
 await uploadDebug(guideComposite, userId, 'guide_baked');
@@ -452,12 +461,13 @@ const headers = {
 
 // Prefer KONText (img2img with fidelity); fall back to fill
 const imgB64  = guideComposite.toString('base64');
-const maskB64 = weightedMaskPNG.toString('base64');
+// IMPORTANT: use the **binary** mask for FLUX
+const maskB64 = hardFluxMaskPNG.toString('base64');
 
 for (let i = 0; i < numVariations; i++) {
   const seed = Date.now() + i;
 
-  // Try KONText first
+  // Try KONText first (very low strength so it preserves geometry)
   const kontextPayload = {
     prompt,
     negative_prompt: negative,
@@ -465,8 +475,8 @@ for (let i = 0; i < numVariations; i++) {
     mask: maskB64,
     output_format: 'png',
     fidelity: 0.99,
-    guidance_scale: 5.0,
-    strength: 0.25,
+    guidance_scale: 4.0,   // slightly lower; avoids over-darkening
+    strength: 0.15,        // lower than before; keeps original pixels
     prompt_upsampling: true,
     safety_tolerance: 2,
     seed
@@ -492,7 +502,7 @@ for (let i = 0; i < numVariations; i++) {
       mask: maskB64,
       output_format: 'png',
       steps: 28,
-      guidance: 5,
+      guidance: 4,          // lower guidance → less hallucination/black
       safety_tolerance: 2,
       seed
     };

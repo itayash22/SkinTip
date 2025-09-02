@@ -62,12 +62,29 @@ async function buildWeightedMaskFromPositioned(positionedCanvasPNG) {
   const hardBinaryPNG = await sharp(hard, { raw: { width: w, height: h, channels: 1 } }).png().toBuffer();
   const hardFluxMaskPNG = await sharp(hardBinaryPNG).blur(0.8).threshold(1).png().toBuffer();
 
+  // Also return an inverted and an alpha-hole variant for endpoints with different conventions
+  const invertedFluxMaskPNG = await sharp(hardFluxMaskPNG).negate().png().toBuffer(); // white↔black
+  const alphaHoleMaskPNG = await sharp(hardFluxMaskPNG)
+    .ensureAlpha()
+    .joinChannel(
+      await sharp(hardFluxMaskPNG)
+        .negate()              // where original was white (edit), alpha -> 0
+        .toColourspace('b-w')
+        .linear(1, 0)
+        .raw()
+        .toBuffer({ resolveWithObject: false })
+    )
+    .png()
+    .toBuffer();
+
   return {
     weightedMaskPNG: await sharp(weighted, { raw: { width: w, height: h, channels: 1 } }).png().toBuffer(),
     edgeRingPNG:     await sharp(ring,     { raw: { width: w, height: h, channels: 1 } }).png().toBuffer(),
     // Return the clean, non-eroded hard mask as the silhouette
     hardSilPNG:      await sharp(hard,   { raw: { width: w, height: h, channels: 1 } }).png().toBuffer(),
     hardFluxMaskPNG,
+    invertedFluxMaskPNG,
+    alphaHoleMaskPNG,
     w, h
   };
 }
@@ -436,7 +453,7 @@ const fluxPlacementHandler = {
    // Build realism guide + weighted mask so FLUX preserves geometry
 const generatedImageUrls = [];
 
-const { weightedMaskPNG, edgeRingPNG, hardSilPNG, hardFluxMaskPNG } =
+const { weightedMaskPNG, edgeRingPNG, hardSilPNG, hardFluxMaskPNG, invertedFluxMaskPNG, alphaHoleMaskPNG } =
   await buildWeightedMaskFromPositioned(positionedCanvas);
 await uploadDebug(weightedMaskPNG,  userId, 'mask_weighted');
 await uploadDebug(edgeRingPNG,      userId, 'mask_edge_ring');
@@ -460,6 +477,20 @@ const headers = {
 
 // util: some FLUX routes want a data URI, some return direct base64 or arrays
 const asDataUri = (buf) => `data:image/png;base64,${buf.toString('base64')}`;
+
+// tiny helper to detect "black" outputs so we can flip mask polarity automatically
+async function bufferIsMostlyBlack(buf) {
+  try {
+    const stats = await sharp(buf).stats();
+    const mean =
+      (stats.channels?.[0]?.mean ?? 0) * 0.299 +
+      (stats.channels?.[1]?.mean ?? 0) * 0.587 +
+      (stats.channels?.[2]?.mean ?? 0) * 0.114;
+    return mean < 8; // very dark
+  } catch {
+    return false;
+  }
+}
 
 async function extractFluxImageBuffer(taskOrData) {
   const data = taskOrData;
@@ -517,28 +548,32 @@ async function extractFluxImageBuffer(taskOrData) {
 }
 
 // Prefer KONText (img2img with fidelity); fall back to fill
-const imgDataUri  = asDataUri(guideComposite);      // data URI
-const maskDataUri = asDataUri(hardFluxMaskPNG);     // data URI (white=edit)
+const imgDataUri   = asDataUri(guideComposite);       // data URI
+const maskWhiteEditDataUri   = asDataUri(hardFluxMaskPNG);     // white=edit
+const maskWhiteKeepDataUri   = asDataUri(invertedFluxMaskPNG); // white=keep
+const maskAlphaHoleDataUri   = asDataUri(alphaHoleMaskPNG);    // transparent=edit
 
-// Raw base64 for specific endpoints that might reject data URIs
-const rawImgBase64  = guideComposite.toString('base64');
-const rawMaskBase64 = hardFluxMaskPNG.toString('base64');
+// Raw base64 for endpoints that dislike data URIs
+const rawImgBase64           = guideComposite.toString('base64');
+const rawMaskWhiteEditBase64 = hardFluxMaskPNG.toString('base64');
+const rawMaskWhiteKeepBase64 = invertedFluxMaskPNG.toString('base64');
+const rawMaskAlphaHoleBase64 = alphaHoleMaskPNG.toString('base64');
 
 for (let i = 0; i < numVariations; i++) {
   const seed = Date.now() + i;
 
-  // Try KONText first (very low strength so it preserves geometry)
+  // ——— 1) KONText (usually 404 on your logs, we still try quickly) ———
   const kontextPayload = {
     prompt,
     negative_prompt: negative,
     image: imgDataUri,
-    mask: maskDataUri,
+    mask: maskWhiteEditDataUri,   // first attempt uses white=edit
     output_format: 'png',
     fidelity: 0.99,
     guidance_scale: 4.0,
     strength: 0.15,
     prompt_upsampling: true,
-    safety_tolerance: 6,   // a bit looser so skin doesn’t get moderated
+    safety_tolerance: 6,
     seed
   };
 
@@ -556,44 +591,51 @@ for (let i = 0; i < numVariations; i++) {
     }
   }
 
-  if (!task) {
-    const fillPayload = {
+  // ——— 2) FILL route (with auto-polarity fallback) ———
+  async function callFill(imageField, maskField) {
+    const base = {
       prompt,
       negative_prompt: negative,
-      image: imgDataUri,
-      mask: maskDataUri,
       output_format: 'png',
       steps: 28,
-      guidance: 4,        // low guidance so it blends instead of redrawing
+      guidance: 4,
       safety_tolerance: 6,
       seed
     };
     try {
-      const f1 = await axios.post('https://api.bfl.ai/v1/flux/fill', fillPayload, { headers, timeout: 120000 });
-      task = f1.data;
+      const f1 = await axios.post('https://api.bfl.ai/v1/flux/fill', { ...base, image: imageField, mask: maskField }, { headers, timeout: 120000 });
+      return f1.data;
     } catch (e3) {
       console.warn('Fill POST failed (primary):', e3.response?.status, e3.response?.data || e3.message);
       try {
-        const f2 = await axios.post('https://api.bfl.ai/v1/flux-fill', fillPayload, { headers, timeout: 120000 });
-        task = f2.data;
+        const f2 = await axios.post('https://api.bfl.ai/v1/flux-fill', { ...base, image: imageField, mask: maskField }, { headers, timeout: 120000 });
+        return f2.data;
       } catch (e4) {
         console.warn('Fill POST failed (alt1):', e4.response?.status, e4.response?.data || e4.message);
         try {
-        // This specific endpoint was observed to fail with "Invalid base64"
-        // so we create a separate payload with raw base64 instead of a data URI.
-        const fillPayloadAlt2 = {
-          ...fillPayload,
-          image: rawImgBase64,
-          mask: rawMaskBase64,
-        };
-        const f3 = await axios.post('https://api.bfl.ai/v1/flux-pro-1.0-fill', fillPayloadAlt2, { headers, timeout: 120000 });
-          task = f3.data;
+          const f3 = await axios.post('https://api.bfl.ai/v1/flux-pro-1.0-fill', { ...base, image: imageField, mask: maskField }, { headers, timeout: 120000 });
+          return f3.data;
         } catch (e5) {
           console.warn('Fill POST failed (alt2):', e5.response?.status, e5.response?.data || e5.message);
+          return null;
         }
       }
     }
   }
+
+  if (!task) {
+    // Attempt 2a: white=edit
+    task = await callFill(imgDataUri, maskWhiteEditDataUri);
+  }
+  if (!task) {
+    // Attempt 2b: white=keep (invert)
+    task = await callFill(imgDataUri, maskWhiteKeepDataUri);
+  }
+  if (!task) {
+    // Attempt 2c: alpha-hole
+    task = await callFill(imgDataUri, maskAlphaHoleDataUri);
+  }
+
   if (!task) continue;
 
   // Get the image (direct, array, base64, or via polling)
@@ -604,6 +646,41 @@ for (let i = 0; i < numVariations; i++) {
     console.warn('extractFluxImageBuffer error:', ex.message);
   }
   if (!fluxBuf) continue;
+
+  // If the result is "black", auto-retry once with alternate mask polarity, then alpha-hole, then raw-base64 inputs
+  if (await bufferIsMostlyBlack(fluxBuf)) {
+    console.warn('[AUTO-RETRY] Result was dark/black; flipping mask polarity...');
+    let retryTask = await callFill(imgDataUri, maskWhiteKeepDataUri);
+    let retryBuf = retryTask ? await extractFluxImageBuffer(retryTask) : null;
+
+    if (!retryBuf || await bufferIsMostlyBlack(retryBuf)) {
+      console.warn('[AUTO-RETRY] Still dark; trying alpha-hole (transparent=edit)...');
+      retryTask = await callFill(imgDataUri, maskAlphaHoleDataUri);
+      retryBuf = retryTask ? await extractFluxImageBuffer(retryTask) : null;
+    }
+
+    if (!retryBuf || await bufferIsMostlyBlack(retryBuf)) {
+      console.warn('[AUTO-RETRY] Some endpoints reject data URIs; trying raw base64 with white=edit...');
+      retryTask = await callFill(rawImgBase64, rawMaskWhiteEditBase64);
+      retryBuf = retryTask ? await extractFluxImageBuffer(retryTask) : null;
+    }
+
+    if (!retryBuf || await bufferIsMostlyBlack(retryBuf)) {
+      console.warn('[AUTO-RETRY] Trying raw base64 with white=keep...');
+      retryTask = await callFill(rawImgBase64, rawMaskWhiteKeepBase64);
+      retryBuf = retryTask ? await extractFluxImageBuffer(retryTask) : null;
+    }
+
+    if (!retryBuf || await bufferIsMostlyBlack(retryBuf)) {
+      console.warn('[AUTO-RETRY] Trying raw base64 with alpha-hole...');
+      retryTask = await callFill(rawImgBase64, rawMaskAlphaHoleBase64);
+      retryBuf = retryTask ? await extractFluxImageBuffer(retryTask) : null;
+    }
+
+    if (retryBuf && !(await bufferIsMostlyBlack(retryBuf))) {
+      fluxBuf = retryBuf;
+    }
+  }
 
   // Final safety net: clamp back to your original silhouette
   const clamped = await clampToSilhouette(fluxBuf, hardSilPNG, edgeRingPNG);

@@ -26,9 +26,9 @@ const FLUX_API_KEY = process.env.FLUX_API_KEY;
 // -----------------------------
 const ADAPTIVE_SCALE_ENABLED  = (process.env.ADAPTIVE_SCALE_ENABLED  ?? 'true').toLowerCase() === 'true';
 const ADAPTIVE_ENGINE_ENABLED = (process.env.ADAPTIVE_ENGINE_ENABLED ?? 'true').toLowerCase() === 'true';
-const RESPECT_MASK_SIZE = (process.env.RESPECT_MASK_SIZE ?? 'false').toLowerCase() === 'true';
+const RESPECT_MASK_SIZE       = (process.env.RESPECT_MASK_SIZE       ?? 'false').toLowerCase() === 'true';
 const GLOBAL_SCALE_UP         = Number(process.env.MODEL_SCALE_UP   || '1.00'); // optional global bump
-const FLUX_SHRINK_FIX         = Number(process.env.FLUX_SHRINK_FIX  || '1.12'); // corrects consistent FLUX downsizing
+const FLUX_SHRINK_FIX         = Number(process.env.FLUX_SHRINK_FIX  || '1.12'); // <— corrects consistent FLUX downsizing
 const FLUX_ENGINE_DEFAULT     = (process.env.FLUX_ENGINE || 'kontext').toLowerCase(); // 'kontext' | 'fill'
 
 // -----------------------------
@@ -39,61 +39,48 @@ async function buildWeightedMaskFromPositioned(positionedCanvasPNG) {
   const meta = await sharp(positionedCanvasPNG).metadata();
   const w = meta.width, h = meta.height;
 
-  // 1) Extract alpha channel as RAW 8-bit (w*h)
+  // Alpha → RAW
   const alphaRaw = await sharp(positionedCanvasPNG)
     .ensureAlpha()
     .extractChannel('alpha')
     .raw()
     .toBuffer();
 
-  // 2) Make a hard binary mask (>=1 → 255)
+  // Hard 0/255
   const hardRaw = Buffer.allocUnsafe(w * h);
   for (let i = 0; i < w * h; i++) hardRaw[i] = alphaRaw[i] > 0 ? 255 : 0;
 
-  // 3) Dilate by blurring then thresholding to 0/255
-  const hardBinaryPNG = await sharp(hardRaw, { raw: { width: w, height: h, channels: 1 } })
-    .png()
-    .toBuffer();
-
-  const dilatedPNG = await sharp(hardBinaryPNG)
-    .blur(1.6)
-    .threshold(1)
-    .png()
-    .toBuffer();
-
-  // Bring dilated back to RAW for ring computation
+  // Dilate via blur+threshold
+  const hardBinaryPNG = await sharp(hardRaw, { raw: { width: w, height: h, channels: 1 } }).png().toBuffer();
+  const dilatedPNG = await sharp(hardBinaryPNG).blur(1.6).threshold(1).png().toBuffer();
   const dilatedRaw = await sharp(dilatedPNG).raw().toBuffer();
 
-  // 4) Build ring and weighted masks from RAW arrays
+  // Edge ring + weighted
   const ringRaw = Buffer.alloc(w * h);
   const insideRaw = Buffer.alloc(w * h);
   for (let i = 0; i < w * h; i++) {
     const r = Math.max(0, dilatedRaw[i] - hardRaw[i]); // edge band
-    ringRaw[i] = r ? 255 : 0;
-    insideRaw[i] = hardRaw[i] ? 96 : 0;                // ~38%
+    ringRaw[i]   = r ? 255 : 0;
+    insideRaw[i] = hardRaw[i] ? 96 : 0;
   }
   const weightedRaw = Buffer.alloc(w * h);
   for (let i = 0; i < w * h; i++) weightedRaw[i] = Math.max(ringRaw[i], insideRaw[i]);
 
-  // 5) Produce the PNG masks we need
   const weightedMaskPNG = await sharp(weightedRaw, { raw: { width: w, height: h, channels: 1 } }).png().toBuffer();
   const edgeRingPNG     = await sharp(ringRaw,     { raw: { width: w, height: h, channels: 1 } }).png().toBuffer();
   const hardSilPNG      = await sharp(hardRaw,     { raw: { width: w, height: h, channels: 1 } }).png().toBuffer();
 
-  // Hard mask for FLUX (white=edit) — slight inflate already applied via dilated
+  // White = edit
   const hardFluxMaskPNG = await sharp(dilatedPNG).png().toBuffer();
-
-  // Inverted version (white=keep) for alternate polarity routes
+  // Black = edit (invert)
   const invertedFluxMaskPNG = await sharp(hardFluxMaskPNG).negate().png().toBuffer();
 
-  // Alpha-hole (transparent=edit): black RGB + alpha = 0 in edit region
-  const alphaHoleA = Buffer.allocUnsafe(w * h);
-  for (let i = 0; i < w * h; i++) alphaHoleA[i] = 255 - hardRaw[i];
-  const baseBlackRGB = await sharp({ create: { width: w, height: h, channels: 3, background: { r: 0, g: 0, b: 0 } } })
-    .png()
-    .toBuffer();
-  const alphaHoleMaskPNG = await sharp(baseBlackRGB)
-    .joinChannel(await sharp(alphaHoleA, { raw: { width: w, height: h, channels: 1 } }).png().toBuffer())
+  // Alpha-hole (transparent = edit)
+  const invAlphaRaw = Buffer.allocUnsafe(w * h);
+  for (let i = 0; i < w * h; i++) invAlphaRaw[i] = 255 - hardRaw[i];
+  const blackRGB = await sharp({ create: { width: w, height: h, channels: 3, background: { r: 0, g: 0, b: 0 } } }).png().toBuffer();
+  const alphaHoleMaskPNG = await sharp(blackRGB)
+    .joinChannel(await sharp(invAlphaRaw, { raw: { width: w, height: h, channels: 1 } }).png().toBuffer())
     .png()
     .toBuffer();
 
@@ -101,60 +88,28 @@ async function buildWeightedMaskFromPositioned(positionedCanvasPNG) {
     weightedMaskPNG,
     edgeRingPNG,
     hardSilPNG,
-    hardFluxMaskPNG,
-    invertedFluxMaskPNG,
-    alphaHoleMaskPNG,
+    hardFluxMaskPNG,       // white=edit
+    invertedFluxMaskPNG,   // black=edit
+    alphaHoleMaskPNG,      // transparent=edit
     w, h
   };
 }
 
 // Bake an “already inked” guide (multiply + soft-light)
-// keep sRGB, keep it LIGHT to avoid near-black init
 async function bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvasPNG) {
   const base = sharp(skinImageBuffer).ensureAlpha().toColourspace('srgb');
 
   const tattooGray = await sharp(positionedCanvasPNG)
     .ensureAlpha()
     .toColourspace('srgb')
-    .modulate({ saturation: 0, brightness: 0.6 }) // lighter than 0.32
+    .modulate({ saturation: 0, brightness: 0.6 }) // keep light; avoids near-black init
     .png()
     .toBuffer();
 
   return base
     .composite([
-      { input: tattooGray, blend: 'multiply',   opacity: 0.55 }, // lighter composite
+      { input: tattooGray, blend: 'multiply',   opacity: 0.55 },
       { input: tattooGray, blend: 'soft-light', opacity: 0.25 }
-    ])
-    .png()
-    .toBuffer();
-}
-
-// Local photoreal fallback (used when FLUX returns black)
-// Subdermal diffusion + softlight + edge restoration
-async function localPhotorealFallback(skinImageBuffer, positionedCanvasPNG, edgeRingPNG) {
-  const meta = await sharp(skinImageBuffer).metadata();
-  const W = meta.width, H = meta.height;
-
-  const tattooGray = await sharp(positionedCanvasPNG)
-    .ensureAlpha()
-    .toColourspace('srgb')
-    .modulate({ saturation: 0, brightness: 0.45 }) // darker ink body
-    .png()
-    .toBuffer();
-
-  const tattooBlur = await sharp(tattooGray).blur(1.6).png().toBuffer();
-
-  return await sharp(skinImageBuffer)
-    .ensureAlpha()
-    .composite([
-      // soft bleed under skin
-      { input: tattooBlur, blend: 'multiply',   opacity: 0.35 },
-      // main ink
-      { input: tattooGray, blend: 'multiply',   opacity: 0.65 },
-      // subtle sheen/texture coupling
-      { input: tattooGray, blend: 'soft-light', opacity: 0.35 },
-      // micro edge reinforcement
-      { input: edgeRingPNG, blend: 'multiply',  opacity: 0.12 }
     ])
     .png()
     .toBuffer();
@@ -164,12 +119,10 @@ async function localPhotorealFallback(skinImageBuffer, positionedCanvasPNG, edge
 async function clampToSilhouette(fluxPNG, hardSilPNG, edgeRingPNG) {
   const clamped = await sharp(fluxPNG)
     .composite([{ input: hardSilPNG, blend: 'dest-in' }])
-    .png()
-    .toBuffer();
+    .png().toBuffer();
   return sharp(clamped)
     .composite([{ input: edgeRingPNG, blend: 'multiply', opacity: 0.15 }])
-    .png()
-    .toBuffer();
+    .png().toBuffer();
 }
 
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
@@ -248,8 +201,9 @@ async function detectUniformWhiteBackground(pngBuffer) {
   return { isUniformWhite: nearWhite && lowVar, bgColor: mean };
 }
 
+function clamp255(v) { return Math.max(0, Math.min(255, v|0)); }
+
 async function colorToAlphaWhite(buffer) {
-  // Gentle white→alpha with decontamination
   const img = sharp(buffer).ensureAlpha();
   const { width: w, height: h } = await img.metadata();
   const raw = await img.raw().toBuffer();
@@ -269,9 +223,9 @@ async function colorToAlphaWhite(buffer) {
     }
     if (alpha > 0 && alpha < 255) {
       const a = alpha / 255;
-      raw[p]   = clamp(Math.round((R - (1 - a) * 255) / a), 0, 255);
-      raw[p+1] = clamp(Math.round((G - (1 - a) * 255) / a), 0, 255);
-      raw[p+2] = clamp(Math.round((B - (1 - a) * 255) / a), 0, 255);
+      raw[p]   = clamp255(Math.round((R - (1 - a) * 255) / a));
+      raw[p+1] = clamp255(Math.round((G - (1 - a) * 255) / a));
+      raw[p+2] = clamp255(Math.round((B - (1 - a) * 255) / a));
     }
     raw[p + 3] = alpha;
   }
@@ -283,21 +237,18 @@ async function colorToAlphaWhite(buffer) {
 // Adaptive analysis on tattoo alpha
 // -----------------------------
 async function analyzeTattooAlpha(pngBuffer) {
-  // returns { coverage, thinness, solidity, bbox, width, height }
   const img = sharp(pngBuffer).ensureAlpha();
   const meta = await img.metadata();
   const w = meta.width | 0, h = meta.height | 0;
 
-  const alpha = await img.extractChannel('alpha').raw().toBuffer(); // 1 ch
+  const alpha = await img.extractChannel('alpha').raw().toBuffer();
   const N = w * h;
 
   // Binary mask (alpha > 128)
-  const mask = new Uint8Array(N);
   let area = 0;
   let minX = w, minY = h, maxX = -1, maxY = -1;
   for (let i = 0; i < N; i++) {
     const v = alpha[i] > 128 ? 1 : 0;
-    mask[i] = v;
     if (v) {
       area++;
       const y = (i / w) | 0, x = i - y * w;
@@ -337,16 +288,14 @@ async function analyzeTattooAlpha(pngBuffer) {
 }
 
 function chooseAdaptiveScale(stats) {
-  // thresholds tuned conservatively (so global FLUX_SHRINK_FIX does most of the work)
   const cov = stats.coverage;   // 0..1
-  const thn = stats.thinness;   // 0..1 (higher → thinner lines)
+  const thn = stats.thinness;   // 0..1
   const sol = stats.solidity;   // area/bboxArea
 
   const isThinLine     = (cov < 0.12 && thn > 0.10);
   const hasHaloSplash  = (sol < 0.55);
 
   let scale = 1.00;
-
   if (isThinLine && !hasHaloSplash) {
     const boost = clamp(1.12 + (0.12 - cov) * 2.0, 1.12, 1.40);
     scale = boost;
@@ -364,6 +313,87 @@ function pickEngine(baseEngine, adaptiveEnabled, isThinLine) {
 }
 
 // -----------------------------
+// Flux helpers
+// -----------------------------
+const FLUX_ENDPOINTS = [
+  'https://api.bfl.ai/v1/flux/fill',
+  'https://api.bfl.ai/v1/flux-fill',
+  'https://api.bfl.ai/v1/flux-pro-1.0-fill',
+];
+
+const FLUX_HEADERS = (key) => ({
+  'Content-Type': 'application/json',
+  'x-key': key || FLUX_API_KEY,
+  'Authorization': `Bearer ${key || FLUX_API_KEY}`,
+});
+
+// Accepts many task/result shapes (URL, base64, polling)
+async function extractFluxImageBuffer(task, headers) {
+  // direct sample URL
+  const directUrl = task?.result?.sample || task?.sample;
+  if (directUrl) {
+    const imgRes = await axios.get(directUrl, { responseType: 'arraybuffer' });
+    return Buffer.from(imgRes.data);
+  }
+
+  // base64 fields
+  const base64 =
+    task?.result?.image ||
+    task?.result?.images?.[0] ||
+    task?.image ||
+    task?.images?.[0] ||
+    task?.output?.[0]?.base64 ||
+    task?.result?.samples?.[0]?.base64;
+  if (base64) {
+    const b64 = base64.startsWith('data:') ? base64.split(',')[1] : base64;
+    return Buffer.from(b64, 'base64');
+  }
+
+  // polling
+  if (task?.polling_url) {
+    for (let tries = 0; tries < 60; tries++) {
+      await new Promise(r => setTimeout(r, 2000));
+      const poll = await axios.get(task.polling_url, { headers, timeout: 15000 });
+      const pd = poll.data;
+
+      if (pd.status === 'Ready') {
+        const dUrl = pd?.result?.sample;
+        if (dUrl) {
+          const imgRes = await axios.get(dUrl, { responseType: 'arraybuffer' });
+          return Buffer.from(imgRes.data);
+        }
+        const pb64 =
+          pd?.result?.image ||
+          pd?.result?.images?.[0] ||
+          pd?.image ||
+          pd?.images?.[0] ||
+          pd?.output?.[0]?.base64 ||
+          pd?.result?.samples?.[0]?.base64;
+        if (pb64) {
+          const b64 = pb64.startsWith('data:') ? pb64.split(',')[1] : pb64;
+          return Buffer.from(b64, 'base64');
+        }
+        break;
+      }
+      if (pd.status === 'Error' || pd.status === 'Content Moderated') break;
+    }
+  }
+  return null;
+}
+
+async function isMostlyBlack(pngBuffer) {
+  try {
+    const stats = await sharp(pngBuffer).stats();
+    const r = stats.channels[0].mean;
+    const g = stats.channels[1].mean;
+    const b = stats.channels[2].mean;
+    return (r < 4 && g < 4 && b < 4);
+  } catch {
+    return false;
+  }
+}
+
+// -----------------------------
 // Public module
 // -----------------------------
 const fluxPlacementHandler = {
@@ -371,7 +401,6 @@ const fluxPlacementHandler = {
   removeImageBackground: async (imageBuffer) => {
     if (!REMOVE_BG_API_KEY) {
       try {
-        // Always try to convert white to alpha as a fallback
         console.log('[BG] No API key. Attempting local white-to-alpha conversion.');
         return await colorToAlphaWhite(imageBuffer);
       } catch (e) {
@@ -382,8 +411,7 @@ const fluxPlacementHandler = {
 
     try {
       const formData = new FormData();
-      // NOTE: form-data in Node expects Buffer/Stream, not Blob
-      formData.append('image_file', imageBuffer, { filename: 'tattoo_design.png', contentType: 'image/png' });
+      formData.append('image_file', new Blob([imageBuffer], { type: 'image/png' }), 'tattoo_design.png');
       formData.append('size', 'auto');
       formData.append('format', 'png');
 
@@ -456,7 +484,6 @@ const fluxPlacementHandler = {
     const { scale: adaptScale, isThinLine } = ADAPTIVE_SCALE_ENABLED ? chooseAdaptiveScale(stats) : { scale: 1.0, isThinLine: false };
 
     const LOCK_SILHOUETTE = (process.env.LOCK_SILHOUETTE ?? 'false').toLowerCase() === 'true';
-    // const engine = LOCK_SILHOUETTE ? 'fill' : pickEngine(FLUX_ENGINE_DEFAULT, ADAPTIVE_ENGINE_ENABLED, isThinLine);
     const engine = 'fill'; // hard-lock to masked inpainting
     const EFFECTIVE_SCALE = tattooScale * GLOBAL_SCALE_UP * FLUX_SHRINK_FIX * adaptScale;
 
@@ -499,248 +526,101 @@ const fluxPlacementHandler = {
     const skinMeta = await sharp(skinImageBuffer).metadata();
     const positionedCanvas = await sharp({ create: { width: skinMeta.width, height: skinMeta.height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
       .composite([{ input: rotatedTattoo, left: placementLeft, top: placementTop }])
-      .png()
-      .toBuffer();
+      .png().toBuffer();
 
-    // Build realism guide + weighted mask so FLUX preserves geometry
+    // Build realism guide + masks
     const generatedImageUrls = [];
 
-    const { weightedMaskPNG, edgeRingPNG, hardSilPNG, hardFluxMaskPNG, invertedFluxMaskPNG, alphaHoleMaskPNG } =
-      await buildWeightedMaskFromPositioned(positionedCanvas);
-    await uploadDebug(weightedMaskPNG,  userId, 'mask_weighted');
-    await uploadDebug(edgeRingPNG,      userId, 'mask_edge_ring');
-    await uploadDebug(hardSilPNG,       userId, 'mask_hard_silhouette');
-    await uploadDebug(hardFluxMaskPNG,  userId, 'mask_flux_binary');
+    const {
+      weightedMaskPNG,
+      edgeRingPNG,
+      hardSilPNG,
+      hardFluxMaskPNG,      // white=edit
+      invertedFluxMaskPNG,  // black=edit
+      alphaHoleMaskPNG      // transparent=edit
+    } = await buildWeightedMaskFromPositioned(positionedCanvas);
+
+    await uploadDebug(weightedMaskPNG,     userId, 'mask_weighted');
+    await uploadDebug(edgeRingPNG,         userId, 'mask_edge_ring');
+    await uploadDebug(hardSilPNG,          userId, 'mask_hard_silhouette');
+    await uploadDebug(hardFluxMaskPNG,     userId, 'mask_flux_white_edit');
+    await uploadDebug(invertedFluxMaskPNG, userId, 'mask_flux_black_edit');
+    await uploadDebug(alphaHoleMaskPNG,    userId, 'mask_flux_alpha_hole');
 
     const guideComposite = await bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvas);
     await uploadDebug(guideComposite, userId, 'guide_baked');
 
-    // Prompting tuned for “keep pixels, add realism only”
+    // Prompts: realism only
     const prompt =
       'Keep the tattoo’s exact geometry and proportions pixel-perfect. Only add realistic under-skin ink diffusion, subtle micro-bleed, lighting and skin texture. No restyle, no resize, no new elements.';
     const negative =
       'no redraw, no restyle, no resizing, no thicker lines, no thinner lines, no ornaments, no extra text, no new colors';
 
-    const headers = {
-      'Content-Type': 'application/json',
-      'x-key': fluxApiKey || FLUX_API_KEY,
-      'Authorization': `Bearer ${fluxApiKey || FLUX_API_KEY}`
-    };
+    // Raw base64 (no data URI)
+    const rawImgBase64    = guideComposite.toString('base64');
+    const rawMaskWhite    = hardFluxMaskPNG.toString('base64');
+    const rawMaskBlack    = invertedFluxMaskPNG.toString('base64');
+    const rawMaskAlpha    = alphaHoleMaskPNG.toString('base64');
 
-    // util: some FLUX routes want a data URI, some return direct base64 or arrays
-    const asDataUri = (buf) => `data:image/png;base64,${buf.toString('base64')}`;
+    const headers = FLUX_HEADERS(fluxApiKey);
 
-    // tiny helper to detect "black" outputs so we can flip mask polarity or fallback
-    async function bufferIsMostlyBlack(buf) {
-      try {
-        const stats = await sharp(buf).stats();
-        const mean =
-          (stats.channels?.[0]?.mean ?? 0) * 0.299 +
-          (stats.channels?.[1]?.mean ?? 0) * 0.587 +
-          (stats.channels?.[2]?.mean ?? 0) * 0.114;
-        return mean < 8; // very dark
-      } catch {
-        return false;
-      }
-    }
-
-    async function extractFluxImageBuffer(taskOrData) {
-      const data = taskOrData;
-
-      // direct sample URL
-      if (data?.result?.sample || data?.sample) {
-        const url = data?.result?.sample || data?.sample;
-        const imgRes = await axios.get(url, { responseType: 'arraybuffer' });
-        return Buffer.from(imgRes.data);
-      }
-
-      // direct base64 fields
-      const base64 =
-        data?.result?.image ||
-        data?.result?.images?.[0] ||
-        data?.image ||
-        data?.images?.[0] ||
-        data?.output?.[0]?.base64 ||
-        data?.result?.samples?.[0]?.base64;
-      if (base64) {
-        const b64 = base64.startsWith('data:') ? base64.split(',')[1] : base64;
-        return Buffer.from(b64, 'base64');
-      }
-
-      // task with polling_url
-      if (data?.polling_url) {
-        for (let tries = 0; tries < 60; tries++) {
-          await new Promise(r => setTimeout(r, 2000));
-          const poll = await axios.get(data.polling_url, { headers, timeout: 15000 });
-          const pd = poll.data;
-
-          if (pd.status === 'Ready') {
-            if (pd.result?.sample) {
-              const imgRes = await axios.get(pd.result.sample, { responseType: 'arraybuffer' });
-              return Buffer.from(imgRes.data);
-            }
-            const pb64 =
-              pd?.result?.image ||
-              pd?.result?.images?.[0] ||
-              pd?.image ||
-              pd?.images?.[0] ||
-              pd?.output?.[0]?.base64 ||
-              pd?.result?.samples?.[0]?.base64;
-            if (pb64) {
-              const b64 = pb64.startsWith('data:') ? pb64.split(',')[1] : pb64;
-              return Buffer.from(b64, 'base64');
-            }
-            break;
-          }
-          if (pd.status === 'Error' || pd.status === 'Content Moderated') break;
-        }
-      }
-
-      return null;
-    }
-
-    // Prefer KONText (img2img with fidelity); fall back to fill
-    const imgDataUri              = asDataUri(guideComposite);       // data URI
-    const maskWhiteEditDataUri    = asDataUri(hardFluxMaskPNG);      // white=edit
-    const maskWhiteKeepDataUri    = asDataUri(invertedFluxMaskPNG);  // white=keep
-    const maskAlphaHoleDataUri    = asDataUri(alphaHoleMaskPNG);     // transparent=edit
-
-    // Raw base64 for endpoints that dislike data URIs
-    const rawImgBase64            = guideComposite.toString('base64');
-    const rawMaskWhiteEditBase64  = hardFluxMaskPNG.toString('base64');
-    const rawMaskWhiteKeepBase64  = invertedFluxMaskPNG.toString('base64');
-    const rawMaskAlphaHoleBase64  = alphaHoleMaskPNG.toString('base64');
-
-    for (let i = 0; i < numVariations; i++) {
-      const seed = Date.now() + i;
-
-      // ——— 1) KONText (may 404; try quickly) ———
-      const kontextPayload = {
+    // Try multiple combinations until we get a non-black PNG
+    async function tryOne(endpoint, imageB64, maskB64, maskMode) {
+      // Some APIs accept 'guidance', some use 'guidance_scale'.
+      const basePayload = {
         prompt,
         negative_prompt: negative,
-        image: imgDataUri,
-        mask: maskWhiteEditDataUri,   // first attempt uses white=edit
+        image: imageB64,
+        mask: maskB64,
         output_format: 'png',
-        fidelity: 0.99,
-        guidance_scale: 4.0,
-        strength: 0.15,
-        prompt_upsampling: true,
+        steps: 28,
+        guidance: 4,
+        guidance_scale: 4,     // cover both
         safety_tolerance: 6,
-        seed
+        // Optional hint for engines that distinguish mask polarity
+        mask_mode: maskMode,   // 'white_edit' | 'black_edit' | 'alpha_hole' (ignored if unsupported)
       };
 
-      let task = null;
       try {
-        const r1 = await axios.post('https://api.bfl.ai/v1/flux/kontext-pro', kontextPayload, { headers, timeout: 120000 });
-        task = r1.data;
-      } catch (e1) {
-        console.warn('KONText POST failed (primary):', e1.response?.status, e1.response?.data || e1.message);
-        try {
-          const r2 = await axios.post('https://api.bfl.ai/v1/flux-kontext-pro', kontextPayload, { headers, timeout: 120000 });
-          task = r2.data;
-        } catch (e2) {
-          console.warn('KONText POST failed (alt):', e2.response?.status, e2.response?.data || e2.message);
+        const res = await axios.post(endpoint, basePayload, { headers, timeout: 120000 });
+        const task = res.data;
+        let buf = await extractFluxImageBuffer(task, headers);
+        if (!buf) return null;
+
+        // If it's essentially black, consider it a failed variant
+        if (await isMostlyBlack(buf)) {
+          console.warn(`[FLUX] ${endpoint} returned near-black image for maskMode=${maskMode}`);
+          return null;
         }
+        return buf;
+      } catch (e) {
+        console.warn(`[FLUX] POST failed ${endpoint} (maskMode=${maskMode}):`, e.response?.status, e.response?.data || e.message);
+        return null;
       }
+    }
 
-      // ——— 2) FILL route (with auto-polarity fallback) ———
-      async function callFill(imageField, maskField) {
-        const base = {
-          prompt,
-          negative_prompt: negative,
-          output_format: 'png',
-          steps: 28,
-          guidance: 4,            // also accepted by some routes
-          guidance_scale: 4.0,    // for others
-          safety_tolerance: 6,
-          seed
-        };
-        try {
-          const f1 = await axios.post('https://api.bfl.ai/v1/flux/fill', { ...base, image: imageField, mask: maskField }, { headers, timeout: 120000 });
-          return f1.data;
-        } catch (e3) {
-          console.warn('Fill POST failed (primary):', e3.response?.status, e3.response?.data || e3.message);
-          try {
-            const f2 = await axios.post('https://api.bfl.ai/v1/flux-fill', { ...base, image: imageField, mask: maskField }, { headers, timeout: 120000 });
-            return f2.data;
-          } catch (e4) {
-            console.warn('Fill POST failed (alt1):', e4.response?.status, e4.response?.data || e4.message);
-            try {
-              const f3 = await axios.post('https://api.bfl.ai/v1/flux-pro-1.0-fill', { ...base, image: imageField, mask: maskField }, { headers, timeout: 120000 });
-              return f3.data;
-            } catch (e5) {
-              console.warn('Fill POST failed (alt2):', e5.response?.status, e5.response?.data || e5.message);
-              return null;
-            }
-          }
-        }
-      }
+    const endpoints = FLUX_ENDPOINTS;
 
-      if (!task) task = await callFill(imgDataUri, maskWhiteEditDataUri);
-      if (!task) task = await callFill(imgDataUri, maskWhiteKeepDataUri);
-      if (!task) task = await callFill(imgDataUri, maskAlphaHoleDataUri);
-      if (!task) continue;
-
-      // Get the image (direct, array, base64, or via polling)
+    for (let i = 0; i < numVariations; i++) {
       let fluxBuf = null;
-      try {
-        fluxBuf = await extractFluxImageBuffer(task);
-      } catch (ex) {
-        console.warn('extractFluxImageBuffer error:', ex.message);
+
+      // Order: raw base64 + white=edit → black=edit → alpha-hole, across the endpoints
+      for (const ep of endpoints) {
+        if (!fluxBuf) fluxBuf = await tryOne(ep, rawImgBase64, rawMaskWhite, 'white_edit');
+        if (!fluxBuf) fluxBuf = await tryOne(ep, rawImgBase64, rawMaskBlack, 'black_edit');
+        if (!fluxBuf) fluxBuf = await tryOne(ep, rawImgBase64, rawMaskAlpha, 'alpha_hole');
+        if (fluxBuf) break;
       }
 
-      // If nothing or looks black, auto-retry with alternates,
-      // then finally produce a local photoreal fallback.
-      if (!fluxBuf || await bufferIsMostlyBlack(fluxBuf)) {
-        console.warn('[AUTO-RETRY] Result missing/dark; flipping mask polarity and formats...');
-        let retryTask = await callFill(imgDataUri, maskWhiteKeepDataUri);
-        let retryBuf = retryTask ? await extractFluxImageBuffer(retryTask) : null;
+      if (!fluxBuf) continue;
 
-        if (!retryBuf || await bufferIsMostlyBlack(retryBuf)) {
-          console.warn('[AUTO-RETRY] Trying alpha-hole (transparent=edit)...');
-          retryTask = await callFill(imgDataUri, maskAlphaHoleDataUri);
-          retryBuf = retryTask ? await extractFluxImageBuffer(retryTask) : null;
-        }
-
-        if (!retryBuf || await bufferIsMostlyBlack(retryBuf)) {
-          console.warn('[AUTO-RETRY] Some endpoints reject data URIs; trying raw base64 (white=edit)...');
-          retryTask = await callFill(rawImgBase64, rawMaskWhiteEditBase64);
-          retryBuf = retryTask ? await extractFluxImageBuffer(retryTask) : null;
-        }
-
-        if (!retryBuf || await bufferIsMostlyBlack(retryBuf)) {
-          console.warn('[AUTO-RETRY] Trying raw base64 (white=keep)...');
-          retryTask = await callFill(rawImgBase64, rawMaskWhiteKeepBase64);
-          retryBuf = retryTask ? await extractFluxImageBuffer(retryTask) : null;
-        }
-
-        if (!retryBuf || await bufferIsMostlyBlack(retryBuf)) {
-          console.warn('[AUTO-RETRY] Trying raw base64 (alpha-hole)...');
-          retryTask = await callFill(rawImgBase64, rawMaskAlphaHoleBase64);
-          retryBuf = retryTask ? await extractFluxImageBuffer(retryTask) : null;
-        }
-
-        if (retryBuf && !(await bufferIsMostlyBlack(retryBuf))) {
-          fluxBuf = retryBuf;
-        } else {
-          console.warn('[FALLBACK] FLUX outputs unusable; generating local photoreal result.');
-          const local = await localPhotorealFallback(skinImageBuffer, positionedCanvas, edgeRingPNG);
-          const watermarkedLocal = await this.applyWatermark(local);
-          const localName = `tattoo-${uuidv4()}.png`;
-          const localUrl = await this.uploadToSupabaseStorage(watermarkedLocal, localName, userId, '', 'image/png');
-          generatedImageUrls.push(localUrl);
-          continue; // go to next variation
-        }
-      }
-
-      // Final safety net: clamp back to your original silhouette
-      const clamped = await clampToSilhouette(fluxBuf, hardSilPNG, edgeRingPNG);
-
-      // Watermark + upload
+      // Clamp back to silhouette and upload
+      const clamped = await clampToSilhouette(fluxBuf, hardSilPNG, weightedMaskPNG);
       const watermarked = await this.applyWatermark(clamped);
       const fileName = `tattoo-${uuidv4()}.png`;
       const publicUrl = await this.uploadToSupabaseStorage(watermarked, fileName, userId, '', 'image/png');
       generatedImageUrls.push(publicUrl);
+      console.log('Image uploaded to Supabase:', publicUrl);
     }
 
     if (generatedImageUrls.length === 0) throw new Error('Flux API: No images were generated.');

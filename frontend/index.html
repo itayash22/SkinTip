@@ -546,6 +546,23 @@
                         throw new Error('Failed to fetch stencil data');
                     }
                     stencilData = await response.json();
+
+                    // --- NEW: Handle case where no styles are returned ---
+                    if (!stencilData || Object.keys(stencilData).length === 0) {
+                        console.warn('Backend returned no stencil data. Displaying message to user.');
+                        const styleSelectionSection = document.getElementById('styleSelectionSection');
+                        if (styleSelectionSection) {
+                            styleSelectionSection.innerHTML = `
+                                <div class="section-header">
+                                    <h2>Styles Unavailable</h2>
+                                    <p>We couldn't load any tattoo styles at the moment. This could be a temporary issue. Please try refreshing the page in a little while.</p>
+                                </div>
+                            `;
+                        }
+                        return; // Stop execution to prevent errors
+                    }
+                    // --- END NEW ---
+
                     populateStyleChips();
                 } catch (error) {
                     console.error('Error fetching stencil data:', error);

@@ -79,7 +79,7 @@ async function bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvasPNG) {
   const tattooGray = await sharp(positionedCanvasPNG)
     .ensureAlpha()
     .toColourspace('srgb')
-    .modulate({ saturation: 0, brightness: 0.6 }) // lighter than 0.32
+    .modulate({ saturation: 0, brightness: 0.85 }) // increased from 0.6 to prevent black output
     .png()
     .toBuffer();
 

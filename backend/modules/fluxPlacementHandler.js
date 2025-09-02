@@ -129,6 +129,37 @@ async function bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvasPNG) {
     .toBuffer();
 }
 
+// Local photoreal fallback (used when FLUX returns black)
+// Subdermal diffusion + softlight + edge restoration
+async function localPhotorealFallback(skinImageBuffer, positionedCanvasPNG, edgeRingPNG) {
+  const meta = await sharp(skinImageBuffer).metadata();
+  const W = meta.width, H = meta.height;
+
+  const tattooGray = await sharp(positionedCanvasPNG)
+    .ensureAlpha()
+    .toColourspace('srgb')
+    .modulate({ saturation: 0, brightness: 0.45 }) // darker ink body
+    .png()
+    .toBuffer();
+
+  const tattooBlur = await sharp(tattooGray).blur(1.6).png().toBuffer();
+
+  return await sharp(skinImageBuffer)
+    .ensureAlpha()
+    .composite([
+      // soft bleed under skin
+      { input: tattooBlur, blend: 'multiply',   opacity: 0.35 },
+      // main ink
+      { input: tattooGray, blend: 'multiply',   opacity: 0.65 },
+      // subtle sheen/texture coupling
+      { input: tattooGray, blend: 'soft-light', opacity: 0.35 },
+      // micro edge reinforcement
+      { input: edgeRingPNG, blend: 'multiply',  opacity: 0.12 }
+    ])
+    .png()
+    .toBuffer();
+}
+
 // Clamp FLUX result back to original silhouette + subtle edge restore
 async function clampToSilhouette(fluxPNG, hardSilPNG, edgeRingPNG) {
   const clamped = await sharp(fluxPNG)
@@ -499,7 +530,7 @@ const fluxPlacementHandler = {
     // util: some FLUX routes want a data URI, some return direct base64 or arrays
     const asDataUri = (buf) => `data:image/png;base64,${buf.toString('base64')}`;
 
-    // tiny helper to detect "black" outputs so we can flip mask polarity automatically
+    // tiny helper to detect "black" outputs so we can flip mask polarity or fallback
     async function bufferIsMostlyBlack(buf) {
       try {
         const stats = await sharp(buf).stats();
@@ -619,7 +650,8 @@ const fluxPlacementHandler = {
           negative_prompt: negative,
           output_format: 'png',
           steps: 28,
-          guidance: 4,
+          guidance: 4,            // also accepted by some routes
+          guidance_scale: 4.0,    // for others
           safety_tolerance: 6,
           seed
         };
@@ -656,40 +688,48 @@ const fluxPlacementHandler = {
       } catch (ex) {
         console.warn('extractFluxImageBuffer error:', ex.message);
       }
-      if (!fluxBuf) continue;
 
-      // If result looks black, auto-retry with alternate mask polarity/format
-      if (await bufferIsMostlyBlack(fluxBuf)) {
-        console.warn('[AUTO-RETRY] Result was dark/black; flipping mask polarity...');
+      // If nothing or looks black, auto-retry with alternates,
+      // then finally produce a local photoreal fallback.
+      if (!fluxBuf || await bufferIsMostlyBlack(fluxBuf)) {
+        console.warn('[AUTO-RETRY] Result missing/dark; flipping mask polarity and formats...');
         let retryTask = await callFill(imgDataUri, maskWhiteKeepDataUri);
         let retryBuf = retryTask ? await extractFluxImageBuffer(retryTask) : null;
 
         if (!retryBuf || await bufferIsMostlyBlack(retryBuf)) {
-          console.warn('[AUTO-RETRY] Still dark; trying alpha-hole (transparent=edit)...');
+          console.warn('[AUTO-RETRY] Trying alpha-hole (transparent=edit)...');
           retryTask = await callFill(imgDataUri, maskAlphaHoleDataUri);
           retryBuf = retryTask ? await extractFluxImageBuffer(retryTask) : null;
         }
 
         if (!retryBuf || await bufferIsMostlyBlack(retryBuf)) {
-          console.warn('[AUTO-RETRY] Some endpoints reject data URIs; trying raw base64 with white=edit...');
+          console.warn('[AUTO-RETRY] Some endpoints reject data URIs; trying raw base64 (white=edit)...');
           retryTask = await callFill(rawImgBase64, rawMaskWhiteEditBase64);
           retryBuf = retryTask ? await extractFluxImageBuffer(retryTask) : null;
         }
 
         if (!retryBuf || await bufferIsMostlyBlack(retryBuf)) {
-          console.warn('[AUTO-RETRY] Trying raw base64 with white=keep...');
+          console.warn('[AUTO-RETRY] Trying raw base64 (white=keep)...');
           retryTask = await callFill(rawImgBase64, rawMaskWhiteKeepBase64);
           retryBuf = retryTask ? await extractFluxImageBuffer(retryTask) : null;
         }
 
         if (!retryBuf || await bufferIsMostlyBlack(retryBuf)) {
-          console.warn('[AUTO-RETRY] Trying raw base64 with alpha-hole...');
+          console.warn('[AUTO-RETRY] Trying raw base64 (alpha-hole)...');
           retryTask = await callFill(rawImgBase64, rawMaskAlphaHoleBase64);
           retryBuf = retryTask ? await extractFluxImageBuffer(retryTask) : null;
         }
 
         if (retryBuf && !(await bufferIsMostlyBlack(retryBuf))) {
           fluxBuf = retryBuf;
+        } else {
+          console.warn('[FALLBACK] FLUX outputs unusable; generating local photoreal result.');
+          const local = await localPhotorealFallback(skinImageBuffer, positionedCanvas, edgeRingPNG);
+          const watermarkedLocal = await this.applyWatermark(local);
+          const localName = `tattoo-${uuidv4()}.png`;
+          const localUrl = await this.uploadToSupabaseStorage(watermarkedLocal, localName, userId, '', 'image/png');
+          generatedImageUrls.push(localUrl);
+          continue; // go to next variation
         }
       }
 

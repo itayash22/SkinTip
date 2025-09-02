@@ -44,16 +44,16 @@ async function buildWeightedMaskFromPositioned(positionedCanvasPNG) {
 
   const dilated = await sharp(hard, { raw: { width: w, height: h, channels: 1 } }).blur(1.6).threshold(1).raw().toBuffer();
 
-  // (kept) median for soft interior weighting
-  const eroded  = await sharp(hard, { raw: { width: w, height: h, channels: 1 } }).median(3).raw().toBuffer();
+  // (REMOVED) median filter which was eroding fine lines into nothing.
 
   const N = w * h;
   const ring   = Buffer.alloc(N);
   const inside = Buffer.alloc(N);
   for (let i = 0; i < N; i++) {
-    const r = Math.max(0, dilated[i] - eroded[i]); // edge band
+    // Use 'hard' mask directly instead of the eroded version
+    const r = Math.max(0, dilated[i] - hard[i]); // edge band
     ring[i]   = r ? 255 : 0;   // full strength at edges
-    inside[i] = eroded[i] ? 96 : 0; // soft interior (~38%)
+    inside[i] = hard[i] ? 96 : 0; // soft interior (~38%)
   }
   const weighted = Buffer.alloc(N);
   for (let i = 0; i < N; i++) weighted[i] = Math.max(ring[i], inside[i]);
@@ -65,7 +65,8 @@ async function buildWeightedMaskFromPositioned(positionedCanvasPNG) {
   return {
     weightedMaskPNG: await sharp(weighted, { raw: { width: w, height: h, channels: 1 } }).png().toBuffer(),
     edgeRingPNG:     await sharp(ring,     { raw: { width: w, height: h, channels: 1 } }).png().toBuffer(),
-    hardSilPNG:      await sharp(eroded,   { raw: { width: w, height: h, channels: 1 } }).png().toBuffer(),
+    // Return the clean, non-eroded hard mask as the silhouette
+    hardSilPNG:      await sharp(hard,   { raw: { width: w, height: h, channels: 1 } }).png().toBuffer(),
     hardFluxMaskPNG,
     w, h
   };
@@ -79,7 +80,7 @@ async function bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvasPNG) {
   const tattooGray = await sharp(positionedCanvasPNG)
     .ensureAlpha()
     .toColourspace('srgb')
-    .modulate({ saturation: 0, brightness: 0.85 }) // increased from 0.6 to prevent black output
+    .modulate({ saturation: 0, brightness: 0.6 }) // lighter than 0.32
     .png()
     .toBuffer();
 

@@ -26,7 +26,7 @@ const FLUX_API_KEY = process.env.FLUX_API_KEY;
 // -----------------------------
 const ADAPTIVE_SCALE_ENABLED  = (process.env.ADAPTIVE_SCALE_ENABLED  ?? 'true').toLowerCase() === 'true';
 const ADAPTIVE_ENGINE_ENABLED = (process.env.ADAPTIVE_ENGINE_ENABLED ?? 'true').toLowerCase() === 'true';
-const GLOBAL_SCALE_UP         = Number(process.env.MODEL_SCALE_UP || '1.0');       // applied always
+const GLOBAL_SCALE_UP         = Number(process.env.MODEL_SCALE_UP || '1.0');          // applied always
 const FLUX_ENGINE_DEFAULT     = (process.env.FLUX_ENGINE || 'kontext').toLowerCase(); // 'kontext' | 'fill'
 
 // Engine-specific size bias to counter model shrink
@@ -136,7 +136,7 @@ async function colorToAlphaWhite(buffer) {
       alpha = Math.round(A * (1 - cut));
       if (wmax >= hard) alpha = 0;
     }
-    // simple decontamination to reduce white halo:
+    // decontaminate white fringe
     if (alpha > 0 && alpha < 255) {
       const a = alpha / 255;
       raw[p]   = clamp(Math.round((R - (1 - a) * 255) / a), 0, 255);
@@ -232,18 +232,15 @@ function pickEngine(baseEngine, adaptiveEnabled, isThinLine) {
 
 // ------ simple “dilation” for 8-bit gray mask using box-convolve + threshold
 async function dilateGrayMaskToPng(grayRawBuffer, w, h, growPx) {
-  // Convert raw -> sharp image
   const img = sharp(grayRawBuffer, { raw: { width: w, height: h, channels: 1 } });
-  // Build odd-sized kernel width = 2*growPx + 1 (capped for perf)
   const r = clamp(growPx, 1, 64);
   const k = 2 * r + 1;
   const kernel = { width: k, height: k, kernel: new Array(k * k).fill(1) };
 
-  // Convolve (box “sum”), any positive → 255
   const convolved = await img
     .convolve(kernel)
     .threshold(1)                // anything >0 becomes 255
-    .toColourspace('b-w')        // keep single channel
+    .toColourspace('b-w')        // single channel
     .png()
     .toBuffer();
 
@@ -394,4 +391,162 @@ const fluxPlacementHandler = {
           if (buf[row + x] > 0) {
             found = true;
             if (x < minX) minX = x;
-            if
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+      if (!found) return { isEmpty: true };
+      return { isEmpty: false, minX, minY, maxX, maxY, width: maxX - minX + 1, height: maxY - minY + 1 };
+    }
+    const maskBBox = getMaskBBox(maskGrayRaw, maskMeta.width, maskMeta.height);
+    if (maskBBox.isEmpty) throw new Error('Mask area is empty.');
+
+    // Grow (dilate) the mask for the model so it doesn’t shrink the tattoo
+    const growPx = clamp(
+      Math.round(MODEL_MASK_GROW_PCT * Math.max(maskBBox.width, maskBBox.height)),
+      MODEL_MASK_GROW_MIN,
+      MODEL_MASK_GROW_MAX
+    );
+    const grownMaskPng = await dilateGrayMaskToPng(maskGrayRaw, maskMeta.width, maskMeta.height, growPx);
+    await uploadDebug(grownMaskPng, userId, `mask_for_model_grow${growPx}px`);
+
+    // --- Resize/rotate tattoo to fit mask with effective scale ---
+    const targetW = Math.round(maskBBox.width  * EFFECTIVE_SCALE);
+    const targetH = Math.round(maskBBox.height * EFFECTIVE_SCALE);
+    const resizedTattoo = await sharp(tattooDesignPng)
+      .resize({ width: targetW, height: targetH, fit: sharp.fit.inside, withoutEnlargement: false })
+      .toBuffer();
+
+    const rotatedTattoo = await sharp(resizedTattoo)
+      .rotate(tattooAngle, { background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .toBuffer();
+
+    const rotMeta = await sharp(rotatedTattoo).metadata();
+
+    const centeredLeft = maskBBox.minX + (maskBBox.width  - targetW) / 2;
+    const centeredTop  = maskBBox.minY + (maskBBox.height - targetH) / 2;
+    const placementLeft = Math.round(centeredLeft - (rotMeta.width  - targetW) / 2);
+    const placementTop  = Math.round(centeredTop  - (rotMeta.height - targetH) / 2);
+
+    // --- Build positioned tattoo canvas (skin-sized transparent), then mask-composite (for preview/input) ---
+    const skinMeta = await sharp(skinImageBuffer).metadata();
+
+    const positionedCanvas = await sharp({
+      create: {
+        width: skinMeta.width,
+        height: skinMeta.height,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 }
+      }
+    })
+      .composite([{ input: rotatedTattoo, left: placementLeft, top: placementTop }])
+      .png()
+      .toBuffer();
+
+    // Use the *grown* mask for the input we send to FLUX to prevent shrink
+    const compositedForPreview = await sharp(skinImageBuffer)
+      .composite([{ input: positionedCanvas, blend: 'over' }])
+      .png()
+      .toBuffer();
+
+    await uploadDebug(originalMaskBuffer, userId, 'mask_original');
+    await uploadDebug(positionedCanvas,   userId, 'tattoo_canvas_positioned');
+    await uploadDebug(compositedForPreview, userId, 'debug_preview_input');
+
+    // -----------------------------
+    // FLUX call(s)
+    // -----------------------------
+    const generatedImageUrls = [];
+    const basePrompt =
+      'Preserve the exact silhouette, linework, proportions and interior details of the tattoo. Only relight and blend the existing tattoo into the skin. Add realistic lighting, micro-shadowing, slight ink diffusion, and subtle skin texture. Do not redraw or restyle.';
+
+    const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
+
+    const endpoint = engine === 'fill'
+      ? 'https://api.bfl.ai/v1/flux-fill'
+      : 'https://api.bfl.ai/v1/flux-kontext-pro';
+
+    const inputBase64 = compositedForPreview.toString('base64'); // RAW b64 (no data URI)
+    const maskB64     = Buffer.from(grownMaskPng).toString('base64'); // grown mask
+
+    console.log(`Making ${numVariations} calls to FLUX (${endpoint.split('/').pop()})...`);
+
+    for (let i = 0; i < numVariations; i++) {
+      const seed = Date.now() + i;
+
+      const payload = engine === 'fill'
+        ? {
+            prompt: basePrompt,
+            input_image: inputBase64,
+            mask_image: maskB64,
+            output_format: 'png',
+            n: 1,
+            guidance_scale: 8.0,
+            prompt_upsampling: true,
+            safety_tolerance: 2,
+            seed
+          }
+        : {
+            prompt: basePrompt,
+            input_image: inputBase64,
+            mask_image: maskB64,
+            output_format: 'png',
+            n: 1,
+            fidelity: 0.8,
+            guidance_scale: 8.0,
+            prompt_upsampling: true,
+            safety_tolerance: 2,
+            seed
+          };
+
+      let task;
+      try {
+        const res = await axios.post(endpoint, payload, { headers: fluxHeaders, timeout: 90000 });
+        task = res.data;
+        console.log(`DEBUG: FLUX POST status=${res.status} id=${task.id}`);
+      } catch (e) {
+        console.error('FLUX post failed:', e.response?.data || e.message);
+        continue;
+      }
+
+      if (!task?.polling_url) {
+        console.warn('FLUX: missing polling_url');
+        continue;
+      }
+
+      // Poll
+      let attempts = 0, done = false;
+      while (!done && attempts < 60) {
+        attempts++;
+        await new Promise(r => setTimeout(r, 2000));
+        const poll = await axios.get(task.polling_url, { headers: { 'x-key': fluxApiKey || FLUX_API_KEY }, timeout: 15000 });
+        const data = poll.data;
+
+        if (data.status === 'Ready') {
+          const url = data.result?.sample;
+          if (!url) { done = true; break; }
+          const imgRes = await axios.get(url, { responseType: 'arraybuffer' });
+          const buf = Buffer.from(imgRes.data);
+          const watermarked = await fluxPlacementHandler.applyWatermark(buf);
+          const fileName = `tattoo-${uuidv4()}.png`;
+          const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarked, fileName, userId, '', 'image/png');
+          generatedImageUrls.push(publicUrl);
+          done = true;
+        } else if (data.status === 'Error' || data.status === 'Content Moderated') {
+          console.warn('FLUX polling end:', data.status, data.details || '');
+          done = true;
+        }
+      }
+    }
+
+    if (generatedImageUrls.length === 0) {
+      throw new Error('Flux API: No images were generated across all attempts. Please try again.');
+    }
+
+    return generatedImageUrls;
+  }
+};
+
+export default fluxPlacementHandler;

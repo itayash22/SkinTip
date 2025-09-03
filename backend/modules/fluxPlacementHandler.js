@@ -489,7 +489,7 @@ const fluxPlacementHandler = {
     // -----------------------------
     const generatedImageUrls = [];
     const basePrompt =
-      'Display as this was done by a needle tattoo brush. Preserve the exact silhouette, linework, proportions and interior details of the tattoo. Only relight and blend the existing tattoo into the skin. Add realistic lighting, micro-shadowing, slight ink diffusion, and subtle skin texture. Keep the original colors of the tattoo design; do not desaturate or convert to monochrome.';
+      'Preserve the exact silhouette, linework, proportions and interior details of the tattoo. Only relight and blend the existing tattoo into the skin. Add realistic lighting, micro-shadowing, slight ink diffusion, and subtle skin texture. Keep the original colors of the tattoo design; do not desaturate or convert to monochrome.';
     const negativePrompt =
       'no desaturation, no monochrome, no pure black fill, no repainting, no stylistic restyle, no extra elements, no thicker lines, no thinner lines';
 

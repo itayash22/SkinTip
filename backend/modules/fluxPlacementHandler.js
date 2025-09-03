@@ -153,21 +153,22 @@ async function colorToAlphaWhite(buffer) {
 // Adaptive analysis on tattoo alpha
 // -----------------------------
 
-// NEW: subtle baked guide so Flux blends instead of repainting
+// CHANGED: keep color in the baked guide (no desaturation) so FLUX
+// sees real hue information instead of a monochrome hint.
 async function bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvasPNG) {
   const base = sharp(skinImageBuffer).ensureAlpha().toColourspace('srgb');
 
-  const tattooGray = await sharp(positionedCanvasPNG)
+  const tattooTint = await sharp(positionedCanvasPNG)
     .ensureAlpha()
     .toColourspace('srgb')
-    .modulate({ saturation: 0, brightness: 0.50 })
+    .modulate({ saturation: 1.00, brightness: 0.80 }) // keep color, slightly darker
     .png()
     .toBuffer();
 
   return base
     .composite([
-      { input: tattooGray, blend: 'multiply',   opacity: 0.50 },
-      { input: tattooGray, blend: 'soft-light', opacity: 0.22 }
+      { input: tattooTint, blend: 'multiply',   opacity: 0.42 },
+      { input: tattooTint, blend: 'soft-light', opacity: 0.18 }
     ])
     .png()
     .toBuffer();
@@ -466,7 +467,7 @@ const fluxPlacementHandler = {
       .png()
       .toBuffer();
 
-    // NEW: soften the grown mask & bake a subtle guide into the skin
+    // NEW: soften the grown mask & bake a subtle color guide into the skin
     const grownSoftMaskPng = await sharp(grownMaskPng).blur(1.25).png().toBuffer();
     await uploadDebug(grownSoftMaskPng, userId, `mask_for_model_grow${growPx}px_soft1.25`);
 
@@ -488,7 +489,9 @@ const fluxPlacementHandler = {
     // -----------------------------
     const generatedImageUrls = [];
     const basePrompt =
-      'Preserve the exact silhouette, linework, proportions and interior details of the tattoo. Only relight and blend the existing tattoo into the skin. Add realistic lighting, micro-shadowing, slight ink diffusion, and subtle skin texture. Do not redraw or restyle.';
+      'Preserve the exact silhouette, linework, proportions and interior details of the tattoo. Only relight and blend the existing tattoo into the skin. Add realistic lighting, micro-shadowing, slight ink diffusion, and subtle skin texture. Keep the original colors of the tattoo design; do not desaturate or convert to monochrome.';
+    const negativePrompt =
+      'no desaturation, no monochrome, no pure black fill, no repainting, no stylistic restyle, no extra elements, no thicker lines, no thinner lines';
 
     const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
 
@@ -508,25 +511,27 @@ const fluxPlacementHandler = {
       const payload = engine === 'fill'
         ? {
             prompt: basePrompt,
+            negative_prompt: negativePrompt,
             input_image: inputBase64,
             mask_image: maskB64,
             output_format: 'png',
             n: 1,
-            steps: 36,                // allow subdermal diffusion to emerge
-            guidance_scale: 5.5,      // lower = less redraw, more blending
+            steps: 32,               // enough to form diffusion without repaint
+            guidance_scale: 6.0,     // modest guidance to avoid crushing to black
             prompt_upsampling: false,
             safety_tolerance: 2,
             seed
           }
         : {
             prompt: basePrompt,
+            negative_prompt: negativePrompt,
             input_image: inputBase64,
             mask_image: maskB64,
             output_format: 'png',
             n: 1,
-            fidelity: 0.74,           // a bit more freedom than 0.8
-            strength: 0.22,           // gentle denoise for micro-bleed
-            guidance_scale: 5.0,      // lower guidance to avoid repaint
+            fidelity: 0.82,         // bias toward preserving input
+            strength: 0.18,         // gentle denoise to add “under-skin” ink
+            guidance_scale: 5.5,    // lower to prevent repaint + color loss
             prompt_upsampling: false,
             safety_tolerance: 2,
             seed

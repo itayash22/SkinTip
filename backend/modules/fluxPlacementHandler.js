@@ -38,6 +38,15 @@ const MODEL_MASK_GROW_PCT = Number(process.env.MODEL_MASK_GROW_PCT || '0.06'); /
 const MODEL_MASK_GROW_MIN = Number(process.env.MODEL_MASK_GROW_MIN || '4');    // px
 const MODEL_MASK_GROW_MAX = Number(process.env.MODEL_MASK_GROW_MAX || '28');   // px
 
+// Mask feather + opacity (so Fill blends more naturally)
+const MODEL_MASK_FEATHER_PX = Number(process.env.MODEL_MASK_FEATHER_PX || '10'); // blur radius in px
+const MODEL_MASK_ALPHA      = Number(process.env.MODEL_MASK_ALPHA      || '0.65'); // 0..1
+
+// Baked-guide knobs (now *no-darken* blend)
+const BAKE_TATTOO_BRIGHTNESS = Number(process.env.BAKE_TATTOO_BRIGHTNESS || '0.95'); // near-neutral
+const BAKE_SCREEN_OPACITY    = Number(process.env.BAKE_SCREEN_OPACITY    || '0.22'); // only lightens
+const BAKE_DODGE_OPACITY     = Number(process.env.BAKE_DODGE_OPACITY     || '0.10'); // only lightens
+
 // -----------------------------
 // Small helpers
 // -----------------------------
@@ -152,30 +161,7 @@ async function colorToAlphaWhite(buffer) {
 // -----------------------------
 // Adaptive analysis on tattoo alpha
 // -----------------------------
-
-// CHANGED: keep color in the baked guide (no desaturation) so FLUX
-// sees real hue information instead of a monochrome hint.
-async function bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvasPNG) {
-  const base = sharp(skinImageBuffer).ensureAlpha().toColourspace('srgb');
-
-  const tattooTint = await sharp(positionedCanvasPNG)
-    .ensureAlpha()
-    .toColourspace('srgb')
-    .modulate({ saturation: 1.00, brightness: 0.80 }) // keep color, slightly darker
-    .png()
-    .toBuffer();
-
-  return base
-    .composite([
-      { input: tattooTint, blend: 'multiply',   opacity: 0.42 },
-      { input: tattooTint, blend: 'soft-light', opacity: 0.18 }
-    ])
-    .png()
-    .toBuffer();
-}
-
 async function analyzeTattooAlpha(pngBuffer) {
-  // returns { coverage, thinness, solidity, bbox, width, height }
   const img = sharp(pngBuffer).ensureAlpha();
   const meta = await img.metadata();
   const w = meta.width | 0, h = meta.height | 0;
@@ -237,7 +223,7 @@ function chooseAdaptiveScale(stats) {
 
   let scale = 1.0;
   if (isThinLine && !hasHaloSplash) {
-    const boost = clamp(1.20 + (0.12 - cov) * 2.5, 1.20, 1.50); // 1.20..1.50
+    const boost = clamp(1.20 + (0.12 - cov) * 2.5, 1.20, 1.50);
     scale = boost;
   } else if (hasHaloSplash) {
     scale = 1.0;
@@ -252,21 +238,60 @@ function pickEngine(baseEngine, adaptiveEnabled, isThinLine) {
   return isThinLine ? 'fill' : baseEngine;
 }
 
-// ------ simple “dilation” for 8-bit gray mask using box-convolve + threshold
+// ------ grow + feather + opacity-scale grayscale mask (no change here)
 async function dilateGrayMaskToPng(grayRawBuffer, w, h, growPx) {
-  const img = sharp(grayRawBuffer, { raw: { width: w, height: h, channels: 1 } });
+  const baseBinary = await sharp(grayRawBuffer, { raw: { width: w, height: h, channels: 1 } })
+    .threshold(1)
+    .toColourspace('b-w')
+    .png()
+    .toBuffer();
+
   const r = clamp(growPx, 1, 64);
   const k = 2 * r + 1;
   const kernel = { width: k, height: k, kernel: new Array(k * k).fill(1) };
 
-  const convolved = await img
+  const grownBinary = await sharp(baseBinary)
     .convolve(kernel)
-    .threshold(1)                // anything >0 becomes 255
-    .toColourspace('b-w')        // single channel
+    .threshold(1)
+    .toColourspace('b-w')
     .png()
     .toBuffer();
 
-  return convolved; // PNG (L)
+  const sigma = Math.max(0.3, MODEL_MASK_FEATHER_PX / 2.5);
+  const feathered = await sharp(grownBinary)
+    .blur(sigma)
+    .toColourspace('b-w')
+    .png()
+    .toBuffer();
+
+  const scaled = await sharp(feathered)
+    .linear(MODEL_MASK_ALPHA)
+    .toColourspace('b-w')
+    .png()
+    .toBuffer();
+
+  return scaled; // PNG (L)
+}
+
+// ------ baked guide that *never darkens* the skin
+async function bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvasPNG) {
+  const base = sharp(skinImageBuffer).ensureAlpha().toColourspace('srgb');
+
+  const tattooGray = await sharp(positionedCanvasPNG)
+    .ensureAlpha()
+    .toColourspace('srgb')
+    .modulate({ saturation: 0, brightness: BAKE_TATTOO_BRIGHTNESS }) // ≈0.95, neutral
+    .png()
+    .toBuffer();
+
+  // Use only lightening blends; these cannot darken the base
+  return base
+    .composite([
+      { input: tattooGray, blend: 'screen',       opacity: BAKE_SCREEN_OPACITY },
+      { input: tattooGray, blend: 'colour-dodge', opacity: BAKE_DODGE_OPACITY }
+    ])
+    .png()
+    .toBuffer();
 }
 
 // -----------------------------
@@ -275,7 +300,6 @@ async function dilateGrayMaskToPng(grayRawBuffer, w, h, growPx) {
 const fluxPlacementHandler = {
 
   removeImageBackground: async (imageBuffer) => {
-    // 1) If no key, try local white→alpha; if not uniform white, just pass-through
     if (!REMOVE_BG_API_KEY) {
       try {
         const { isUniformWhite } = await detectUniformWhiteBackground(imageBuffer);
@@ -289,7 +313,6 @@ const fluxPlacementHandler = {
       return await sharp(imageBuffer).png().toBuffer();
     }
 
-    // 2) Try remove.bg; if fails, fallback to local logic or passthrough
     try {
       const formData = new FormData();
       formData.append('image_file', new Blob([imageBuffer], { type: 'image/png' }), 'tattoo_design.png');
@@ -404,7 +427,6 @@ const fluxPlacementHandler = {
       throw new Error(`Failed to read mask: ${e.message}`);
     }
 
-    // Compute bounding box of white region in mask (non-zero)
     function getMaskBBox(buf, w, h) {
       let minX = w, minY = h, maxX = -1, maxY = -1, found = false;
       for (let y = 0; y < h; y++) {
@@ -425,7 +447,7 @@ const fluxPlacementHandler = {
     const maskBBox = getMaskBBox(maskGrayRaw, maskMeta.width, maskMeta.height);
     if (maskBBox.isEmpty) throw new Error('Mask area is empty.');
 
-    // Grow (dilate) the mask for the model so it doesn’t shrink the tattoo
+    // Grow + feather + scale (gives model gentle freedom)
     const growPx = clamp(
       Math.round(MODEL_MASK_GROW_PCT * Math.max(maskBBox.width, maskBBox.height)),
       MODEL_MASK_GROW_MIN,
@@ -452,7 +474,7 @@ const fluxPlacementHandler = {
     const placementLeft = Math.round(centeredLeft - (rotMeta.width  - targetW) / 2);
     const placementTop  = Math.round(centeredTop  - (rotMeta.height - targetH) / 2);
 
-    // --- Build positioned tattoo canvas (skin-sized transparent), then mask-composite (for preview/input) ---
+    // Build positioned tattoo canvas (skin-sized transparent)
     const skinMeta = await sharp(skinImageBuffer).metadata();
 
     const positionedCanvas = await sharp({
@@ -467,31 +489,18 @@ const fluxPlacementHandler = {
       .png()
       .toBuffer();
 
-    // NEW: soften the grown mask & bake a subtle color guide into the skin
-    const grownSoftMaskPng = await sharp(grownMaskPng).blur(1.25).png().toBuffer();
-    await uploadDebug(grownSoftMaskPng, userId, `mask_for_model_grow${growPx}px_soft1.25`);
-
+    // Use *no-darken* baked guide
     const guideComposite = await bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvas);
-    await uploadDebug(guideComposite, userId, 'guide_baked');
-
-    // Keep your simple overlay for debugging preview
-    const compositedForPreview = await sharp(skinImageBuffer)
-      .composite([{ input: positionedCanvas, blend: 'over' }])
-      .png()
-      .toBuffer();
-
+    await uploadDebug(guideComposite, userId, 'debug_preview_input');
     await uploadDebug(originalMaskBuffer, userId, 'mask_original');
     await uploadDebug(positionedCanvas,   userId, 'tattoo_canvas_positioned');
-    await uploadDebug(compositedForPreview, userId, 'debug_preview_input');
 
     // -----------------------------
     // FLUX call(s)
     // -----------------------------
     const generatedImageUrls = [];
     const basePrompt =
-      'Preserve the exact silhouette, linework, proportions and interior details of the tattoo. Only relight and blend the existing tattoo into the skin. Add realistic lighting, micro-shadowing, slight ink diffusion, and subtle skin texture. Keep the original colors of the tattoo design; do not desaturate or convert to monochrome.';
-    const negativePrompt =
-      'no desaturation, no monochrome, no pure black fill, no repainting, no stylistic restyle, no extra elements, no thicker lines, no thinner lines';
+      'Preserve the exact silhouette, proportions and interior details of the tattoo. Blend it realistically into the skin with lighting, micro-shadowing and subtle ink diffusion. Do not redraw, restyle, resize, or darken/desaturate the tattoo.';
 
     const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
 
@@ -499,9 +508,9 @@ const fluxPlacementHandler = {
       ? 'https://api.bfl.ai/v1/flux-fill'
       : 'https://api.bfl.ai/v1/flux-kontext-pro';
 
-    // Use baked guide + softened grown mask
+    // Use baked guide + feathered mid-gray mask
     const inputBase64 = guideComposite.toString('base64');
-    const maskB64     = grownSoftMaskPng.toString('base64');
+    const maskB64     = Buffer.from(grownMaskPng).toString('base64');
 
     console.log(`Making ${numVariations} calls to FLUX (${endpoint.split('/').pop()})...`);
 
@@ -511,28 +520,24 @@ const fluxPlacementHandler = {
       const payload = engine === 'fill'
         ? {
             prompt: basePrompt,
-            negative_prompt: negativePrompt,
             input_image: inputBase64,
             mask_image: maskB64,
             output_format: 'png',
             n: 1,
-            steps: 32,               // enough to form diffusion without repaint
-            guidance_scale: 6.0,     // modest guidance to avoid crushing to black
-            prompt_upsampling: false,
+            guidance_scale: 8.0,
+            prompt_upsampling: true,
             safety_tolerance: 2,
             seed
           }
         : {
             prompt: basePrompt,
-            negative_prompt: negativePrompt,
             input_image: inputBase64,
             mask_image: maskB64,
             output_format: 'png',
             n: 1,
-            fidelity: 0.82,         // bias toward preserving input
-            strength: 0.18,         // gentle denoise to add “under-skin” ink
-            guidance_scale: 5.5,    // lower to prevent repaint + color loss
-            prompt_upsampling: false,
+            fidelity: 0.8,
+            guidance_scale: 8.0,
+            prompt_upsampling: true,
             safety_tolerance: 2,
             seed
           };

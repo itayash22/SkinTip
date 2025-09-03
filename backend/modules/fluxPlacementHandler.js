@@ -152,6 +152,27 @@ async function colorToAlphaWhite(buffer) {
 // -----------------------------
 // Adaptive analysis on tattoo alpha
 // -----------------------------
+
+// NEW: subtle baked guide so Flux blends instead of repainting
+async function bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvasPNG) {
+  const base = sharp(skinImageBuffer).ensureAlpha().toColourspace('srgb');
+
+  const tattooGray = await sharp(positionedCanvasPNG)
+    .ensureAlpha()
+    .toColourspace('srgb')
+    .modulate({ saturation: 0, brightness: 0.50 })
+    .png()
+    .toBuffer();
+
+  return base
+    .composite([
+      { input: tattooGray, blend: 'multiply',   opacity: 0.50 },
+      { input: tattooGray, blend: 'soft-light', opacity: 0.22 }
+    ])
+    .png()
+    .toBuffer();
+}
+
 async function analyzeTattooAlpha(pngBuffer) {
   // returns { coverage, thinness, solidity, bbox, width, height }
   const img = sharp(pngBuffer).ensureAlpha();
@@ -445,7 +466,14 @@ const fluxPlacementHandler = {
       .png()
       .toBuffer();
 
-    // Use the *grown* mask for the input we send to FLUX to prevent shrink
+    // NEW: soften the grown mask & bake a subtle guide into the skin
+    const grownSoftMaskPng = await sharp(grownMaskPng).blur(1.25).png().toBuffer();
+    await uploadDebug(grownSoftMaskPng, userId, `mask_for_model_grow${growPx}px_soft1.25`);
+
+    const guideComposite = await bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvas);
+    await uploadDebug(guideComposite, userId, 'guide_baked');
+
+    // Keep your simple overlay for debugging preview
     const compositedForPreview = await sharp(skinImageBuffer)
       .composite([{ input: positionedCanvas, blend: 'over' }])
       .png()
@@ -468,8 +496,9 @@ const fluxPlacementHandler = {
       ? 'https://api.bfl.ai/v1/flux-fill'
       : 'https://api.bfl.ai/v1/flux-kontext-pro';
 
-    const inputBase64 = compositedForPreview.toString('base64'); // RAW b64 (no data URI)
-    const maskB64     = Buffer.from(grownMaskPng).toString('base64'); // grown mask
+    // Use baked guide + softened grown mask
+    const inputBase64 = guideComposite.toString('base64');
+    const maskB64     = grownSoftMaskPng.toString('base64');
 
     console.log(`Making ${numVariations} calls to FLUX (${endpoint.split('/').pop()})...`);
 
@@ -483,8 +512,9 @@ const fluxPlacementHandler = {
             mask_image: maskB64,
             output_format: 'png',
             n: 1,
-            guidance_scale: 8.0,
-            prompt_upsampling: true,
+            steps: 36,                // allow subdermal diffusion to emerge
+            guidance_scale: 5.5,      // lower = less redraw, more blending
+            prompt_upsampling: false,
             safety_tolerance: 2,
             seed
           }
@@ -494,9 +524,10 @@ const fluxPlacementHandler = {
             mask_image: maskB64,
             output_format: 'png',
             n: 1,
-            fidelity: 0.8,
-            guidance_scale: 8.0,
-            prompt_upsampling: true,
+            fidelity: 0.74,           // a bit more freedom than 0.8
+            strength: 0.22,           // gentle denoise for micro-bleed
+            guidance_scale: 5.0,      // lower guidance to avoid repaint
+            prompt_upsampling: false,
             safety_tolerance: 2,
             seed
           };

@@ -511,6 +511,10 @@ const fluxPlacementHandler = {
     console.log(`Making ${numVariations} calls to FLUX (${endpoint.split('/').pop()})...`);
 
     for (let i = 0; i < numVariations; i++) {
+      // Add a 1-second delay between API calls to avoid overwhelming the server, but not before the first call.
+      if (i > 0) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
       const seed = Date.now() + i;
 
       const payload = engine === 'fill'
@@ -540,7 +544,7 @@ const fluxPlacementHandler = {
 
       let task;
       try {
-        const res = await axios.post(endpoint, payload, { headers: fluxHeaders, timeout: 180000 });
+        const res = await axios.post(endpoint, payload, { headers: fluxHeaders, timeout: 90000 });
         task = res.data;
         console.log(`DEBUG: FLUX POST status=${res.status} id=${task.id}`);
       } catch (e) {

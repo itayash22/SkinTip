@@ -28,7 +28,6 @@ const ADAPTIVE_SCALE_ENABLED  = (process.env.ADAPTIVE_SCALE_ENABLED  ?? 'true').
 const ADAPTIVE_ENGINE_ENABLED = (process.env.ADAPTIVE_ENGINE_ENABLED ?? 'true').toLowerCase() === 'true';
 const GLOBAL_SCALE_UP         = Number(process.env.MODEL_SCALE_UP || '1.0');          // applied always
 const FLUX_ENGINE_DEFAULT     = (process.env.FLUX_ENGINE || 'kontext').toLowerCase(); // 'kontext' | 'fill'
-const FLUX_MAIN_POST_TIMEOUT_MS = Number(process.env.FLUX_MAIN_POST_TIMEOUT_MS || '180000');
 
 // Engine-specific size bias to counter model shrink
 const ENGINE_KONTEXT_SIZE_BIAS = Number(process.env.ENGINE_KONTEXT_SIZE_BIAS || '1.08');
@@ -541,7 +540,7 @@ const fluxPlacementHandler = {
 
       let task;
       try {
-        const res = await axios.post(endpoint, payload, { headers: fluxHeaders, timeout: FLUX_MAIN_POST_TIMEOUT_MS });
+        const res = await axios.post(endpoint, payload, { headers: fluxHeaders, timeout: 180000 });
         task = res.data;
         console.log(`DEBUG: FLUX POST status=${res.status} id=${task.id}`);
       } catch (e) {

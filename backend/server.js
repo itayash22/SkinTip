@@ -16,6 +16,8 @@ import sizeOf from 'image-size'; // image-size default export might be different
 // Import our new modularized services
 import tokenService from './modules/tokenService.js'; // Added .js extension
 import fluxKontextHandler from './modules/fluxPlacementHandler.js'; // Added .js extension
+import fs from 'fs/promises';
+import path from 'path';
 // --- END OF ACTUAL IMPORTS ---
 
 // Function to generate a dynamic timestamp for deployment tracking
@@ -223,7 +225,8 @@ app.post('/api/auth/login', async (req, res) => {
                 id: user.id,
                 email: user.email,
                 username: user.username,
-                tokens_remaining: user.tokens_remaining
+                tokens_remaining: user.tokens_remaining,
+                is_admin: user.is_admin
             }
         });
     } catch (error) {
@@ -522,6 +525,94 @@ app.post('/api/log-event', authenticateToken, async (req, res) => {
         res.status(201).json({ success: true, message: 'Event logged.' });
     } catch (error) {
         res.status(500).json({ error: 'Failed to log event.' });
+    }
+});
+
+const isAdmin = (req, res, next) => {
+    if (req.user && req.user.is_admin) {
+        next();
+    } else {
+        res.status(403).json({ error: 'Forbidden: Admins only' });
+    }
+};
+
+app.get('/api/admin/flux-settings', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('flux_settings')
+            .select('settings')
+            .order('id', { ascending: false })
+            .limit(1)
+            .single();
+
+        if (error) throw error;
+        res.json(data.settings);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch settings' });
+    }
+});
+
+app.post('/api/admin/flux-settings', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('flux_settings')
+            .update({
+                settings: req.body,
+                updated_by: req.user.id,
+                updated_at: new Date()
+            })
+            .eq('id', 1) // There is only one settings row with id 1
+            .select();
+
+        if (error) throw error;
+        res.json({ message: 'Settings saved successfully' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to save settings' });
+    }
+});
+
+app.get('/api/admin/flux-settings/history', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('flux_settings_history')
+            .select('*, users(username)')
+            .order('changed_at', { ascending: false });
+
+        if (error) throw error;
+        res.json(data);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch settings history' });
+    }
+});
+
+app.post('/api/admin/flux-settings/rollback/:history_id', authenticateToken, isAdmin, async (req, res) => {
+    const { history_id } = req.params;
+    try {
+        // 1. Fetch the historical settings
+        const { data: historyData, error: historyError } = await supabase
+            .from('flux_settings_history')
+            .select('new_settings')
+            .eq('id', history_id)
+            .single();
+
+        if (historyError) throw historyError;
+
+        // 2. Update the current settings with the historical settings
+        const { error: updateError } = await supabase
+            .from('flux_settings')
+            .update({
+                settings: historyData.new_settings,
+                updated_by: req.user.id,
+                updated_at: new Date()
+            })
+            .eq('id', 1) // There is only one settings row with id 1
+            .select();
+
+        if (updateError) throw updateError;
+
+        res.json({ message: 'Settings rolled back successfully' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to rollback settings' });
     }
 });
 

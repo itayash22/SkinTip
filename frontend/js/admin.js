@@ -63,8 +63,9 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('prompt').value = settings.prompt;
         document.getElementById('adaptiveScaleEnabled').checked = settings.behaviorFlags.adaptiveScaleEnabled;
         document.getElementById('adaptiveEngineEnabled').checked = settings.behaviorFlags.adaptiveEngineEnabled;
+
+        // Set slider values first
         document.getElementById('globalScaleUp').value = settings.behaviorFlags.globalScaleUp;
-        document.getElementById('fluxEngineDefault').value = settings.behaviorFlags.fluxEngineDefault;
         document.getElementById('engineKontextSizeBias').value = settings.engineSizeBias.kontext;
         document.getElementById('engineFillSizeBias').value = settings.engineSizeBias.fill;
         document.getElementById('modelMaskGrowPct').value = settings.maskGrow.pct;
@@ -76,7 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('bakeSoftlightOpacity').value = settings.bakeTuning.softlightOpacity;
         document.getElementById('bakeMultiplyOpacity').value = settings.bakeTuning.multiplyOpacity;
 
-        // Update range slider display values
+        // Then update the display text for each slider
         setupRangeSlider('globalScaleUp', 'globalScaleUpValue');
         setupRangeSlider('engineKontextSizeBias', 'engineKontextSizeBiasValue');
         setupRangeSlider('engineFillSizeBias', 'engineFillSizeBiasValue');
@@ -88,6 +89,8 @@ document.addEventListener('DOMContentLoaded', () => {
         setupRangeSlider('bakeOverlayOpacity', 'bakeOverlayOpacityValue');
         setupRangeSlider('bakeSoftlightOpacity', 'bakeSoftlightOpacityValue');
         setupRangeSlider('bakeMultiplyOpacity', 'bakeMultiplyOpacityValue');
+
+        document.getElementById('fluxEngineDefault').value = settings.behaviorFlags.fluxEngineDefault;
     };
 
     // --- Form Submission ---

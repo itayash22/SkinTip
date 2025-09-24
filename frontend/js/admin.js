@@ -1,9 +1,4 @@
 // frontend/js/admin.js
-const utils = {
-    showError: (message) => {
-        alert(`Error: ${message}`);
-    }
-};
 
 document.addEventListener('DOMContentLoaded', () => {
     const adminSection = document.getElementById('dashboardSection');

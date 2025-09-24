@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Slate.Tattoo - Admin Dashboard</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/admin.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <div class="nav-brand">
+                <h1>Slate.Tattoo</h1>
+                <span class="tagline">Admin Dashboard</span>
+            </div>
+            <div class="nav-menu">
+                <span id="userInfo" class="user-info"></span>
+                <button id="logoutBtn" class="btn btn-outline" style="display:none;">Logout</button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="container">
+            <section id="dashboardSection" class="section">
+                <div class="section-header">
+                    <h2>FLUX Settings</h2>
+                    <p>Use this dashboard to tweak the FLUX prompt and other parameters.</p>
+                </div>
+
+                <form id="fluxSettingsForm">
+                    <div class="form-group">
+                        <label for="prompt">Prompt</label>
+                        <textarea id="prompt" name="prompt" rows="5"></textarea>
+                    </div>
+
+                    <h3>Behavior Flags & Knobs</h3>
+                    <div class="form-group">
+                        <label for="adaptiveScaleEnabled">Adaptive Scale Enabled</label>
+                        <input type="checkbox" id="adaptiveScaleEnabled" name="adaptiveScaleEnabled">
+                    </div>
+                    <div class="form-group">
+                        <label for="adaptiveEngineEnabled">Adaptive Engine Enabled</label>
+                        <input type="checkbox" id="adaptiveEngineEnabled" name="adaptiveEngineEnabled">
+                    </div>
+                    <div class="form-group">
+                        <label for="globalScaleUp">Global Scale Up</label>
+                        <input type="range" id="globalScaleUp" name="globalScaleUp" min="1" max="2" step="0.01">
+                        <span id="globalScaleUpValue"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="fluxEngineDefault">FLUX Engine Default</label>
+                        <select id="fluxEngineDefault" name="fluxEngineDefault">
+                            <option value="kontext">kontext</option>
+                            <option value="fill">fill</option>
+                        </select>
+                    </div>
+
+                    <h3>Engine-specific Size Bias</h3>
+                    <div class="form-group">
+                        <label for="engineKontextSizeBias">Kontext Size Bias</label>
+                        <input type="range" id="engineKontextSizeBias" name="engineKontextSizeBias" min="1" max="1.2" step="0.01">
+                        <span id="engineKontextSizeBiasValue"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="engineFillSizeBias">Fill Size Bias</label>
+                        <input type="range" id="engineFillSizeBias" name="engineFillSizeBias" min="1" max="1.2" step="0.01">
+                        <span id="engineFillSizeBiasValue"></span>
+                    </div>
+
+                    <h3>Mask Grow</h3>
+                    <div class="form-group">
+                        <label for="modelMaskGrowPct">Model Mask Grow Pct</label>
+                        <input type="range" id="modelMaskGrowPct" name="modelMaskGrowPct" min="0" max="0.2" step="0.01">
+                        <span id="modelMaskGrowPctValue"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="modelMaskGrowMin">Model Mask Grow Min</label>
+                        <input type="range" id="modelMaskGrowMin" name="modelMaskGrowMin" min="0" max="20" step="1">
+                        <span id="modelMaskGrowMinValue"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="modelMaskGrowMax">Model Mask Grow Max</label>
+                        <input type="range" id="modelMaskGrowMax" name="modelMaskGrowMax" min="0" max="50" step="1">
+                        <span id="modelMaskGrowMaxValue"></span>
+                    </div>
+
+                    <h3>Baked-guide Tuning</h3>
+                    <div class="form-group">
+                        <label for="bakeTattooBrightness">Bake Tattoo Brightness</label>
+                        <input type="range" id="bakeTattooBrightness" name="bakeTattooBrightness" min="0.8" max="1.2" step="0.01">
+                        <span id="bakeTattooBrightnessValue"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="bakeTattooGamma">Bake Tattoo Gamma</label>
+                        <input type="range" id="bakeTattooGamma" name="bakeTattooGamma" min="0.8" max="1.2" step="0.01">
+                        <span id="bakeTattooGammaValue"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="bakeOverlayOpacity">Bake Overlay Opacity</label>
+                        <input type="range" id="bakeOverlayOpacity" name="bakeOverlayOpacity" min="0" max="1" step="0.01">
+                        <span id="bakeOverlayOpacityValue"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="bakeSoftlightOpacity">Bake Softlight Opacity</label>
+                        <input type="range" id="bakeSoftlightOpacity" name="bakeSoftlightOpacity" min="0" max="1" step="0.01">
+                        <span id="bakeSoftlightOpacityValue"></span>
+                    </div>
+                    <div class="form-group">
+                        <label for="bakeMultiplyOpacity">Bake Multiply Opacity</label>
+                        <input type="range" id="bakeMultiplyOpacity" name="bakeMultiplyOpacity" min="0" max="1" step="0.01">
+                        <span id="bakeMultiplyOpacityValue"></span>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Save Settings</button>
+                </form>
+            </section>
+        </div>
+    </main>
+    <script src="js/config.js"></script>
+    <script src="https://unpkg.com/jwt-decode/build/jwt-decode.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/admin.js"></script>
+
+    <section id="historySection" class="section">
+        <div class="section-header">
+            <h2>Settings History</h2>
+        </div>
+        <div id="historyContainer"></div>
+    </section>
+</body>
+</html>

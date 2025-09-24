@@ -249,6 +249,7 @@ const auth = {
         const userInfoSpan = auth.userInfoSpan;
         const logoutBtn = auth.logoutBtn;
         const adminLink = document.getElementById('adminLink');
+        const adminFooterLink = document.getElementById('adminFooterLink');
         // These elements are on welcome.html, so still get them here
         const loginBtn = document.getElementById('loginBtn'); 
         const registerBtn = document.getElementById('registerBtn');
@@ -264,6 +265,9 @@ const auth = {
             }
             if(adminLink && STATE.user && STATE.user.is_admin) {
                 adminLink.style.display = 'block';
+            }
+            if(adminFooterLink && STATE.user && STATE.user.is_admin) {
+                adminFooterLink.style.display = 'block';
             }
             // Hide welcome page buttons if on welcome.html and logged in
             const currentPage = window.location.pathname.split('/').pop();
@@ -282,6 +286,9 @@ const auth = {
             }
             if (adminLink) {
                 adminLink.style.display = 'none';
+            }
+            if (adminFooterLink) {
+                adminFooterLink.style.display = 'none';
             }
             // Show welcome page buttons if on welcome.html and logged out
             const currentPage = window.location.pathname.split('/').pop();

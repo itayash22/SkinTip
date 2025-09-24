@@ -47,10 +47,11 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (!response.ok) {
-                throw new Error('Failed to fetch settings');
+                throw new Error(`Failed to fetch settings: ${response.statusText}`);
             }
 
             const settings = await response.json();
+            console.log('Fetched settings:', settings); // Log the settings to the console
             populateForm(settings);
 
         } catch (error) {
@@ -60,37 +61,37 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const populateForm = (settings) => {
+        if (!settings) {
+            utils.showError("Received invalid settings from server.");
+            return;
+        }
+
         document.getElementById('prompt').value = settings.prompt;
         document.getElementById('adaptiveScaleEnabled').checked = settings.behaviorFlags.adaptiveScaleEnabled;
         document.getElementById('adaptiveEngineEnabled').checked = settings.behaviorFlags.adaptiveEngineEnabled;
-
-        // Set slider values first
-        document.getElementById('globalScaleUp').value = settings.behaviorFlags.globalScaleUp;
-        document.getElementById('engineKontextSizeBias').value = settings.engineSizeBias.kontext;
-        document.getElementById('engineFillSizeBias').value = settings.engineSizeBias.fill;
-        document.getElementById('modelMaskGrowPct').value = settings.maskGrow.pct;
-        document.getElementById('modelMaskGrowMin').value = settings.maskGrow.min;
-        document.getElementById('modelMaskGrowMax').value = settings.maskGrow.max;
-        document.getElementById('bakeTattooBrightness').value = settings.bakeTuning.brightness;
-        document.getElementById('bakeTattooGamma').value = settings.bakeTuning.gamma;
-        document.getElementById('bakeOverlayOpacity').value = settings.bakeTuning.overlayOpacity;
-        document.getElementById('bakeSoftlightOpacity').value = settings.bakeTuning.softlightOpacity;
-        document.getElementById('bakeMultiplyOpacity').value = settings.bakeTuning.multiplyOpacity;
-
-        // Then update the display text for each slider
-        setupRangeSlider('globalScaleUp', 'globalScaleUpValue');
-        setupRangeSlider('engineKontextSizeBias', 'engineKontextSizeBiasValue');
-        setupRangeSlider('engineFillSizeBias', 'engineFillSizeBiasValue');
-        setupRangeSlider('modelMaskGrowPct', 'modelMaskGrowPctValue');
-        setupRangeSlider('modelMaskGrowMin', 'modelMaskGrowMinValue');
-        setupRangeSlider('modelMaskGrowMax', 'modelMaskGrowMaxValue');
-        setupRangeSlider('bakeTattooBrightness', 'bakeTattooBrightnessValue');
-        setupRangeSlider('bakeTattooGamma', 'bakeTattooGammaValue');
-        setupRangeSlider('bakeOverlayOpacity', 'bakeOverlayOpacityValue');
-        setupRangeSlider('bakeSoftlightOpacity', 'bakeSoftlightOpacityValue');
-        setupRangeSlider('bakeMultiplyOpacity', 'bakeMultiplyOpacityValue');
-
         document.getElementById('fluxEngineDefault').value = settings.behaviorFlags.fluxEngineDefault;
+
+        // Explicitly set each slider and its corresponding display value
+        const updateSlider = (sliderId, displayId, value) => {
+            const slider = document.getElementById(sliderId);
+            const display = document.getElementById(displayId);
+            if (slider && display) {
+                slider.value = value;
+                display.textContent = value;
+            }
+        };
+
+        updateSlider('globalScaleUp', 'globalScaleUpValue', settings.behaviorFlags.globalScaleUp);
+        updateSlider('engineKontextSizeBias', 'engineKontextSizeBiasValue', settings.engineSizeBias.kontext);
+        updateSlider('engineFillSizeBias', 'engineFillSizeBiasValue', settings.engineSizeBias.fill);
+        updateSlider('modelMaskGrowPct', 'modelMaskGrowPctValue', settings.maskGrow.pct);
+        updateSlider('modelMaskGrowMin', 'modelMaskGrowMinValue', settings.maskGrow.min);
+        updateSlider('modelMaskGrowMax', 'modelMaskGrowMaxValue', settings.maskGrow.max);
+        updateSlider('bakeTattooBrightness', 'bakeTattooBrightnessValue', settings.bakeTuning.brightness);
+        updateSlider('bakeTattooGamma', 'bakeTattooGammaValue', settings.bakeTuning.gamma);
+        updateSlider('bakeOverlayOpacity', 'bakeOverlayOpacityValue', settings.bakeTuning.overlayOpacity);
+        updateSlider('bakeSoftlightOpacity', 'bakeSoftlightOpacityValue', settings.bakeTuning.softlightOpacity);
+        updateSlider('bakeMultiplyOpacity', 'bakeMultiplyOpacityValue', settings.bakeTuning.multiplyOpacity);
     };
 
     // --- Form Submission ---

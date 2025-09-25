@@ -588,31 +588,49 @@ app.get('/api/admin/flux-settings/history', authenticateToken, isAdmin, async (r
 app.post('/api/admin/flux-settings/rollback/:history_id', authenticateToken, isAdmin, async (req, res) => {
     const { history_id } = req.params;
     try {
-        // 1. Fetch the historical settings
+        // 1. Fetch the specific historical version of the settings
         const { data: historyData, error: historyError } = await supabase
             .from('flux_settings_history')
             .select('new_settings')
             .eq('id', history_id)
             .single();
 
-        if (historyError) throw historyError;
+        if (historyError) {
+            console.error('Rollback Error - Step 1: Fetching history failed', historyError);
+            throw new Error('Could not find the specified historical record.');
+        }
+        if (!historyData) {
+            return res.status(404).json({ error: 'History record not found.' });
+        }
 
-        // 2. Update the current settings with the historical settings
-        const { error: updateError } = await supabase
+        const settingsToRestore = historyData.new_settings;
+
+        // 2. Update the main settings row with the restored data.
+        const { data: updateData, error: updateError } = await supabase
             .from('flux_settings')
             .update({
-                settings: historyData.new_settings,
+                settings: settingsToRestore, // Ensure this is a JSON object
                 updated_by: req.user.id,
                 updated_at: new Date()
             })
-            .eq('id', 1) // There is only one settings row with id 1
-            .select();
+            .eq('id', 1) // Target the single, primary settings row
+            .select();   // Select the result to confirm the update worked
 
-        if (updateError) throw updateError;
+        if (updateError) {
+            console.error('Rollback Error - Step 2: Updating settings failed', updateError);
+            throw new Error('Failed to save the restored settings.');
+        }
+        if (!updateData || updateData.length === 0) {
+            console.error('Rollback Error - Step 2: Update affected 0 rows.');
+            throw new Error('Failed to find the current settings record to update.');
+        }
 
-        res.json({ message: 'Settings rolled back successfully' });
+        res.json({ message: 'Settings rolled back successfully.' });
     } catch (error) {
-        res.status(500).json({ error: 'Failed to rollback settings' });
+        // Log the actual error to the server console for debugging
+        console.error('A critical error occurred during settings rollback:', error.message);
+        // Return a generic error to the client
+        res.status(500).json({ error: 'Failed to rollback settings.' });
     }
 });
 

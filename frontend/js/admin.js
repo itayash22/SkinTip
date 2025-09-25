@@ -19,18 +19,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     adminSection.style.display = 'block';
 
-    // --- UI Helpers ---
-    const setupRangeSlider = (sliderId, displayId) => {
-        const slider = document.getElementById(sliderId);
-        const display = document.getElementById(displayId);
-        if (slider && display) {
-            display.textContent = slider.value;
-            slider.addEventListener('input', () => {
-                display.textContent = slider.value;
-            });
-        }
-    };
-
     // --- Fetch and Populate Settings ---
     const fetchSettings = async () => {
         try {
@@ -65,27 +53,30 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('adaptiveEngineEnabled').checked = settings.behaviorFlags.adaptiveEngineEnabled;
         document.getElementById('fluxEngineDefault').value = settings.behaviorFlags.fluxEngineDefault;
 
-        // Explicitly set each slider and its corresponding display value
-        const updateSlider = (sliderId, displayId, value) => {
+        // Set slider values and then set up the display text
+        const setupSliderWithValue = (sliderId, displayId, value) => {
             const slider = document.getElementById(sliderId);
             const display = document.getElementById(displayId);
             if (slider && display) {
                 slider.value = value;
                 display.textContent = value;
+                slider.addEventListener('input', () => {
+                    display.textContent = slider.value;
+                });
             }
         };
 
-        updateSlider('globalScaleUp', 'globalScaleUpValue', settings.behaviorFlags.globalScaleUp);
-        updateSlider('engineKontextSizeBias', 'engineKontextSizeBiasValue', settings.engineSizeBias.kontext);
-        updateSlider('engineFillSizeBias', 'engineFillSizeBiasValue', settings.engineSizeBias.fill);
-        updateSlider('modelMaskGrowPct', 'modelMaskGrowPctValue', settings.maskGrow.pct);
-        updateSlider('modelMaskGrowMin', 'modelMaskGrowMinValue', settings.maskGrow.min);
-        updateSlider('modelMaskGrowMax', 'modelMaskGrowMaxValue', settings.maskGrow.max);
-        updateSlider('bakeTattooBrightness', 'bakeTattooBrightnessValue', settings.bakeTuning.brightness);
-        updateSlider('bakeTattooGamma', 'bakeTattooGammaValue', settings.bakeTuning.gamma);
-        updateSlider('bakeOverlayOpacity', 'bakeOverlayOpacityValue', settings.bakeTuning.overlayOpacity);
-        updateSlider('bakeSoftlightOpacity', 'bakeSoftlightOpacityValue', settings.bakeTuning.softlightOpacity);
-        updateSlider('bakeMultiplyOpacity', 'bakeMultiplyOpacityValue', settings.bakeTuning.multiplyOpacity);
+        setupSliderWithValue('globalScaleUp', 'globalScaleUpValue', settings.behaviorFlags.globalScaleUp);
+        setupSliderWithValue('engineKontextSizeBias', 'engineKontextSizeBiasValue', settings.engineSizeBias.kontext);
+        setupSliderWithValue('engineFillSizeBias', 'engineFillSizeBiasValue', settings.engineSizeBias.fill);
+        setupSliderWithValue('modelMaskGrowPct', 'modelMaskGrowPctValue', settings.maskGrow.pct);
+        setupSliderWithValue('modelMaskGrowMin', 'modelMaskGrowMinValue', settings.maskGrow.min);
+        setupSliderWithValue('modelMaskGrowMax', 'modelMaskGrowMaxValue', settings.maskGrow.max);
+        setupSliderWithValue('bakeTattooBrightness', 'bakeTattooBrightnessValue', settings.bakeTuning.brightness);
+        setupSliderWithValue('bakeTattooGamma', 'bakeTattooGammaValue', settings.bakeTuning.gamma);
+        setupSliderWithValue('bakeOverlayOpacity', 'bakeOverlayOpacityValue', settings.bakeTuning.overlayOpacity);
+        setupSliderWithValue('bakeSoftlightOpacity', 'bakeSoftlightOpacityValue', settings.bakeTuning.softlightOpacity);
+        setupSliderWithValue('bakeMultiplyOpacity', 'bakeMultiplyOpacityValue', settings.bakeTuning.multiplyOpacity);
     };
 
     // --- Form Submission ---

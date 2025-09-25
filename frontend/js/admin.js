@@ -11,8 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    const decodedToken = jwt_decode(STATE.token);
-    if (!decodedToken || !STATE.user.is_admin) {
+    if (!STATE.user || !STATE.user.is_admin) {
          alert('You are not authorized to view this page.');
          window.location.href = 'index.html';
          return;

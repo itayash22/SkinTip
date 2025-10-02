@@ -5,6 +5,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const fluxSettingsForm = document.getElementById('fluxSettingsForm');
     const historyContainer = document.getElementById('historyContainer');
 
+    // Hill Climbing State
+    let hillClimbingState = {
+        baseParams: null,
+        tattooImage: null,
+        skinImage: null,
+        mask: null,
+        activeGroupIndex: 0,
+        paramIndex: 0,
+        paramGroups: {
+            'Core Blend & Appearance': ['bakeTuning.brightness', 'bakeTuning.gamma', 'bakeTuning.overlayOpacity', 'bakeTuning.softlightOpacity', 'bakeTuning.multiplyOpacity'],
+            'Sizing & Scaling': ['behaviorFlags.globalScaleUp', 'engineSizeBias.kontext', 'engineSizeBias.fill']
+        }
+    };
+
     // --- Authentication ---
     if (!STATE.token) {
         window.location.href = 'index.html';
@@ -215,7 +229,268 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // --- Hill Climbing ---
+    const startHillClimbingBtn = document.getElementById('startHillClimbing');
+    const hillClimbingWorkspace = document.getElementById('hillClimbingWorkspace');
+    const hillClimbingResults = document.getElementById('hillClimbingResults');
+    const currentTestInfo = document.getElementById('currentTestInfo');
+    const lockAndTestNextBtn = document.getElementById('lockAndTestNext');
+
+    startHillClimbingBtn.addEventListener('click', async () => {
+        const tattooImageFile = document.getElementById('tattooImage').files[0];
+        const skinImageFile = document.getElementById('skinImage').files[0];
+        const mask = document.getElementById('mask').value;
+
+        if (!tattooImageFile || !skinImageFile || !mask) {
+            utils.showError('Please select a tattoo image, a skin image, and provide a mask.');
+            return;
+        }
+
+        hillClimbingState.tattooImage = tattooImageFile;
+        hillClimbingState.skinImage = skinImageFile;
+        hillClimbingState.mask = mask;
+
+        // Get the current form values as the starting point
+        const formData = new FormData(fluxSettingsForm);
+        hillClimbingState.baseParams = {
+            prompt: formData.get('prompt'),
+            tattooAngle: 0,
+            tattooScale: 1.0,
+            behaviorFlags: {
+                adaptiveScaleEnabled: document.getElementById('adaptiveScaleEnabled').checked,
+                adaptiveEngineEnabled: document.getElementById('adaptiveEngineEnabled').checked,
+                globalScaleUp: parseFloat(formData.get('globalScaleUp')),
+                fluxEngineDefault: formData.get('fluxEngineDefault'),
+            },
+            engineSizeBias: {
+                kontext: parseFloat(formData.get('engineKontextSizeBias')),
+                fill: parseFloat(formData.get('engineFillSizeBias')),
+            },
+            maskGrow: {
+                pct: parseFloat(formData.get('modelMaskGrowPct')),
+                min: parseInt(formData.get('modelMaskGrowMin')),
+                max: parseInt(formData.get('modelMaskGrowMax')),
+            },
+            bakeTuning: {
+                brightness: parseFloat(formData.get('bakeTattooBrightness')),
+                gamma: parseFloat(formData.get('bakeTattooGamma')),
+                overlayOpacity: parseFloat(formData.get('bakeOverlayOpacity')),
+                softlightOpacity: parseFloat(formData.get('bakeSoftlightOpacity')),
+                multiplyOpacity: parseFloat(formData.get('bakeMultiplyOpacity')),
+            }
+        };
+
+        hillClimbingWorkspace.style.display = 'block';
+        runHillClimbIteration();
+    });
+
+    const runHillClimbIteration = async () => {
+        const activeGroupKey = Object.keys(hillClimbingState.paramGroups)[hillClimbingState.activeGroupIndex];
+        const activeGroup = hillClimbingState.paramGroups[activeGroupKey];
+        const paramToTest = activeGroup[hillClimbingState.paramIndex];
+        currentTestInfo.textContent = `Testing Group: ${activeGroupKey} - Parameter: ${paramToTest}`;
+
+        const formData = new FormData();
+        formData.append('tattooImage', hillClimbingState.tattooImage);
+        formData.append('skinImage', hillClimbingState.skinImage);
+        formData.append('jsonData', JSON.stringify({
+            baseParams: hillClimbingState.baseParams,
+            activeGroup: activeGroupKey,
+            paramIndex: hillClimbingState.paramIndex,
+            mask: hillClimbingState.mask
+        }));
+
+        try {
+            const response = await fetch(`${CONFIG.API_URL}/admin/hill-climb`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${STATE.token}` },
+                body: formData
+            });
+
+            if (!response.ok) {
+                throw new Error('Hill climb generation failed');
+            }
+
+            const results = await response.json();
+            displayHillClimbResults(results);
+        } catch (error) {
+            console.error('Hill climb error:', error);
+            utils.showError('Failed to generate hill climb variations.');
+        }
+    };
+
+    const displayHillClimbResults = (results) => {
+        hillClimbingResults.innerHTML = '';
+        results.forEach(result => {
+            const resultItem = document.createElement('div');
+            resultItem.className = 'result-item';
+            resultItem.innerHTML = `
+                <img src="${result.imageUrl}" alt="${result.label}">
+                <button class="btn btn-sm btn-primary" data-params='${JSON.stringify(result.params)}'>Choose</button>
+            `;
+            hillClimbingResults.appendChild(resultItem);
+        });
+    };
+
+    hillClimbingResults.addEventListener('click', (e) => {
+        if (e.target.tagName === 'BUTTON') {
+            const chosenParams = JSON.parse(e.target.dataset.params);
+
+            // If "no change" was chosen, move to the next parameter in the group
+            if (JSON.stringify(chosenParams) === JSON.stringify(hillClimbingState.baseParams)) {
+                const activeGroup = hillClimbingState.paramGroups[Object.keys(hillClimbingState.paramGroups)[hillClimbingState.activeGroupIndex]];
+                hillClimbingState.paramIndex = (hillClimbingState.paramIndex + 1) % activeGroup.length;
+            } else {
+                hillClimbingState.baseParams = chosenParams;
+            }
+
+            runHillClimbIteration();
+        }
+    });
+
+    lockAndTestNextBtn.addEventListener('click', () => {
+        hillClimbingState.activeGroupIndex = (hillClimbingState.activeGroupIndex + 1) % Object.keys(hillClimbingState.paramGroups).length;
+        hillClimbingState.paramIndex = 0; // Reset param index for new group
+        runHillClimbIteration();
+    });
+
+    // --- Preset Management ---
+    const savePresetBtn = document.getElementById('savePreset');
+    const presetNameInput = document.getElementById('presetName');
+    const presetsList = document.getElementById('presetsList');
+    const uploadPresetInput = document.getElementById('uploadPreset');
+
+    const fetchPresets = async () => {
+        try {
+            const response = await fetch(`${CONFIG.API_URL}/api/admin/presets`, {
+                headers: { 'Authorization': `Bearer ${STATE.token}` }
+            });
+            const presets = await response.json();
+            displayPresets(presets);
+        } catch (error) {
+            utils.showError('Failed to fetch presets.');
+        }
+    };
+
+    const displayPresets = (presets) => {
+        presetsList.innerHTML = '';
+        presets.forEach(preset => {
+            const presetEl = document.createElement('div');
+            presetEl.innerHTML = `
+                <span>${preset.preset_name}</span>
+                <button data-id="${preset.id}" class="load-preset">Load</button>
+                <button data-id="${preset.id}" class="download-preset">Download CSV</button>
+                <button data-id="${preset.id}" class="set-default">Set as Default</button>
+            `;
+            presetsList.appendChild(presetEl);
+        });
+    };
+
+    savePresetBtn.addEventListener('click', async () => {
+        const presetName = presetNameInput.value;
+        if (!presetName) {
+            utils.showError('Please enter a name for the preset.');
+            return;
+        }
+        try {
+            await fetch(`${CONFIG.API_URL}/api/admin/presets`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${STATE.token}`
+                },
+                body: JSON.stringify({
+                    preset_name: presetName,
+                    parameters: hillClimbingState.baseParams
+                })
+            });
+            fetchPresets();
+        } catch (error) {
+            utils.showError('Failed to save preset.');
+        }
+    });
+
+    presetsList.addEventListener('click', async (e) => {
+        const { id } = e.target.dataset;
+        if (e.target.classList.contains('load-preset')) {
+            try {
+                const response = await fetch(`${CONFIG.API_URL}/api/admin/presets`, {
+                    headers: { 'Authorization': `Bearer ${STATE.token}` }
+                });
+                const presets = await response.json();
+                const preset = presets.find(p => p.id == id);
+                if (preset) {
+                    hillClimbingState.baseParams = preset.parameters;
+                    populateForm(preset.parameters);
+                    alert(`Preset "${preset.preset_name}" loaded.`);
+                }
+            } catch (error) {
+                utils.showError('Failed to load preset.');
+            }
+        } else if (e.target.classList.contains('set-default')) {
+            try {
+                await fetch(`${CONFIG.API_URL}/api/admin/presets/${id}/set-default`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${STATE.token}` }
+                });
+                alert('Default settings updated.');
+            } catch (error) {
+                utils.showError('Failed to set default settings.');
+            }
+        } else if (e.target.classList.contains('download-preset')) {
+            try {
+                const response = await fetch(`${CONFIG.API_URL}/api/admin/presets/${id}/download`, {
+                    headers: { 'Authorization': `Bearer ${STATE.token}` }
+                });
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = `${e.target.parentElement.querySelector('span').textContent}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+            } catch (error) {
+                utils.showError('Failed to download preset.');
+            }
+        }
+    });
+
+    uploadPresetInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const csv = event.target.result;
+                const lines = csv.split('\n').slice(1); // Skip header row
+                const params = {
+                    behaviorFlags: {},
+                    engineSizeBias: {},
+                    maskGrow: {},
+                    bakeTuning: {}
+                };
+                lines.forEach(line => {
+                    const [key, value] = line.split(',');
+                    if (key.includes('.')) {
+                        const [mainKey, subKey] = key.split('.');
+                        if (params[mainKey]) {
+                            params[mainKey][subKey] = isNaN(value) ? value : parseFloat(value);
+                        }
+                    } else {
+                        params[key] = value;
+                    }
+                });
+                hillClimbingState.baseParams = params;
+                populateForm(params);
+                alert('Preset loaded from CSV.');
+            };
+            reader.readAsText(file);
+        }
+    });
+
     // --- Initialize ---
     fetchSettings();
     fetchHistory();
+    fetchPresets();
 });

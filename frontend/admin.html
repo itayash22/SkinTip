@@ -147,5 +147,61 @@
         </div>
         <div id="historyContainer"></div>
     </section>
+
+    <section id="hillClimbingSection" class="section">
+        <div class="section-header">
+            <h2>Hill Climbing Tool</h2>
+            <p>Systematically find the optimal FLUX parameters for a given tattoo/skin combination.</p>
+        </div>
+
+        <div id="hillClimbingSetup">
+            <div class="form-group">
+                <label for="tattooImage">Tattoo Image</label>
+                <input type="file" id="tattooImage" accept="image/*">
+            </div>
+            <div class="form-group">
+                <label for="skinImage">Skin Image</label>
+                <input type="file" id="skinImage" accept="image/*">
+            </div>
+            <div class="form-group">
+                <label for="mask">Mask (Base64)</label>
+                <textarea id="mask" rows="3"></textarea>
+            </div>
+            <button id="startHillClimbing" class="btn btn-primary">Start Hill Climbing Session</button>
+        </div>
+
+        <div id="hillClimbingWorkspace" style="display: none;">
+            <h3 id="currentTestInfo"></h3>
+            <div id="hillClimbingResults" class="results-grid"></div>
+            <button id="lockAndTestNext" class="btn btn-secondary">Lock Group & Test Next</button>
+        </div>
+    </section>
+
+    <section id="presetsSection" class="section">
+        <div class="section-header">
+            <h2>Parameter Presets</h2>
+        </div>
+
+        <div id="savePresetForm" class="form-group">
+            <label for="presetName">Preset Name</label>
+            <input type="text" id="presetName" placeholder="e.g., Best for fine line on arm">
+            <button id="savePreset" class="btn btn-primary">Save Current Params</button>
+        </div>
+
+        <div id="presetsList"></div>
+
+        <div class="form-group">
+            <label for="uploadPreset">Upload Preset (CSV)</label>
+            <input type="file" id="uploadPreset" accept=".csv">
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-bottom">
+                <p>&copy; 2024 Slate.Tattoo. Made with ❤️ by itayash@gmail.com</p>
+            </div>
+        </div>
+    </footer>
 </body>
 </html>

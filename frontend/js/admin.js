@@ -230,25 +230,38 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- Hill Climbing ---
+    const setupCanvasBtn = document.getElementById('setupCanvasBtn');
+    const drawingSection = document.getElementById('drawingSection');
     const startHillClimbingBtn = document.getElementById('startHillClimbing');
     const hillClimbingWorkspace = document.getElementById('hillClimbingWorkspace');
     const hillClimbingResults = document.getElementById('hillClimbingResults');
     const currentTestInfo = document.getElementById('currentTestInfo');
     const lockAndTestNextBtn = document.getElementById('lockAndTestNext');
 
-    startHillClimbingBtn.addEventListener('click', async () => {
+    setupCanvasBtn.addEventListener('click', () => {
         const tattooImageFile = document.getElementById('tattooImage').files[0];
         const skinImageFile = document.getElementById('skinImage').files[0];
-        const mask = document.getElementById('mask').value;
 
-        if (!tattooImageFile || !skinImageFile || !mask) {
-            utils.showError('Please select a tattoo image, a skin image, and provide a mask.');
+        if (!tattooImageFile || !skinImageFile) {
+            utils.showError('Please select both a tattoo and a skin image.');
             return;
         }
 
         hillClimbingState.tattooImage = tattooImageFile;
         hillClimbingState.skinImage = skinImageFile;
-        hillClimbingState.mask = mask;
+
+        const tattooUrl = URL.createObjectURL(tattooImageFile);
+        const skinUrl = URL.createObjectURL(skinImageFile);
+
+        drawingSection.style.display = 'block';
+        adminDrawing.init('adminDrawingCanvas', skinUrl, tattooUrl);
+    });
+
+    document.getElementById('adminRotationSlider').addEventListener('input', (e) => adminDrawing.setRotation(e.target.value));
+    document.getElementById('adminSizeSlider').addEventListener('input', (e) => adminDrawing.setScale(e.target.value / 100));
+
+    startHillClimbingBtn.addEventListener('click', async () => {
+        hillClimbingState.mask = adminDrawing.generateMask();
 
         // Get the current form values as the starting point
         const formData = new FormData(fluxSettingsForm);
@@ -280,6 +293,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
 
+        drawingSection.style.display = 'none';
         hillClimbingWorkspace.style.display = 'block';
         runHillClimbIteration();
     });

@@ -1,14 +1,16 @@
 // frontend/js/admin_drawing.js
-// A self-contained drawing module for the admin page canvas
+// A self-contained, responsive drawing module for the admin page canvas,
+// faithfully adapted from the main application's drawing.js.
 
 const adminDrawing = {
     canvas: null,
     ctx: null,
-    skinImage: null,
-    tattooImage: null,
-    tattooPos: { x: 0, y: 0 },
-    tattooScale: 1,
-    tattooRotation: 0,
+    skinImg: null,
+    tattooImg: null,
+
+    camera: { x: 0, y: 0, scale: 1 },
+    tattoo: { x: 0, y: 0, scale: 1, angle: 0, width: 0, height: 0 },
+
     isDragging: false,
     dragStart: { x: 0, y: 0 },
 
@@ -16,32 +18,67 @@ const adminDrawing = {
         this.canvas = document.getElementById(canvasId);
         this.ctx = this.canvas.getContext('2d');
 
-        this.skinImage = new Image();
-        this.tattooImage = new Image();
+        this.skinImg = new Image();
+        this.tattooImg = new Image();
 
-        this.skinImage.crossOrigin = "Anonymous";
-        this.tattooImage.crossOrigin = "Anonymous";
+        this.skinImg.crossOrigin = "Anonymous";
+        this.tattooImg.crossOrigin = "Anonymous";
 
-        this.skinImage.onload = () => {
-            const parent = this.canvas.parentElement;
-            const parentWidth = parent.clientWidth;
-            const scale = parentWidth / this.skinImage.naturalWidth;
-
-            this.canvas.width = this.skinImage.naturalWidth * scale;
-            this.canvas.height = this.skinImage.naturalHeight * scale;
-
-            this.tattooPos = { x: this.canvas.width / 2, y: this.canvas.height / 2 };
-            this.draw();
+        this.skinImg.onload = () => {
+            this.resizeCanvasToFit();
+            this.centerSkinImage();
+            this.tattooPos = { x: this.skinImg.width / 2, y: this.skinImg.height / 2 };
+            this.render();
         };
 
-        this.tattooImage.onload = () => {
-            this.draw();
+        this.tattooImg.onload = () => {
+            this.tattoo.width = this.tattooImg.naturalWidth;
+            this.tattoo.height = this.tattooImg.naturalHeight;
+            this.resetTattooTransform();
+            this.render();
         };
 
-        this.skinImage.src = skinImageUrl;
-        this.tattooImage.src = tattooImageUrl;
+        this.skinImg.src = skinImageUrl;
+        this.tattooImg.src = tattooImageUrl;
 
         this.addEventListeners();
+    },
+
+    resizeCanvasToFit() {
+        const parent = this.canvas.parentElement;
+        const parentWidth = parent.clientWidth;
+        const parentHeight = parent.clientHeight; // Use this for aspect ratio calc
+
+        if (this.skinImg.naturalWidth > 0) {
+            const aspectRatio = this.skinImg.naturalHeight / this.skinImg.naturalWidth;
+            const newWidth = parentWidth;
+            const newHeight = parentWidth * aspectRatio;
+
+            this.canvas.width = newWidth;
+            this.canvas.height = newHeight;
+            this.canvas.style.width = `${newWidth}px`;
+            this.canvas.style.height = `${newHeight}px`;
+        }
+    },
+
+    centerSkinImage() {
+        if (!this.skinImg || !this.skinImg.naturalWidth) return;
+        const cw = this.canvas.width;
+        const sw = this.skinImg.naturalWidth;
+        this.camera.scale = cw / sw;
+        this.camera.x = 0;
+        this.camera.y = 0;
+    },
+
+    resetTattooTransform() {
+        const skinShortSide = Math.min(this.skinImg.naturalWidth, this.skinImg.naturalHeight);
+        const desiredTattooWidth = skinShortSide * 0.25;
+        const baseTattooScale = desiredTattooWidth / this.tattoo.width;
+
+        this.tattoo.scale = baseTattooScale;
+        this.tattoo.x = this.skinImg.naturalWidth / 2;
+        this.tattoo.y = this.skinImg.naturalHeight / 2;
+        this.tattoo.angle = 0;
     },
 
     addEventListeners() {
@@ -53,15 +90,21 @@ const adminDrawing = {
 
     onMouseDown(e) {
         this.isDragging = true;
-        this.dragStart.x = e.clientX - this.canvas.getBoundingClientRect().left - this.tattooPos.x;
-        this.dragStart.y = e.clientY - this.canvas.getBoundingClientRect().top - this.tattooPos.y;
+        const rect = this.canvas.getBoundingClientRect();
+        const mouseX = (e.clientX - rect.left) / this.camera.scale;
+        const mouseY = (e.clientY - rect.top) / this.camera.scale;
+        this.dragStart.x = mouseX - this.tattoo.x;
+        this.dragStart.y = mouseY - this.tattoo.y;
     },
 
     onMouseMove(e) {
         if (this.isDragging) {
-            this.tattooPos.x = e.clientX - this.canvas.getBoundingClientRect().left - this.dragStart.x;
-            this.tattooPos.y = e.clientY - this.canvas.getBoundingClientRect().top - this.dragStart.y;
-            this.draw();
+            const rect = this.canvas.getBoundingClientRect();
+            const mouseX = (e.clientX - rect.left) / this.camera.scale;
+            const mouseY = (e.clientY - rect.top) / this.camera.scale;
+            this.tattoo.x = mouseX - this.dragStart.x;
+            this.tattoo.y = mouseY - this.dragStart.y;
+            this.render();
         }
     },
 
@@ -69,51 +112,66 @@ const adminDrawing = {
         this.isDragging = false;
     },
 
-    draw() {
-        if (!this.skinImage || !this.tattooImage) return;
+    render() {
+        if (!this.skinImg.complete || !this.tattooImg.complete) return;
 
+        this.ctx.setTransform(1, 0, 0, 1, 0, 0);
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        this.ctx.drawImage(this.skinImage, 0, 0, this.canvas.width, this.canvas.height);
+
+        this.ctx.setTransform(this.camera.scale, 0, 0, this.camera.scale, this.camera.x, this.camera.y);
+
+        this.ctx.drawImage(this.skinImg, 0, 0);
 
         this.ctx.save();
-        this.ctx.translate(this.tattooPos.x, this.tattooPos.y);
-        this.ctx.rotate(this.tattooRotation * Math.PI / 180);
-        this.ctx.scale(this.tattooScale, this.tattooScale);
-        this.ctx.drawImage(this.tattooImage, -this.tattooImage.width / 2, -this.tattooImage.height / 2);
+        this.ctx.translate(this.tattoo.x, this.tattoo.y);
+        this.ctx.rotate(this.tattoo.angle);
+        this.ctx.scale(this.tattoo.scale, this.tattoo.scale);
+        this.ctx.drawImage(this.tattooImg, -this.tattoo.width / 2, -this.tattoo.height / 2);
         this.ctx.restore();
     },
 
     setRotation(degrees) {
-        this.tattooRotation = degrees;
+        this.tattoo.angle = degrees * Math.PI / 180;
         document.getElementById('adminRotationValue').textContent = `${degrees}°`;
-        this.draw();
+        this.render();
     },
 
-    setScale(scale) {
-        this.tattooScale = scale;
-        document.getElementById('adminSizeValue').textContent = `${Math.round(scale * 100)}%`;
-        this.draw();
+    setScale(scalePercent) {
+        const skinShortSide = Math.min(this.skinImg.naturalWidth, this.skinImg.naturalHeight);
+        const desiredTattooWidth = skinShortSide * 0.25;
+        const baseTattooScale = desiredTattooWidth / this.tattoo.width;
+
+        this.tattoo.scale = baseTattooScale * (scalePercent / 100);
+        document.getElementById('adminSizeValue').textContent = `${scalePercent}%`;
+        this.render();
     },
 
     generateMask() {
         const maskCanvas = document.createElement('canvas');
-        maskCanvas.width = this.canvas.width;
-        maskCanvas.height = this.canvas.height;
+        maskCanvas.width = this.skinImg.naturalWidth;
+        maskCanvas.height = this.skinImg.naturalHeight;
         const maskCtx = maskCanvas.getContext('2d');
 
-        maskCtx.fillStyle = 'black';
-        maskCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
-
         maskCtx.save();
-        maskCtx.translate(this.tattooPos.x, this.tattooPos.y);
-        maskCtx.rotate(this.tattooRotation * Math.PI / 180);
-        maskCtx.scale(this.tattooScale, this.tattooScale);
-
-        maskCtx.globalCompositeOperation = 'destination-out';
-        maskCtx.drawImage(this.tattooImage, -this.tattooImage.width / 2, -this.tattooImage.height / 2);
+        maskCtx.translate(this.tattoo.x, this.tattoo.y);
+        maskCtx.rotate(this.tattoo.angle);
+        maskCtx.scale(this.tattoo.scale, this.tattoo.scale);
+        maskCtx.drawImage(this.tattooImg, -this.tattoo.width / 2, -this.tattoo.height / 2);
         maskCtx.restore();
 
-        return maskCanvas.toDataURL('image/png').split(',')[1]; // Return only base64 part
+        const imageData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+        const data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+            const alpha = data[i + 3];
+            if (alpha > 0) {
+                data[i] = 255;
+                data[i + 1] = 255;
+                data[i + 2] = 255;
+            }
+        }
+        maskCtx.putImageData(imageData, 0, 0);
+
+        return maskCanvas.toDataURL('image/png').split(',')[1];
     }
 };
 

@@ -23,8 +23,13 @@ const adminDrawing = {
         this.tattooImage.crossOrigin = "Anonymous";
 
         this.skinImage.onload = () => {
-            this.canvas.width = this.skinImage.width;
-            this.canvas.height = this.skinImage.height;
+            const parent = this.canvas.parentElement;
+            const parentWidth = parent.clientWidth;
+            const scale = parentWidth / this.skinImage.naturalWidth;
+
+            this.canvas.width = this.skinImage.naturalWidth * scale;
+            this.canvas.height = this.skinImage.naturalHeight * scale;
+
             this.tattooPos = { x: this.canvas.width / 2, y: this.canvas.height / 2 };
             this.draw();
         };
@@ -68,7 +73,7 @@ const adminDrawing = {
         if (!this.skinImage || !this.tattooImage) return;
 
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        this.ctx.drawImage(this.skinImage, 0, 0);
+        this.ctx.drawImage(this.skinImage, 0, 0, this.canvas.width, this.canvas.height);
 
         this.ctx.save();
         this.ctx.translate(this.tattooPos.x, this.tattooPos.y);

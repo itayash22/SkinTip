@@ -638,14 +638,20 @@ app.post('/api/admin/flux-settings/rollback/:history_id', authenticateToken, isA
 // --- Preset Management Endpoints ---
 app.get('/api/admin/presets', authenticateToken, isAdmin, async (req, res) => {
     try {
+        console.log('Fetching presets...');
         const { data, error } = await supabase
             .from('flux_presets')
             .select('*')
             .order('created_at', { ascending: false });
 
-        if (error) throw error;
+        if (error) {
+            console.error('Error fetching presets:', error);
+            throw error;
+        }
+        console.log('Presets fetched successfully:', data);
         res.json(data);
     } catch (error) {
+        console.error('Caught error in /api/admin/presets:', error);
         res.status(500).json({ error: 'Failed to fetch presets' });
     }
 });

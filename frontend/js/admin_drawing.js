@@ -10,6 +10,7 @@ const adminDrawing = {
 
     camera: { x: 0, y: 0, scale: 1 },
     tattoo: { x: 0, y: 0, scale: 1, angle: 0, width: 0, height: 0 },
+    baseTattooScale: 1,
 
     isDragging: false,
     dragStart: { x: 0, y: 0 },
@@ -24,11 +25,24 @@ const adminDrawing = {
         this.skinImg.crossOrigin = "Anonymous";
         this.tattooImg.crossOrigin = "Anonymous";
 
+        const parent = this.canvas.parentElement;
+
+        const resizeToParent = () => {
+            const w = parent.clientWidth;
+            // No fixed height, calculate from aspect ratio
+            if (this.skinImg.naturalWidth > 0) {
+                const h = w * (this.skinImg.naturalHeight / this.skinImg.naturalWidth);
+                this.canvas.style.width  = w + 'px';
+                this.canvas.style.height = h + 'px';
+                this.canvas.width  = Math.floor(w * window.devicePixelRatio);
+                this.canvas.height = Math.floor(h * window.devicePixelRatio);
+                this.centerSkinImage();
+                this.render();
+            }
+        }
+
         this.skinImg.onload = () => {
-            this.resizeCanvasToFit();
-            this.centerSkinImage();
-            this.tattooPos = { x: this.skinImg.width / 2, y: this.skinImg.height / 2 };
-            this.render();
+            resizeToParent();
         };
 
         this.tattooImg.onload = () => {
@@ -38,57 +52,53 @@ const adminDrawing = {
             this.render();
         };
 
+        if (!this.canvas.__ro) {
+            const ro = new ResizeObserver(resizeToParent);
+            ro.observe(parent);
+            this.canvas.__ro = ro;
+        }
+
         this.skinImg.src = skinImageUrl;
         this.tattooImg.src = tattooImageUrl;
 
         this.addEventListeners();
     },
 
-    resizeCanvasToFit() {
-        const parent = this.canvas.parentElement;
-        const parentWidth = parent.clientWidth;
-        const parentHeight = parent.clientHeight; // Use this for aspect ratio calc
-
-        if (this.skinImg.naturalWidth > 0) {
-            const aspectRatio = this.skinImg.naturalHeight / this.skinImg.naturalWidth;
-            const newWidth = parentWidth;
-            const newHeight = parentWidth * aspectRatio;
-
-            this.canvas.width = newWidth;
-            this.canvas.height = newHeight;
-            this.canvas.style.width = `${newWidth}px`;
-            this.canvas.style.height = `${newHeight}px`;
-        }
-    },
-
     centerSkinImage() {
         if (!this.skinImg || !this.skinImg.naturalWidth) return;
         const cw = this.canvas.width;
+        const ch = this.canvas.height;
         const sw = this.skinImg.naturalWidth;
-        this.camera.scale = cw / sw;
-        this.camera.x = 0;
-        this.camera.y = 0;
+        const sh = this.skinImg.naturalHeight;
+
+        const scaleX = cw / sw;
+        const scaleY = ch / sh;
+        this.camera.scale = Math.min(scaleX, scaleY);
+        this.camera.x = (cw - sw * this.camera.scale) / 2;
+        this.camera.y = (ch - sh * this.camera.scale) / 2;
     },
 
     resetTattooTransform() {
         const skinShortSide = Math.min(this.skinImg.naturalWidth, this.skinImg.naturalHeight);
         const desiredTattooWidth = skinShortSide * 0.25;
-        const baseTattooScale = desiredTattooWidth / this.tattoo.width;
+        this.baseTattooScale = desiredTattooWidth / this.tattoo.width;
 
-        this.tattoo.scale = baseTattooScale;
+        this.tattoo.scale = this.baseTattooScale;
         this.tattoo.x = this.skinImg.naturalWidth / 2;
         this.tattoo.y = this.skinImg.naturalHeight / 2;
         this.tattoo.angle = 0;
     },
 
     addEventListeners() {
-        this.canvas.addEventListener('mousedown', this.onMouseDown.bind(this));
-        this.canvas.addEventListener('mousemove', this.onMouseMove.bind(this));
-        this.canvas.addEventListener('mouseup', this.onMouseUp.bind(this));
-        this.canvas.addEventListener('mouseout', this.onMouseUp.bind(this));
+        if (this.canvas.__handlersAttached) return;
+        this.canvas.addEventListener('pointerdown', this.onPointerDown.bind(this));
+        this.canvas.addEventListener('pointermove', this.onPointerMove.bind(this));
+        this.canvas.addEventListener('pointerup', this.onMouseUp.bind(this));
+        this.canvas.addEventListener('pointerout', this.onMouseUp.bind(this));
+        this.canvas.__handlersAttached = true;
     },
 
-    onMouseDown(e) {
+    onPointerDown(e) {
         this.isDragging = true;
         const rect = this.canvas.getBoundingClientRect();
         const mouseX = (e.clientX - rect.left) / this.camera.scale;
@@ -97,7 +107,7 @@ const adminDrawing = {
         this.dragStart.y = mouseY - this.tattoo.y;
     },
 
-    onMouseMove(e) {
+    onPointerMove(e) {
         if (this.isDragging) {
             const rect = this.canvas.getBoundingClientRect();
             const mouseX = (e.clientX - rect.left) / this.camera.scale;
@@ -137,11 +147,7 @@ const adminDrawing = {
     },
 
     setScale(scalePercent) {
-        const skinShortSide = Math.min(this.skinImg.naturalWidth, this.skinImg.naturalHeight);
-        const desiredTattooWidth = skinShortSide * 0.25;
-        const baseTattooScale = desiredTattooWidth / this.tattoo.width;
-
-        this.tattoo.scale = baseTattooScale * (scalePercent / 100);
+        this.tattoo.scale = this.baseTattooScale * (scalePercent / 100);
         document.getElementById('adminSizeValue').textContent = `${scalePercent}%`;
         this.render();
     },

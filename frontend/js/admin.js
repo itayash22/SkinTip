@@ -376,7 +376,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const fetchPresets = async () => {
         try {
-            const response = await fetch(`${CONFIG.API_URL}/api/admin/presets`, {
+            const response = await fetch(`${CONFIG.API_URL}/admin/presets`, {
                 headers: { 'Authorization': `Bearer ${STATE.token}` }
             });
             const presets = await response.json();
@@ -407,7 +407,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         try {
-            await fetch(`${CONFIG.API_URL}/api/admin/presets`, {
+            await fetch(`${CONFIG.API_URL}/admin/presets`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -428,7 +428,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const { id } = e.target.dataset;
         if (e.target.classList.contains('load-preset')) {
             try {
-                const response = await fetch(`${CONFIG.API_URL}/api/admin/presets`, {
+                const response = await fetch(`${CONFIG.API_URL}/admin/presets`, {
                     headers: { 'Authorization': `Bearer ${STATE.token}` }
                 });
                 const presets = await response.json();
@@ -443,7 +443,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else if (e.target.classList.contains('set-default')) {
             try {
-                await fetch(`${CONFIG.API_URL}/api/admin/presets/${id}/set-default`, {
+                await fetch(`${CONFIG.API_URL}/admin/presets/${id}/set-default`, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${STATE.token}` }
                 });
@@ -453,7 +453,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else if (e.target.classList.contains('download-preset')) {
             try {
-                const response = await fetch(`${CONFIG.API_URL}/api/admin/presets/${id}/download`, {
+                const response = await fetch(`${CONFIG.API_URL}/admin/presets/${id}/download`, {
                     headers: { 'Authorization': `Bearer ${STATE.token}` }
                 });
                 const blob = await response.blob();

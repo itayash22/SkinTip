@@ -6,8 +6,6 @@ import sharp from 'sharp';
 import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
 import FormData from 'form-data';
-import fs from 'fs/promises';
-import path from 'path';
 
 // -----------------------------
 // Supabase setup
@@ -26,57 +24,26 @@ const FLUX_API_KEY = process.env.FLUX_API_KEY;
 // -----------------------------
 // Behavior flags + knobs
 // -----------------------------
-const getFluxSettings = async () => {
-    try {
-        const { data, error } = await supabase
-            .from('flux_settings')
-            .select('settings')
-            .order('id', { ascending: false })
-            .limit(1)
-            .single();
+const ADAPTIVE_SCALE_ENABLED  = (process.env.ADAPTIVE_SCALE_ENABLED  ?? 'true').toLowerCase() === 'true';
+const ADAPTIVE_ENGINE_ENABLED = (process.env.ADAPTIVE_ENGINE_ENABLED ?? 'true').toLowerCase() === 'true';
+const GLOBAL_SCALE_UP         = Number(process.env.MODEL_SCALE_UP || '1.5');          // applied always
+const FLUX_ENGINE_DEFAULT     = (process.env.FLUX_ENGINE || 'kontext').toLowerCase(); // 'kontext' | 'fill'
 
-        if (error) throw error;
+// Engine-specific size bias to counter model shrink
+const ENGINE_KONTEXT_SIZE_BIAS = Number(process.env.ENGINE_KONTEXT_SIZE_BIAS || '1.08');
+const ENGINE_FILL_SIZE_BIAS    = Number(process.env.ENGINE_FILL_SIZE_BIAS    || '1.02');
 
-        const settings = data.settings;
-        return {
-            ADAPTIVE_SCALE_ENABLED: settings.behaviorFlags.adaptiveScaleEnabled,
-            ADAPTIVE_ENGINE_ENABLED: settings.behaviorFlags.adaptiveEngineEnabled,
-            GLOBAL_SCALE_UP: settings.behaviorFlags.globalScaleUp,
-            FLUX_ENGINE_DEFAULT: settings.behaviorFlags.fluxEngineDefault,
-            ENGINE_KONTEXT_SIZE_BIAS: settings.engineSizeBias.kontext,
-            ENGINE_FILL_SIZE_BIAS: settings.engineSizeBias.fill,
-            MODEL_MASK_GROW_PCT: settings.maskGrow.pct,
-            MODEL_MASK_GROW_MIN: settings.maskGrow.min,
-            MODEL_MASK_GROW_MAX: settings.maskGrow.max,
-            BAKE_TATTOO_BRIGHTNESS: settings.bakeTuning.brightness,
-            BAKE_TATTOO_GAMMA: settings.bakeTuning.gamma,
-            BAKE_OVERLAY_OPACITY: settings.bakeTuning.overlayOpacity,
-            BAKE_SOFTLIGHT_OPACITY: settings.bakeTuning.softlightOpacity,
-            BAKE_MULTIPLY_OPACITY: settings.bakeTuning.multiplyOpacity,
-            BASE_PROMPT: settings.prompt,
-        };
-    } catch (error) {
-        console.error('Failed to fetch settings from DB, using fallback.', error);
-        // Fallback to default values
-        return {
-            ADAPTIVE_SCALE_ENABLED: (process.env.ADAPTIVE_SCALE_ENABLED ?? 'true').toLowerCase() === 'true',
-            ADAPTIVE_ENGINE_ENABLED: (process.env.ADAPTIVE_ENGINE_ENABLED ?? 'true').toLowerCase() === 'true',
-            GLOBAL_SCALE_UP: Number(process.env.MODEL_SCALE_UP || '1.5'),
-            FLUX_ENGINE_DEFAULT: (process.env.FLUX_ENGINE || 'kontext').toLowerCase(),
-            ENGINE_KONTEXT_SIZE_BIAS: Number(process.env.ENGINE_KONTEXT_SIZE_BIAS || '1.08'),
-            ENGINE_FILL_SIZE_BIAS: Number(process.env.ENGINE_FILL_SIZE_BIAS || '1.02'),
-            MODEL_MASK_GROW_PCT: Number(process.env.MODEL_MASK_GROW_PCT || '0.06'),
-            MODEL_MASK_GROW_MIN: Number(process.env.MODEL_MASK_GROW_MIN || '4'),
-            MODEL_MASK_GROW_MAX: Number(process.env.MODEL_MASK_GROW_MAX || '28'),
-            BAKE_TATTOO_BRIGHTNESS: Number(process.env.BAKE_TATTOO_BRIGHTNESS || '1.00'),
-            BAKE_TATTOO_GAMMA: Number(process.env.BAKE_TATTOO_GAMMA || '1.00'),
-            BAKE_OVERLAY_OPACITY: Number(process.env.BAKE_OVERLAY_OPACITY || '0.28'),
-            BAKE_SOFTLIGHT_OPACITY: Number(process.env.BAKE_SOFTLIGHT_OPACITY || '0.22'),
-            BAKE_MULTIPLY_OPACITY: Number(process.env.BAKE_MULTIPLY_OPACITY || '0.06'),
-            BASE_PROMPT: 'Preserve the exact silhouette, proportions and interior details of the tattoo. Blend it realistically into the skin with lighting, micro-shadowing and subtle ink diffusion. Do not redraw, restyle or resize. Keep the original tonal balance and colors; avoid pure white ink effects or global darkening.',
-        };
-    }
-};
+// Mask grow (gives the model some “breathing room”)
+const MODEL_MASK_GROW_PCT = Number(process.env.MODEL_MASK_GROW_PCT || '0.06'); // 6% of bbox max dim
+const MODEL_MASK_GROW_MIN = Number(process.env.MODEL_MASK_GROW_MIN || '4');    // px
+const MODEL_MASK_GROW_MAX = Number(process.env.MODEL_MASK_GROW_MAX || '28');   // px
+
+// --- NEW: baked-guide tuning (neutral; prevents white-out and over-darkening)
+const BAKE_TATTOO_BRIGHTNESS   = Number(process.env.BAKE_TATTOO_BRIGHTNESS || '1.00'); // 0.95–1.05
+const BAKE_TATTOO_GAMMA        = Number(process.env.BAKE_TATTOO_GAMMA      || '1.00'); // 0.95–1.05
+const BAKE_OVERLAY_OPACITY     = Number(process.env.BAKE_OVERLAY_OPACITY   || '0.28');
+const BAKE_SOFTLIGHT_OPACITY   = Number(process.env.BAKE_SOFTLIGHT_OPACITY || '0.22');
+const BAKE_MULTIPLY_OPACITY    = Number(process.env.BAKE_MULTIPLY_OPACITY  || '0.06');
 
 // -----------------------------
 // Small helpers
@@ -288,7 +255,7 @@ async function dilateGrayMaskToPng(grayRawBuffer, w, h, growPx) {
 }
 
 // ------ NEW: Neutral baked guide (overlay + soft-light + tiny multiply)
-async function bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvasPNG, bakeTuning) {
+async function bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvasPNG) {
   const base = sharp(skinImageBuffer).ensureAlpha().toColourspace('srgb');
 
   const tattooPrep = await sharp(positionedCanvasPNG)
@@ -296,17 +263,17 @@ async function bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvasPNG, bakeT
     .toColourspace('srgb')
     .modulate({
       saturation: 0.15,
-      brightness: bakeTuning.BAKE_TATTOO_BRIGHTNESS
+      brightness: BAKE_TATTOO_BRIGHTNESS
     })
-    .gamma(bakeTuning.BAKE_TATTOO_GAMMA)
+    .gamma(BAKE_TATTOO_GAMMA)
     .png()
     .toBuffer();
 
   return base
     .composite([
-      { input: tattooPrep, blend: 'overlay',    opacity: bakeTuning.BAKE_OVERLAY_OPACITY   },
-      { input: tattooPrep, blend: 'soft-light', opacity: bakeTuning.BAKE_SOFTLIGHT_OPACITY },
-      { input: tattooPrep, blend: 'multiply',   opacity: bakeTuning.BAKE_MULTIPLY_OPACITY  }
+      { input: tattooPrep, blend: 'overlay',    opacity: BAKE_OVERLAY_OPACITY   },
+      { input: tattooPrep, blend: 'soft-light', opacity: BAKE_SOFTLIGHT_OPACITY },
+      { input: tattooPrep, blend: 'multiply',   opacity: BAKE_MULTIPLY_OPACITY  }
     ])
     .png()
     .toBuffer();
@@ -411,7 +378,6 @@ const fluxPlacementHandler = {
     tattooAngle = 0,
     tattooScale = 1.0
   ) => {
-    const settings = await getFluxSettings();
     // --- Inputs ---
     const tattooDesignOriginalBuffer = Buffer.from(tattooDesignImageBase64, 'base64');
     const tattooMeta0 = await sharp(tattooDesignOriginalBuffer).metadata();
@@ -425,17 +391,17 @@ const fluxPlacementHandler = {
     console.log(`[ADAPT] coverage=${stats.coverage.toFixed(4)} thinness=${stats.thinness.toFixed(4)} solidity=${stats.solidity.toFixed(4)} bbox=${stats.bbox ? stats.bbox.w+'x'+stats.bbox.h : 'NA'}`);
 
     // --- Adaptive scale & engine pick ---
-    const baseEngine = settings.FLUX_ENGINE_DEFAULT;
-    const { scale: adaptScale, isThinLine, hasHaloSplash } = settings.ADAPTIVE_SCALE_ENABLED
+    const baseEngine = FLUX_ENGINE_DEFAULT;
+    const { scale: adaptScale, isThinLine, hasHaloSplash } = ADAPTIVE_SCALE_ENABLED
       ? chooseAdaptiveScale(stats)
       : { scale: 1.0, isThinLine: false, hasHaloSplash: false };
-    const engine = pickEngine(baseEngine, settings.ADAPTIVE_ENGINE_ENABLED, isThinLine);
+    const engine = pickEngine(baseEngine, ADAPTIVE_ENGINE_ENABLED, isThinLine);
 
-    const ENGINE_SIZE_BIAS = engine === 'kontext' ? settings.ENGINE_KONTEXT_SIZE_BIAS : settings.ENGINE_FILL_SIZE_BIAS;
+    const ENGINE_SIZE_BIAS = engine === 'kontext' ? ENGINE_KONTEXT_SIZE_BIAS : ENGINE_FILL_SIZE_BIAS;
 
     // final scale factor used when sizing to mask region
-    const EFFECTIVE_SCALE = tattooScale * settings.GLOBAL_SCALE_UP * adaptScale * ENGINE_SIZE_BIAS;
-    console.log(`[ENGINE] chosen=${engine} | GLOBAL_SCALE_UP=${settings.GLOBAL_SCALE_UP} | adaptiveScale=${adaptScale.toFixed(3)} | engineBias=${ENGINE_SIZE_BIAS} | effective=${EFFECTIVE_SCALE.toFixed(3)} | thinLine=${isThinLine} halo=${hasHaloSplash}`);
+    const EFFECTIVE_SCALE = tattooScale * GLOBAL_SCALE_UP * adaptScale * ENGINE_SIZE_BIAS;
+    console.log(`[ENGINE] chosen=${engine} | GLOBAL_SCALE_UP=${GLOBAL_SCALE_UP} | adaptiveScale=${adaptScale.toFixed(3)} | engineBias=${ENGINE_SIZE_BIAS} | effective=${EFFECTIVE_SCALE.toFixed(3)} | thinLine=${isThinLine} halo=${hasHaloSplash}`);
 
     // --- Prepare mask ---
     const originalMaskBuffer = Buffer.from(maskBase64, 'base64');
@@ -471,9 +437,9 @@ const fluxPlacementHandler = {
 
     // Grow (dilate) the mask for the model so it doesn’t shrink the tattoo
     const growPx = clamp(
-      Math.round(settings.MODEL_MASK_GROW_PCT * Math.max(maskBBox.width, maskBBox.height)),
-      settings.MODEL_MASK_GROW_MIN,
-      settings.MODEL_MASK_GROW_MAX
+      Math.round(MODEL_MASK_GROW_PCT * Math.max(maskBBox.width, maskBBox.height)),
+      MODEL_MASK_GROW_MIN,
+      MODEL_MASK_GROW_MAX
     );
     const grownMaskPng = await dilateGrayMaskToPng(maskGrayRaw, maskMeta.width, maskMeta.height, growPx);
     await uploadDebug(grownMaskPng, userId, `mask_for_model_grow${growPx}px`);
@@ -518,13 +484,7 @@ const fluxPlacementHandler = {
       .toBuffer();
 
     // NEW: neutral baked guide used as the actual FLUX input
-    const guideComposite = await bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvas, {
-        BAKE_TATTOO_BRIGHTNESS: settings.BAKE_TATTOO_BRIGHTNESS,
-        BAKE_TATTOO_GAMMA: settings.BAKE_TATTOO_GAMMA,
-        BAKE_OVERLAY_OPACITY: settings.BAKE_OVERLAY_OPACITY,
-        BAKE_SOFTLIGHT_OPACITY: settings.BAKE_SOFTLIGHT_OPACITY,
-        BAKE_MULTIPLY_OPACITY: settings.BAKE_MULTIPLY_OPACITY,
-    });
+    const guideComposite = await bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvas);
 
     await uploadDebug(originalMaskBuffer, userId, 'mask_original');
     await uploadDebug(positionedCanvas,   userId, 'tattoo_canvas_positioned');
@@ -535,7 +495,8 @@ const fluxPlacementHandler = {
     // FLUX call(s)
     // -----------------------------
     const generatedImageUrls = [];
-    const basePrompt = settings.BASE_PROMPT;
+    const basePrompt =
+      'Preserve the exact silhouette, proportions and interior details of the tattoo. Blend it realistically into the skin with lighting, micro-shadowing and subtle ink diffusion. Do not redraw, restyle or resize. Keep the original tonal balance and colors; avoid pure white ink effects or global darkening.';
 
     const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
 

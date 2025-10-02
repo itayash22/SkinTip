@@ -1,11 +1,16 @@
 -- Add is_admin column to users table
 ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT FALSE;
 
+-- Drop existing tables if they were created with the wrong types, to start clean
+DROP TABLE IF EXISTS flux_settings_history;
+DROP TABLE IF EXISTS flux_settings;
+DROP TABLE IF EXISTS flux_presets;
+
 -- Create the flux_settings table
 CREATE TABLE IF NOT EXISTS flux_settings (
     id SERIAL PRIMARY KEY,
     settings JSONB NOT NULL,
-    updated_by INT REFERENCES users(id),
+    updated_by UUID REFERENCES users(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -16,7 +21,7 @@ CREATE TABLE IF NOT EXISTS flux_settings_history (
     settings_id INT NOT NULL,
     old_settings JSONB,
     new_settings JSONB NOT NULL,
-    changed_by INT, -- user id
+    changed_by UUID,
     changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     FOREIGN KEY (settings_id) REFERENCES flux_settings(id),
     FOREIGN KEY (changed_by) REFERENCES users(id)
@@ -68,3 +73,11 @@ INSERT INTO flux_settings (settings) VALUES ('{
 
 -- Set a user as admin
 UPDATE users SET is_admin = TRUE WHERE email = 'itayash@gmail.com';
+
+-- Create the flux_presets table
+CREATE TABLE IF NOT EXISTS flux_presets (
+    id SERIAL PRIMARY KEY,
+    preset_name VARCHAR(255) NOT NULL,
+    parameters JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

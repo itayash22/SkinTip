@@ -16,6 +16,7 @@ import sizeOf from 'image-size'; // image-size default export might be different
 // Import our new modularized services
 import tokenService from './modules/tokenService.js'; // Added .js extension
 import fluxKontextHandler from './modules/fluxPlacementHandler.js'; // Added .js extension
+import hillClimbHandler from './modules/hillClimbHandler.js';
 import fs from 'fs/promises';
 import path from 'path';
 // --- END OF ACTUAL IMPORTS ---
@@ -631,6 +632,128 @@ app.post('/api/admin/flux-settings/rollback/:history_id', authenticateToken, isA
         console.error('A critical error occurred during settings rollback:', error.message);
         // Return a generic error to the client
         res.status(500).json({ error: 'Failed to rollback settings.' });
+    }
+});
+
+// --- Preset Management Endpoints ---
+app.get('/api/admin/presets', authenticateToken, isAdmin, async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('flux_presets')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        res.json(data);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch presets' });
+    }
+});
+
+app.post('/api/admin/presets', authenticateToken, isAdmin, async (req, res) => {
+    const { preset_name, parameters } = req.body;
+    try {
+        const { data, error } = await supabase
+            .from('flux_presets')
+            .insert({ preset_name, parameters })
+            .select();
+
+        if (error) throw error;
+        res.status(201).json(data[0]);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to save preset' });
+    }
+});
+
+app.get('/api/admin/presets/:id/download', authenticateToken, isAdmin, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const { data, error } = await supabase
+            .from('flux_presets')
+            .select('preset_name, parameters')
+            .eq('id', id)
+            .single();
+
+        if (error) throw error;
+
+        const { preset_name, parameters } = data;
+
+        let csv = 'key,value\n';
+        for (const key in parameters) {
+            if (typeof parameters[key] === 'object') {
+                for (const subKey in parameters[key]) {
+                    csv += `${key}.${subKey},${parameters[key][subKey]}\n`;
+                }
+            } else {
+                csv += `${key},${parameters[key]}\n`;
+            }
+        }
+
+        res.header('Content-Type', 'text/csv');
+        res.attachment(`${preset_name}.csv`);
+        res.send(csv);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to download preset' });
+    }
+});
+
+app.post('/api/admin/presets/:id/set-default', authenticateToken, isAdmin, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const { data: presetData, error: presetError } = await supabase
+            .from('flux_presets')
+            .select('parameters')
+            .eq('id', id)
+            .single();
+
+        if (presetError) throw presetError;
+
+        const { error: updateError } = await supabase
+            .from('flux_settings')
+            .update({
+                settings: presetData.parameters,
+                updated_by: req.user.id,
+                updated_at: new Date()
+            })
+            .eq('id', 1);
+
+        if (updateError) throw updateError;
+
+        res.json({ message: 'Default settings updated successfully' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to set default settings' });
+    }
+});
+
+// --- Hill Climbing Endpoint ---
+app.post('/api/admin/hill-climb', authenticateToken, isAdmin, upload.fields([
+    { name: 'tattooImage', maxCount: 1 },
+    { name: 'skinImage', maxCount: 1 }
+]), async (req, res) => {
+    try {
+        const { baseParams, activeGroup, paramIndex, mask } = JSON.parse(req.body.jsonData);
+        const tattooImageFile = req.files.tattooImage ? req.files.tattooImage[0] : null;
+        const skinImageFile = req.files.skinImage ? req.files.skinImage[0] : null;
+
+        if (!tattooImageFile || !skinImageFile || !baseParams || !activeGroup || !mask) {
+            return res.status(400).json({ error: 'tattooImage, skinImage, baseParams, activeGroup and mask are required.' });
+        }
+
+        const variations = await hillClimbHandler.generateHillClimbVariations(
+            skinImageFile.buffer,
+            tattooImageFile.buffer.toString('base64'),
+            mask,
+            req.user.id,
+            process.env.FLUX_API_KEY,
+            baseParams,
+            activeGroup,
+            paramIndex
+        );
+
+        res.json(variations);
+    } catch (error) {
+        console.error('Hill climbing error:', error);
+        res.status(500).json({ error: 'Failed to generate hill climb variations' });
     }
 });
 

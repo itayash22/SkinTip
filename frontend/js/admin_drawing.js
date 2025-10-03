@@ -43,12 +43,15 @@ const adminDrawing = {
 
         this.skinImg.onload = () => {
             resizeToParent();
+            // Also call render in case tattoo is already loaded
+            this.render();
         };
 
         this.tattooImg.onload = () => {
             this.tattoo.width = this.tattooImg.naturalWidth;
             this.tattoo.height = this.tattooImg.naturalHeight;
             this.resetTattooTransform();
+            // Also call render in case skin is already loaded
             this.render();
         };
 
@@ -79,6 +82,7 @@ const adminDrawing = {
     },
 
     resetTattooTransform() {
+        if (!this.skinImg.naturalWidth || !this.tattooImg.naturalWidth) return;
         const skinShortSide = Math.min(this.skinImg.naturalWidth, this.skinImg.naturalHeight);
         const desiredTattooWidth = skinShortSide * 0.25;
         this.baseTattooScale = desiredTattooWidth / this.tattoo.width;
@@ -98,22 +102,31 @@ const adminDrawing = {
         this.canvas.__handlersAttached = true;
     },
 
+    canvasPointToWorld(point) {
+        return {
+            x: (point.x - this.camera.x) / this.camera.scale,
+            y: (point.y - this.camera.y) / this.camera.scale
+        };
+    },
+
     onPointerDown(e) {
         this.isDragging = true;
         const rect = this.canvas.getBoundingClientRect();
-        const mouseX = (e.clientX - rect.left) / this.camera.scale;
-        const mouseY = (e.clientY - rect.top) / this.camera.scale;
-        this.dragStart.x = mouseX - this.tattoo.x;
-        this.dragStart.y = mouseY - this.tattoo.y;
+        const canvasPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        const worldPoint = this.canvasPointToWorld(canvasPoint);
+
+        this.dragStart.x = worldPoint.x - this.tattoo.x;
+        this.dragStart.y = worldPoint.y - this.tattoo.y;
     },
 
     onPointerMove(e) {
         if (this.isDragging) {
             const rect = this.canvas.getBoundingClientRect();
-            const mouseX = (e.clientX - rect.left) / this.camera.scale;
-            const mouseY = (e.clientY - rect.top) / this.camera.scale;
-            this.tattoo.x = mouseX - this.dragStart.x;
-            this.tattoo.y = mouseY - this.dragStart.y;
+            const canvasPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+            const worldPoint = this.canvasPointToWorld(canvasPoint);
+
+            this.tattoo.x = worldPoint.x - this.dragStart.x;
+            this.tattoo.y = worldPoint.y - this.dragStart.y;
             this.render();
         }
     },
@@ -123,7 +136,7 @@ const adminDrawing = {
     },
 
     render() {
-        if (!this.skinImg.complete || !this.tattooImg.complete) return;
+        if (!this.skinImg.complete || !this.tattooImg.complete || !this.skinImg.naturalWidth) return;
 
         this.ctx.setTransform(1, 0, 0, 1, 0, 0);
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);

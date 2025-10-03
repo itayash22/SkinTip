@@ -57,7 +57,8 @@ app.use(cors({
         process.env.FRONTEND_URL,
         'https://itayash22.github.io',
         'http://localhost:8080',
-        'http://127.0.0.1:8080'
+        'http://127.0.0.1:8080',
+        'https://itayash22.github.io/slatetattoo-frontend/'
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],

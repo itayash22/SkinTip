@@ -238,7 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const currentTestInfo = document.getElementById('currentTestInfo');
     const lockAndTestNextBtn = document.getElementById('lockAndTestNext');
 
-    setupCanvasBtn.addEventListener('click', () => {
+    setupCanvasBtn.addEventListener('click', async () => {
         const tattooImageFile = document.getElementById('tattooImage').files[0];
         const skinImageFile = document.getElementById('skinImage').files[0];
 
@@ -253,8 +253,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const tattooUrl = URL.createObjectURL(tattooImageFile);
         const skinUrl = URL.createObjectURL(skinImageFile);
 
-        drawingSection.style.display = 'block';
-        adminDrawing.init('adminDrawingCanvas', skinUrl, tattooUrl);
+        // Clean the tattoo background before initializing the canvas
+        try {
+            const cleanedTattooUrl = await cleanStencilWhiteBg(tattooUrl);
+            drawingSection.style.display = 'block';
+            adminDrawing.init('adminDrawingCanvas', skinUrl, cleanedTattooUrl);
+        } catch (error) {
+            console.error("Failed to clean tattoo background:", error);
+            utils.showError("Could not process the tattoo image to remove the background.");
+        }
     });
 
     document.getElementById('adminRotationSlider').addEventListener('input', (e) => adminDrawing.setRotation(e.target.value));

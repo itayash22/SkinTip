@@ -356,6 +356,7 @@ body {
   min-height:360px;
   background:#111;
   overflow:hidden;
+  max-width: 100%;
 }
 
 /* ensures CSS size always matches the JS pixel buffer */

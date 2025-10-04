@@ -91,34 +91,33 @@ function init(skinDataURL, cleanedTattooUrl) {
   skinImg.crossOrigin = 'anonymous';
   skinImg.onload = () => {
     centerSkin();
-
-    // NOW that the skin is loaded, load the tattoo.
-    tattooImg = new Image();
-    tattooImg.onload = () => {
-        tattoo.width  = tattooImg.width;
-        tattoo.height = tattooImg.height;
-
-        // Base the tattoo size on the actual skin image dimensions
-        const skinShort = Math.min(skinImg.width, skinImg.height);
-        const desiredTattooW = skinShort * 0.25; // Start at 25% of skin's shortest side
-        baseTattooScale = desiredTattooW / tattoo.width;
-        tattoo.scale = baseTattooScale;
-
-        const cx = canvas.clientWidth  / 2;
-        const cy = canvas.clientHeight / 2;
-        tattoo.x = (cx - camera.x) / camera.scale;
-        tattoo.y = (cy - camera.y) / camera.scale;
-
-        const sizeValue = document.getElementById('sizeValue');
-        if (sizeValue) sizeValue.textContent = '100%';
-
-        requestRender();
-    };
-    tattooImg.src = cleanedTattooUrl;
-
     requestRender();
   };
   skinImg.src = skinDataURL;
+
+  // Load the (already cleaned) tattoo image
+  tattooImg = new Image();
+  tattooImg.onload = () => {
+    tattoo.width  = tattooImg.width;
+    tattoo.height = tattooImg.height;
+
+    // Use a fallback for skin dimensions in case tattoo loads first
+    const skinShort = Math.min(skinImg.width || canvas.width, skinImg.height || canvas.height);
+    const desiredTattooW = skinShort * 0.25;
+    baseTattooScale = desiredTattooW / tattoo.width;
+    tattoo.scale = baseTattooScale;
+
+    const cx = canvas.clientWidth  / 2;
+    const cy = canvas.clientHeight / 2;
+    tattoo.x = (cx - camera.x) / camera.scale;
+    tattoo.y = (cy - camera.y) / camera.scale;
+
+    const sizeValue = document.getElementById('sizeValue');
+    if (sizeValue) sizeValue.textContent = '100%';
+
+    requestRender();
+  };
+  tattooImg.src = cleanedTattooUrl;
 
   attachPanHandlers();
 }

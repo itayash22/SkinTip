@@ -192,7 +192,7 @@ async function _generateSingleImage(skinImageBuffer, tattooDesignImageBase64, ma
     }
 
     if (!task?.polling_url) {
-      console.warn(`HILL_CLIMB_LOG: FLUX job submission failed for user ${userId}. Reason: Polling URL was not returned.`, { task });
+      console.warn('FLUX: missing polling_url');
       return null;
     }
 
@@ -200,36 +200,22 @@ async function _generateSingleImage(skinImageBuffer, tattooDesignImageBase64, ma
     while (!done && attempts < 60) {
       attempts++;
       await new Promise(r => setTimeout(r, 2000));
-      try {
-        const poll = await axios.get(task.polling_url, { headers: { 'x-key': fluxApiKey }, timeout: 15000 });
-        const data = poll.data;
+      const poll = await axios.get(task.polling_url, { headers: { 'x-key': fluxApiKey }, timeout: 15000 });
+      const data = poll.data;
 
-        if (data.status === 'Ready') {
-          const url = data.result?.sample;
-          if (!url) {
-            console.warn(`HILL_CLIMB_LOG: FLUX job ready but no sample URL found for user ${userId}.`, { result: data.result });
-            done = true; // Exit loop, will return null
-            break;
-          }
-          const imgRes = await axios.get(url, { responseType: 'arraybuffer' });
-          const buf = Buffer.from(imgRes.data);
-          const watermarked = await _applyWatermark(buf);
-          const fileName = `tattoo-${uuidv4()}.png`;
-          const publicUrl = await _uploadToSupabaseStorage(watermarked, fileName, userId, 'hill_climb_results');
-          return publicUrl;
-        } else if (data.status === 'Error' || data.status === 'Content Moderated') {
-          console.warn(`HILL_CLIMB_LOG: FLUX polling failed for user ${userId}. Status: ${data.status}. Details: ${data.details || 'N/A'}`);
-          done = true; // Exit loop, will return null
-        }
-        // If status is 'Processing' or similar, just continue the loop
-      } catch (pollError) {
-        console.warn(`HILL_CLIMB_LOG: Error during FLUX polling for user ${userId}. Attempt ${attempts}.`, pollError.message);
-        // Continue polling until timeout
+      if (data.status === 'Ready') {
+        const url = data.result?.sample;
+        if (!url) { done = true; break; }
+        const imgRes = await axios.get(url, { responseType: 'arraybuffer' });
+        const buf = Buffer.from(imgRes.data);
+        const watermarked = await _applyWatermark(buf);
+        const fileName = `tattoo-${uuidv4()}.png`;
+        const publicUrl = await _uploadToSupabaseStorage(watermarked, fileName, userId, 'hill_climb_results');
+        return publicUrl;
+      } else if (data.status === 'Error' || data.status === 'Content Moderated') {
+        console.warn('FLUX polling end:', data.status, data.details || '');
+        done = true;
       }
-    }
-
-    if (!done) {
-        console.warn(`HILL_CLIMB_LOG: FLUX polling timed out after ${attempts} attempts for user ${userId}.`);
     }
     return null;
 }

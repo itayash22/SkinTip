@@ -26,6 +26,16 @@ const adminDrawing = {
         this.tattooImg.crossOrigin = "Anonymous";
 
         const parent = this.canvas.parentElement;
+        const startHillClimbingBtn = document.getElementById('startHillClimbing');
+
+        const checkImagesLoaded = () => {
+            // The `complete` property is true if the browser has fetched the image.
+            // `naturalWidth > 0` is an extra check to ensure it's a valid, loaded image.
+            if (this.skinImg.complete && this.skinImg.naturalWidth > 0 &&
+                this.tattooImg.complete && this.tattooImg.naturalWidth > 0) {
+                startHillClimbingBtn.disabled = false;
+            }
+        };
 
         const resizeToParent = () => {
             const w = parent.clientWidth;
@@ -45,6 +55,7 @@ const adminDrawing = {
             resizeToParent();
             // Also call render in case tattoo is already loaded
             this.render();
+            checkImagesLoaded();
         };
 
         this.tattooImg.onload = () => {
@@ -53,6 +64,7 @@ const adminDrawing = {
             this.resetTattooTransform();
             // Also call render in case skin is already loaded
             this.render();
+            checkImagesLoaded();
         };
 
         if (!this.canvas.__ro) {

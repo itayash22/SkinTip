@@ -52,20 +52,35 @@ app.use((req, res, next) => {
     next();
 });
 
-app.use(cors({
-    origin: [
-        process.env.FRONTEND_URL,
-        'https://itayash22.github.io',
-        'http://localhost:8080',
-        'http://127.0.0.1:8080',
-        'https://itayash22.github.io/slatetattoo-frontend/'
-    ],
+// Whitelist of allowed origins
+const whitelist = [
+    process.env.FRONTEND_URL,
+    'https://itayash22.github.io',
+    'http://localhost:8080',
+    'http://127.0.0.1:8080',
+    'https://itayash22.github.io/slatetattoo-frontend/'
+].filter(Boolean); // Filter out any undefined/null values from process.env
+
+const corsOptions = {
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+
+        if (whitelist.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            console.warn(`CORS: Blocked origin - ${origin}`);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-key'],
     preflightContinue: false,
     optionsSuccessStatus: 204
-}));
+};
+
+app.use(cors(corsOptions));
 
 
 app.use(express.json());

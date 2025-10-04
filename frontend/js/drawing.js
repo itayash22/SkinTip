@@ -4,7 +4,7 @@
 let canvas, ctx;
 let skinImg = null, tattooImg = null; // assume you already set these in init
 const camera = { x: 0, y: 0, scale: 1 };
-let panMode = false;
+let panMode = true;
 
 let baseTattooScale = 1;
 

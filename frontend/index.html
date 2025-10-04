@@ -98,7 +98,7 @@
                     <button id="changeSkinPhotoBtn" class="btn btn-outline btn-sm">Change Skin Photo</button>
 
                     <!-- NEW: toggle pan mode -->
-                    <button id="togglePanBtn" class="btn btn-outline btn-sm">Move Skin</button>
+                    <button id="togglePanBtn" class="btn btn-outline btn-sm active">Done Moving Skin</button>
 
                     <div class="rotation-control">
                         <label for="rotationSlider">Rotate Tattoo: <span id="rotationValue">0°</span></label>
@@ -814,7 +814,7 @@
             const artistsSection = document.getElementById('artistsSection');
 
             const togglePanBtn = document.getElementById('togglePanBtn');
-            let panMode = false;
+            let panMode = true; // Start in pan mode by default
 
             togglePanBtn?.addEventListener('click', () => {
               panMode = !panMode;

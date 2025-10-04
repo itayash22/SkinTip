@@ -370,6 +370,9 @@ body {
   touch-action:none;
   user-select:none;
   -webkit-user-drag:none;
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
 }
 
 .drawing-tools {

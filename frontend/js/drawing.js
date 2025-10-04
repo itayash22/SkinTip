@@ -66,8 +66,9 @@ function init(skinDataURL, cleanedTattooUrl) {
     const h = parent.clientHeight;
     canvas.style.width  = w + 'px';
     canvas.style.height = h + 'px';
-    canvas.width  = Math.floor(w * window.devicePixelRatio);
-    canvas.height = Math.floor(h * window.devicePixelRatio);
+    canvas.width  = w * window.devicePixelRatio;
+    canvas.height = h * window.devicePixelRatio;
+    ctx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
     centerSkin();
     requestRender();
   }
@@ -125,21 +126,20 @@ function init(skinDataURL, cleanedTattooUrl) {
 function centerSkin() {
   if (!skinImg || !skinImg.width) return;
 
-  // Use CSS pixel dimensions, not internal buffer dimensions
-  const parent = canvas.parentElement;
-  const cw = parent.clientWidth;
-  const ch = parent.clientHeight;
+  // canvas internal resolution (already includes devicePixelRatio)
+  const cw = canvas.width;
+  const ch = canvas.height;
   const sw = skinImg.width;
   const sh = skinImg.height;
 
-  // Compute scale so image fits entirely inside canvas area
+  // compute scale so the image fits fully inside the canvas
   const scaleX = cw / sw;
   const scaleY = ch / sh;
   camera.scale = Math.min(scaleX, scaleY);
 
-  // Center the image
-  camera.x = (cw * window.devicePixelRatio - sw * camera.scale * window.devicePixelRatio) * 0.5;
-  camera.y = (ch * window.devicePixelRatio - sh * camera.scale * window.devicePixelRatio) * 0.5;
+  // center the image in canvas pixel space
+  camera.x = (cw - sw * camera.scale) * 0.5;
+  camera.y = (ch - sh * camera.scale) * 0.5;
 
   requestRender();
 }

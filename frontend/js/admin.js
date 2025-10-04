@@ -239,13 +239,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const lockAndTestNextBtn = document.getElementById('lockAndTestNext');
 
     setupCanvasBtn.addEventListener('click', async () => {
+        console.log('DEBUG: setupCanvasBtn clicked.');
         const tattooImageFile = document.getElementById('tattooImage').files[0];
         const skinImageFile = document.getElementById('skinImage').files[0];
 
         if (!tattooImageFile || !skinImageFile) {
+            console.log('DEBUG: Missing tattoo or skin image file.');
             utils.showError('Please select both a tattoo and a skin image.');
             return;
         }
+        console.log('DEBUG: Tattoo and skin files selected:', { tattoo: tattooImageFile.name, skin: skinImageFile.name });
+
 
         hillClimbingState.tattooImage = tattooImageFile;
         hillClimbingState.skinImage = skinImageFile;
@@ -255,9 +259,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Clean the tattoo background before initializing the canvas
         try {
+            console.log('DEBUG: Cleaning tattoo background...');
             const cleanedTattooUrl = await cleanStencilWhiteBg(tattooUrl);
+            console.log('DEBUG: Tattoo background cleaned. Displaying drawing section.');
             drawingSection.style.display = 'block';
+            console.log('DEBUG: Initializing adminDrawing module.');
             adminDrawing.init('adminDrawingCanvas', skinUrl, cleanedTattooUrl);
+            console.log('DEBUG: adminDrawing.init called.');
         } catch (error) {
             console.error("Failed to clean tattoo background:", error);
             utils.showError("Could not process the tattoo image to remove the background.");
@@ -268,7 +276,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('adminSizeSlider').addEventListener('input', (e) => adminDrawing.setScale(e.target.value / 100));
 
     startHillClimbingBtn.addEventListener('click', async () => {
+        console.log('DEBUG: startHillClimbingBtn clicked.');
         hillClimbingState.mask = adminDrawing.generateMask();
+        console.log('DEBUG: Mask generated.');
 
         // Get the current form values as the starting point
         const formData = new FormData(fluxSettingsForm);

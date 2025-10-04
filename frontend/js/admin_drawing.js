@@ -16,6 +16,7 @@ const adminDrawing = {
     dragStart: { x: 0, y: 0 },
 
     init(canvasId, skinImageUrl, tattooImageUrl) {
+        console.log('DEBUG: adminDrawing.init started.');
         this.canvas = document.getElementById(canvasId);
         this.ctx = this.canvas.getContext('2d');
 
@@ -29,17 +30,23 @@ const adminDrawing = {
         const startHillClimbingBtn = document.getElementById('startHillClimbing');
 
         const checkImagesLoaded = () => {
-            // The `complete` property is true if the browser has fetched the image.
-            // `naturalWidth > 0` is an extra check to ensure it's a valid, loaded image.
+            console.log('DEBUG: checkImagesLoaded called.');
             if (this.skinImg.complete && this.skinImg.naturalWidth > 0 &&
                 this.tattooImg.complete && this.tattooImg.naturalWidth > 0) {
+                console.log('DEBUG: Both images are loaded. Enabling start button.');
                 startHillClimbingBtn.disabled = false;
+            } else {
+                console.log('DEBUG: At least one image is not ready.', {
+                    skinComplete: this.skinImg.complete,
+                    skinWidth: this.skinImg.naturalWidth,
+                    tattooComplete: this.tattooImg.complete,
+                    tattooWidth: this.tattooImg.naturalWidth
+                });
             }
         };
 
         const resizeToParent = () => {
             const w = parent.clientWidth;
-            // No fixed height, calculate from aspect ratio
             if (this.skinImg.naturalWidth > 0) {
                 const h = w * (this.skinImg.naturalHeight / this.skinImg.naturalWidth);
                 this.canvas.style.width  = w + 'px';
@@ -52,20 +59,22 @@ const adminDrawing = {
         }
 
         this.skinImg.onload = () => {
+            console.log('DEBUG: skinImg.onload triggered.');
             resizeToParent();
-            // Also call render in case tattoo is already loaded
             this.render();
             checkImagesLoaded();
         };
+        this.skinImg.onerror = () => { console.error('DEBUG: skinImg failed to load.'); };
 
         this.tattooImg.onload = () => {
+            console.log('DEBUG: tattooImg.onload triggered.');
             this.tattoo.width = this.tattooImg.naturalWidth;
             this.tattoo.height = this.tattooImg.naturalHeight;
             this.resetTattooTransform();
-            // Also call render in case skin is already loaded
             this.render();
             checkImagesLoaded();
         };
+        this.tattooImg.onerror = () => { console.error('DEBUG: tattooImg failed to load.'); };
 
         if (!this.canvas.__ro) {
             const ro = new ResizeObserver(resizeToParent);
@@ -73,10 +82,12 @@ const adminDrawing = {
             this.canvas.__ro = ro;
         }
 
+        console.log('DEBUG: Setting image sources.');
         this.skinImg.src = skinImageUrl;
         this.tattooImg.src = tattooImageUrl;
 
         this.addEventListeners();
+        console.log('DEBUG: adminDrawing.init finished.');
     },
 
     centerSkinImage() {

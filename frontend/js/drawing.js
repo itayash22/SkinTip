@@ -132,21 +132,23 @@ function init(skinDataURL, cleanedTattooUrl) {
 }
 
 function centerSkin() {
-  if (!skinImg || !skinImg.width) return;
+  if (!skinImg) return;
 
-  const cw = canvas.width / (window.devicePixelRatio || 1);  // CSS px
-  const ch = canvas.height / (window.devicePixelRatio || 1);
+  // Use container size in CSS pixels
+  const parent = canvas.parentElement;
+  const cw = parent.clientWidth;
+  const ch = parent.clientHeight;
+
   const sw = skinImg.width;
   const sh = skinImg.height;
 
-  // contain-fit scale
-  const scaleX = cw / sw;
-  const scaleY = ch / sh;
-  camera.scale = Math.min(scaleX, scaleY);
+  // scale factor (CSS space)
+  const scale = Math.min(cw / sw, ch / sh);
 
-  // now in CSS pixels
-  camera.x = (cw - sw * camera.scale) * 0.5;
-  camera.y = (ch - sh * camera.scale) * 0.5;
+  // store in camera (CSS space)
+  camera.scale = scale;
+  camera.x = (cw - sw * scale) / 2;
+  camera.y = (ch - sh * scale) / 2;
 
   requestRender();
 }
@@ -312,27 +314,31 @@ function onWheelZoom(e) {
 }
 
 function render() {
-  if (!ctx || !canvas) return;
+  if (!ctx) return;
 
-  ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const dpr = window.devicePixelRatio || 1;
 
-  ctx.save();
-  ctx.scale(camera.scale, camera.scale);
-  ctx.translate(camera.x / camera.scale, camera.y / camera.scale);
+  // clear
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // apply DPR + camera transform
+  ctx.setTransform(
+    camera.scale * dpr, 0, 0,
+    camera.scale * dpr,
+    camera.x * dpr,
+    camera.y * dpr
+  );
 
   if (skinImg) ctx.drawImage(skinImg, 0, 0);
-
   if (tattooImg) {
     ctx.save();
     ctx.translate(tattoo.x, tattoo.y);
     ctx.rotate(tattoo.angle);
     ctx.scale(tattoo.scale, tattoo.scale);
-    ctx.drawImage(tattooImg, -tattoo.width / 2, -tattoo.height / 2);
+    ctx.drawImage(tattooImg, -tattoo.width/2, -tattoo.height/2);
     ctx.restore();
   }
-
-  ctx.restore();
 }
 
 // === MASK: make sure the same camera transform is considered ===

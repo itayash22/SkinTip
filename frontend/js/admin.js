@@ -265,20 +265,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('adminRotationSlider').addEventListener('input', (e) => adminDrawing.setRotation(e.target.value));
-    document.getElementById('adminSizeSlider').addEventListener('input', (e) => adminDrawing.setScale(e.target.value));
+    document.getElementById('adminSizeSlider').addEventListener('input', (e) => adminDrawing.setScale(e.target.value / 100));
 
     startHillClimbingBtn.addEventListener('click', async () => {
         hillClimbingState.mask = adminDrawing.generateMask();
 
         // Get the current form values as the starting point
         const formData = new FormData(fluxSettingsForm);
-        const tattooAngle = parseFloat(document.getElementById('adminRotationSlider').value);
-        const tattooScale = parseFloat(document.getElementById('adminSizeSlider').value) / 100.0;
-
         hillClimbingState.baseParams = {
             prompt: formData.get('prompt'),
-            tattooAngle: tattooAngle,
-            tattooScale: tattooScale,
+            tattooAngle: 0,
+            tattooScale: 1.0,
             behaviorFlags: {
                 adaptiveScaleEnabled: document.getElementById('adaptiveScaleEnabled').checked,
                 adaptiveEngineEnabled: document.getElementById('adaptiveEngineEnabled').checked,
@@ -348,23 +345,10 @@ document.addEventListener('DOMContentLoaded', () => {
         results.forEach(result => {
             const resultItem = document.createElement('div');
             resultItem.className = 'result-item';
-
-            if (result.imageUrl) {
-                resultItem.innerHTML = `
-                    <img src="${result.imageUrl}" alt="${result.label}">
-                    <button class="btn btn-sm btn-primary" data-params='${JSON.stringify(result.params)}'>Choose</button>
-                `;
-            } else {
-                // When generation fails, show a placeholder and the label.
-                // The 'Choose' button is still active to allow selecting the parameters that led to the failure.
-                resultItem.innerHTML = `
-                    <div class="result-placeholder" style="width: 256px; height: 256px; background-color: #f0f0f0; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
-                        <p><strong>Generation Failed</strong></p>
-                        <span>${result.label}</span>
-                    </div>
-                    <button class="btn btn-sm btn-primary" data-params='${JSON.stringify(result.params)}'>Choose</button>
-                `;
-            }
+            resultItem.innerHTML = `
+                <img src="${result.imageUrl}" alt="${result.label}">
+                <button class="btn btn-sm btn-primary" data-params='${JSON.stringify(result.params)}'>Choose</button>
+            `;
             hillClimbingResults.appendChild(resultItem);
         });
     };

@@ -4,7 +4,7 @@
 let canvas, ctx;
 let skinImg = null, tattooImg = null; // assume you already set these in init
 const camera = { x: 0, y: 0, scale: 1 };
-let panMode = true;
+let panMode = false;
 
 let baseTattooScale = 1;
 
@@ -59,35 +59,6 @@ function init(skinDataURL, cleanedTattooUrl) {
   canvas = document.getElementById('drawingCanvas');
   ctx = canvas.getContext('2d');
 
-  const parent = canvas.parentElement;
-
-  function resizeToParent() {
-    const w = parent.clientWidth;
-    const h = parent.clientHeight;
-
-    // set CSS size
-    canvas.style.width  = w + 'px';
-    canvas.style.height = h + 'px';
-
-    // set internal buffer with DPR
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width  = w * dpr;
-    canvas.height = h * dpr;
-
-    // every render will scale by dpr
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    centerSkin();
-    requestRender();
-  }
-  resizeToParent();
-
-  if (!canvas.__ro){
-    const ro = new ResizeObserver(() => resizeToParent());
-    ro.observe(parent);
-    canvas.__ro = ro;
-  }
-
   // Reset state for new images
   skinImg = null;
   tattooImg = null;
@@ -99,6 +70,13 @@ function init(skinDataURL, cleanedTattooUrl) {
   skinImg = new Image();
   skinImg.crossOrigin = 'anonymous';
   skinImg.onload = () => {
+    // Set canvas dimensions to match the loaded image, which will trigger the scrollbars
+    canvas.width = skinImg.width;
+    canvas.height = skinImg.height;
+    canvas.style.width = skinImg.width + 'px';
+    canvas.style.height = skinImg.height + 'px';
+
+    // Run centerSkin to set camera correctly for 1:1 scale
     centerSkin();
     requestRender();
   };
@@ -132,25 +110,17 @@ function init(skinDataURL, cleanedTattooUrl) {
 }
 
 function centerSkin() {
-  if (!skinImg) return;
+  // center the skin image at 1:1 scale if larger than canvas; adjust to fit width
+  if (!skinImg || !skinImg.width) return;
+  const cw = canvas.width, ch = canvas.height;
+  const sw = skinImg.width, sh = skinImg.height;
 
-  // Use container size in CSS pixels
-  const parent = canvas.parentElement;
-  const cw = parent.clientWidth;
-  const ch = parent.clientHeight;
-
-  const sw = skinImg.width;
-  const sh = skinImg.height;
-
-  // scale factor (CSS space)
-  const scale = Math.min(cw / sw, ch / sh);
-
-  // store in camera (CSS space)
-  camera.scale = scale;
-  camera.x = (cw - sw * scale) / 2;
-  camera.y = (ch - sh * scale) / 2;
-
-  requestRender();
+  // fit width by default (you already resized to ~768, but mobile DPR may vary)
+  const scaleX = cw / sw, scaleY = ch / sh;
+  camera.scale = Math.min(scaleX, scaleY); // contain-fit
+  // place centered
+  camera.x = (cw - sw * camera.scale) * 0.5;
+  camera.y = (ch - sh * camera.scale) * 0.5;
 }
 
 function attachPanHandlers() {
@@ -313,32 +283,31 @@ function onWheelZoom(e) {
   requestRender();
 }
 
+// === RENDER: apply camera transform to draw skin and tattoo in the same space ===
 function render() {
-  if (!ctx) return;
-
-  const dpr = window.devicePixelRatio || 1;
-
-  // clear
+  if (!ctx || !canvas) return;
   ctx.setTransform(1,0,0,1,0,0);
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // apply DPR + camera transform
-  ctx.setTransform(
-    camera.scale * dpr, 0, 0,
-    camera.scale * dpr,
-    camera.x * dpr,
-    camera.y * dpr
-  );
+  // world transform (skin + tattoo move together)
+  ctx.setTransform(camera.scale, 0, 0, camera.scale, camera.x, camera.y);
 
-  if (skinImg) ctx.drawImage(skinImg, 0, 0);
+  // draw skin first
+  if (skinImg) {
+    ctx.drawImage(skinImg, 0, 0);
+  }
+
+  // draw tattoo
   if (tattooImg) {
     ctx.save();
     ctx.translate(tattoo.x, tattoo.y);
     ctx.rotate(tattoo.angle);
     ctx.scale(tattoo.scale, tattoo.scale);
-    ctx.drawImage(tattooImg, -tattoo.width/2, -tattoo.height/2);
+    ctx.drawImage(tattooImg, -tattoo.width / 2, -tattoo.height / 2);
     ctx.restore();
   }
+
+  // if you draw guides/selection, draw them here (still in world coords)
 }
 
 // === MASK: make sure the same camera transform is considered ===

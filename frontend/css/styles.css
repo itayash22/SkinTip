@@ -352,14 +352,11 @@ body {
 .drawing-container{
   position:relative;
   width:100%;
+  max-width: 100%;
   height:min(80vh, 900px);
   min-height:360px;
   background:#111;
-  overflow:hidden;
-  max-width: 800px;        /* or any comfortable working width */
-  max-height: 600px;       /* cap height so it doesn’t fill the whole viewport */
-  margin: 0 auto;          /* center horizontally */
-  border: 1px solid #ccc;  /* optional visual frame */
+  overflow:auto;
 }
 
 /* ensures CSS size always matches the JS pixel buffer */
@@ -370,9 +367,6 @@ body {
   touch-action:none;
   user-select:none;
   -webkit-user-drag:none;
-  max-width: 100%;
-  height: auto;
-  object-fit: contain;
 }
 
 .drawing-tools {

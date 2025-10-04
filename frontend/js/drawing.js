@@ -123,17 +123,25 @@ function init(skinDataURL, cleanedTattooUrl) {
 }
 
 function centerSkin() {
-  // center the skin image at 1:1 scale if larger than canvas; adjust to fit width
   if (!skinImg || !skinImg.width) return;
-  const cw = canvas.width, ch = canvas.height;
-  const sw = skinImg.width, sh = skinImg.height;
 
-  // fit width by default (you already resized to ~768, but mobile DPR may vary)
-  const scaleX = cw / sw, scaleY = ch / sh;
-  camera.scale = Math.min(scaleX, scaleY); // contain-fit
-  // place centered
-  camera.x = (cw - sw * camera.scale) * 0.5;
-  camera.y = (ch - sh * camera.scale) * 0.5;
+  // Use CSS pixel dimensions, not internal buffer dimensions
+  const parent = canvas.parentElement;
+  const cw = parent.clientWidth;
+  const ch = parent.clientHeight;
+  const sw = skinImg.width;
+  const sh = skinImg.height;
+
+  // Compute scale so image fits entirely inside canvas area
+  const scaleX = cw / sw;
+  const scaleY = ch / sh;
+  camera.scale = Math.min(scaleX, scaleY);
+
+  // Center the image
+  camera.x = (cw * window.devicePixelRatio - sw * camera.scale * window.devicePixelRatio) * 0.5;
+  camera.y = (ch * window.devicePixelRatio - sh * camera.scale * window.devicePixelRatio) * 0.5;
+
+  requestRender();
 }
 
 function attachPanHandlers() {

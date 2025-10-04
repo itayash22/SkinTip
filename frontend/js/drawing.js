@@ -128,9 +128,10 @@ function centerSkin() {
   const cw = canvas.width, ch = canvas.height;
   const sw = skinImg.width, sh = skinImg.height;
 
-  // contain-fit but also cap scale so large screens don't blow up image
+  // fit width by default (you already resized to ~768, but mobile DPR may vary)
   const scaleX = cw / sw, scaleY = ch / sh;
-  camera.scale = Math.min(scaleX, scaleY, 1);  // 👈 new limit: never scale above 1:1
+  camera.scale = Math.min(scaleX, scaleY); // contain-fit
+  // place centered
   camera.x = (cw - sw * camera.scale) * 0.5;
   camera.y = (ch - sh * camera.scale) * 0.5;
 }

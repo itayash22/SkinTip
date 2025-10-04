@@ -61,14 +61,22 @@ function init(skinDataURL, cleanedTattooUrl) {
 
   const parent = canvas.parentElement;
 
-  function resizeToParent(){
+  function resizeToParent() {
     const w = parent.clientWidth;
     const h = parent.clientHeight;
+
+    // set CSS size
     canvas.style.width  = w + 'px';
     canvas.style.height = h + 'px';
-    canvas.width  = w * window.devicePixelRatio;
-    canvas.height = h * window.devicePixelRatio;
-    ctx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
+
+    // set internal buffer with DPR
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width  = w * dpr;
+    canvas.height = h * dpr;
+
+    // every render will scale by dpr
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
     centerSkin();
     requestRender();
   }
@@ -126,18 +134,17 @@ function init(skinDataURL, cleanedTattooUrl) {
 function centerSkin() {
   if (!skinImg || !skinImg.width) return;
 
-  // canvas internal resolution (already includes devicePixelRatio)
-  const cw = canvas.width;
-  const ch = canvas.height;
+  const cw = canvas.width / (window.devicePixelRatio || 1);  // CSS px
+  const ch = canvas.height / (window.devicePixelRatio || 1);
   const sw = skinImg.width;
   const sh = skinImg.height;
 
-  // compute scale so the image fits fully inside the canvas
+  // contain-fit scale
   const scaleX = cw / sw;
   const scaleY = ch / sh;
   camera.scale = Math.min(scaleX, scaleY);
 
-  // center the image in canvas pixel space
+  // now in CSS pixels
   camera.x = (cw - sw * camera.scale) * 0.5;
   camera.y = (ch - sh * camera.scale) * 0.5;
 
@@ -304,21 +311,18 @@ function onWheelZoom(e) {
   requestRender();
 }
 
-// === RENDER: apply camera transform to draw skin and tattoo in the same space ===
 function render() {
   if (!ctx || !canvas) return;
-  ctx.setTransform(1,0,0,1,0,0);
+
+  ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // world transform (skin + tattoo move together)
-  ctx.setTransform(camera.scale, 0, 0, camera.scale, camera.x, camera.y);
+  ctx.save();
+  ctx.scale(camera.scale, camera.scale);
+  ctx.translate(camera.x / camera.scale, camera.y / camera.scale);
 
-  // draw skin first
-  if (skinImg) {
-    ctx.drawImage(skinImg, 0, 0);
-  }
+  if (skinImg) ctx.drawImage(skinImg, 0, 0);
 
-  // draw tattoo
   if (tattooImg) {
     ctx.save();
     ctx.translate(tattoo.x, tattoo.y);
@@ -328,7 +332,7 @@ function render() {
     ctx.restore();
   }
 
-  // if you draw guides/selection, draw them here (still in world coords)
+  ctx.restore();
 }
 
 // === MASK: make sure the same camera transform is considered ===

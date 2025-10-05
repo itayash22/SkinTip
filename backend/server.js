@@ -16,8 +16,6 @@ import sizeOf from 'image-size'; // image-size default export might be different
 // Import our new modularized services
 import tokenService from './modules/tokenService.js'; // Added .js extension
 import fluxKontextHandler from './modules/fluxPlacementHandler.js'; // Added .js extension
-import hillClimbHandler from './modules/hillClimbHandler.js'; // Added for admin panel
-import fluxSettingsHandler from './modules/fluxSettingsHandler.js'; // Added for settings panel
 // --- END OF ACTUAL IMPORTS ---
 
 // Function to generate a dynamic timestamp for deployment tracking
@@ -226,7 +224,7 @@ app.post('/api/auth/login', async (req, res) => {
                 email: user.email,
                 username: user.username,
                 tokens_remaining: user.tokens_remaining,
-                is_admin: user.is_admin // Include the user's admin status
+                is_admin: user.is_admin
             }
         });
     } catch (error) {
@@ -365,135 +363,6 @@ app.post('/api/admin/debug-add-tokens', authenticateToken, async (req, res) => {
         res.status(500).json({ error: `Failed to add tokens via debug endpoint: ${error.message}` });
     }
 });
-
-app.post('/api/admin/hill-climb',
-    authenticateToken, // Assuming admin routes should be protected
-    upload.fields([
-        { name: 'tattooImage', maxCount: 1 },
-        { name: 'skinImage', maxCount: 1 }
-    ]),
-    async (req, res) => {
-        try {
-            console.log('API: /api/admin/hill-climb endpoint called.');
-            const userId = req.user.id;
-            const { csvData } = req.body;
-            const tattooImageFile = req.files.tattooImage ? req.files.tattooImage[0] : null;
-            const skinImageFile = req.files.skinImage ? req.files.skinImage[0] : null;
-
-            if (!csvData || !tattooImageFile || !skinImageFile) {
-                return res.status(400).json({ error: 'Missing csvData, tattooImage, or skinImage.' });
-            }
-
-            // Note: We are not using the fluxKontextHandler.uploadToSupabaseStorage here directly
-            // Instead, we pass the buffers to the hillClimbHandler, which will manage its own uploads.
-            const results = await hillClimbHandler.processHillClimbCsv(
-                csvData,
-                tattooImageFile.buffer,
-                skinImageFile.buffer,
-                process.env.FLUX_API_KEY,
-                userId // Pass userId for storage paths
-            );
-
-            res.json(results);
-
-        } catch (error) {
-            console.error('API Error in /api/admin/hill-climb:', error);
-            res.status(500).json({
-                error: 'An internal server error occurred during the hill climb process.',
-                details: error.message
-            });
-        }
-    }
-);
-
-app.post('/api/admin/update-csv', authenticateToken, async (req, res) => {
-    try {
-        const { csvData, pickOfTheLitter, iterationFeedback } = req.body;
-
-        if (!csvData || !pickOfTheLitter) {
-            return res.status(400).json({ error: 'Missing csvData or pickOfTheLitter selection.' });
-        }
-
-        const updatedCsv = await hillClimbHandler.updateCsvWithFeedback(
-            csvData,
-            pickOfTheLitter,
-            iterationFeedback || '' // Default to empty string if feedback is null/undefined
-        );
-
-        res.json({ updatedCsvString: updatedCsv });
-
-    } catch (error) {
-        console.error('API Error in /api/admin/update-csv:', error);
-        res.status(500).json({
-            error: 'An internal server error occurred while updating the CSV.',
-            details: error.message
-        });
-    }
-});
-
-// --- FLUX Settings API Endpoints ---
-app.get('/api/admin/flux-settings', authenticateToken, async (req, res) => {
-    try {
-        const settings = await fluxSettingsHandler.getLatestFluxSettings();
-        if (!settings) {
-            // If no settings exist, return a 404. The frontend should handle this.
-            return res.status(404).json({ error: 'No FLUX settings found.' });
-        }
-        res.json(settings);
-    } catch (error) {
-        console.error('Error in /api/admin/flux-settings:', error);
-        res.status(500).json({ error: 'Failed to fetch FLUX settings.', details: error.message });
-    }
-});
-
-app.post('/api/admin/flux-settings', authenticateToken, async (req, res) => {
-    try {
-        // The frontend sends the whole form, so we extract the settings object.
-        const { settings, source } = req.body;
-        const userId = req.user.id;
-
-        if (!settings || !source) {
-            return res.status(400).json({ error: 'Request body must include settings object and source string.' });
-        }
-
-        const savedSettings = await fluxSettingsHandler.saveFluxSettings(settings, userId, source);
-        res.status(201).json(savedSettings);
-    } catch (error) {
-        console.error('Error in POST /api/admin/flux-settings:', error);
-        res.status(500).json({ error: 'Failed to save FLUX settings.', details: error.message });
-    }
-});
-
-app.get('/api/admin/flux-settings/history', authenticateToken, async (req, res) => {
-    try {
-        const history = await fluxSettingsHandler.getFluxSettingsHistory();
-        res.json(history);
-    } catch (error) {
-        console.error('Error in /api/admin/flux-settings/history:', error);
-        res.status(500).json({ error: 'Failed to fetch FLUX settings history.', details: error.message });
-    }
-});
-
-app.get('/api/admin/presets', authenticateToken, async (req, res) => {
-    try {
-        const { data, error } = await supabase
-            .from('presets')
-            .select('*')
-            .order('name', { ascending: true });
-
-        if (error) {
-            throw error;
-        }
-
-        // Use the utility from fluxSettingsHandler to convert to camelCase for the frontend
-        res.json(fluxSettingsHandler.toCamelCase(data));
-    } catch (error) {
-        console.error('Error in /api/admin/presets:', error);
-        res.status(500).json({ error: 'Failed to fetch presets.', details: error.message });
-    }
-});
-// --- End of FLUX Settings API Endpoints ---
-
 
 app.post('/api/generate-final-tattoo',
     authenticateToken,

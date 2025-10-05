@@ -17,6 +17,7 @@ import sizeOf from 'image-size'; // image-size default export might be different
 import tokenService from './modules/tokenService.js'; // Added .js extension
 import fluxKontextHandler from './modules/fluxPlacementHandler.js'; // Added .js extension
 import hillClimbHandler from './modules/hillClimbHandler.js'; // Added for admin panel
+import fluxSettingsHandler from './modules/fluxSettingsHandler.js'; // Added for settings panel
 // --- END OF ACTUAL IMPORTS ---
 
 // Function to generate a dynamic timestamp for deployment tracking
@@ -429,38 +430,68 @@ app.post('/api/admin/update-csv', authenticateToken, async (req, res) => {
     }
 });
 
-// --- Placeholder endpoints for new admin functionality ---
+// --- FLUX Settings API Endpoints ---
 app.get('/api/admin/flux-settings', authenticateToken, async (req, res) => {
-    console.log('Placeholder endpoint hit: /api/admin/flux-settings');
-    // Returning a default object structure to avoid frontend errors
-    res.json({
-        // Default values, to be replaced with actual data from Supabase
-        adaptive_scale_enabled: true,
-        adaptive_engine_enabled: true,
-        global_scale_up: 1.5,
-        kontext_size_bias: 1.08,
-        fill_size_bias: 1.02,
-        model_mask_grow_pct: 0.06,
-        model_mask_grow_min: 4,
-        model_mask_grow_max: 28,
-        bake_tattoo_brightness: 1.0,
-        bake_tattoo_gamma: 1.0,
-        bake_overlay_opacity: 0.28,
-        bake_softlight_opacity: 0.22,
-        bake_multiply_opacity: 0.06,
-    });
+    try {
+        const settings = await fluxSettingsHandler.getLatestFluxSettings();
+        if (!settings) {
+            // If no settings exist, return a 404. The frontend should handle this.
+            return res.status(404).json({ error: 'No FLUX settings found.' });
+        }
+        res.json(settings);
+    } catch (error) {
+        console.error('Error in /api/admin/flux-settings:', error);
+        res.status(500).json({ error: 'Failed to fetch FLUX settings.', details: error.message });
+    }
+});
+
+app.post('/api/admin/flux-settings', authenticateToken, async (req, res) => {
+    try {
+        // The frontend sends the whole form, so we extract the settings object.
+        const { settings, source } = req.body;
+        const userId = req.user.id;
+
+        if (!settings || !source) {
+            return res.status(400).json({ error: 'Request body must include settings object and source string.' });
+        }
+
+        const savedSettings = await fluxSettingsHandler.saveFluxSettings(settings, userId, source);
+        res.status(201).json(savedSettings);
+    } catch (error) {
+        console.error('Error in POST /api/admin/flux-settings:', error);
+        res.status(500).json({ error: 'Failed to save FLUX settings.', details: error.message });
+    }
 });
 
 app.get('/api/admin/flux-settings/history', authenticateToken, async (req, res) => {
-    console.log('Placeholder endpoint hit: /api/admin/flux-settings/history');
-    res.json([]); // Return an empty array as it's likely a list
+    try {
+        const history = await fluxSettingsHandler.getFluxSettingsHistory();
+        res.json(history);
+    } catch (error) {
+        console.error('Error in /api/admin/flux-settings/history:', error);
+        res.status(500).json({ error: 'Failed to fetch FLUX settings history.', details: error.message });
+    }
 });
 
 app.get('/api/admin/presets', authenticateToken, async (req, res) => {
-    console.log('Placeholder endpoint hit: /api/admin/presets');
-    res.json([]); // Return an empty array as it's likely a list
+    try {
+        const { data, error } = await supabase
+            .from('presets')
+            .select('*')
+            .order('name', { ascending: true });
+
+        if (error) {
+            throw error;
+        }
+
+        // Use the utility from fluxSettingsHandler to convert to camelCase for the frontend
+        res.json(fluxSettingsHandler.toCamelCase(data));
+    } catch (error) {
+        console.error('Error in /api/admin/presets:', error);
+        res.status(500).json({ error: 'Failed to fetch presets.', details: error.message });
+    }
 });
-// --- End of placeholder endpoints ---
+// --- End of FLUX Settings API Endpoints ---
 
 
 app.post('/api/generate-final-tattoo',

@@ -226,7 +226,7 @@ app.post('/api/auth/login', async (req, res) => {
                 email: user.email,
                 username: user.username,
                 tokens_remaining: user.tokens_remaining,
-                role: user.role // Include the user's role
+                is_admin: user.is_admin // Include the user's admin status
             }
         });
     } catch (error) {

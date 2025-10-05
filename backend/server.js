@@ -748,22 +748,21 @@ app.post('/api/admin/presets/:id/set-default', authenticateToken, isAdmin, async
 });
 
 // --- Hill Climbing Endpoint ---
-app.post('/api/admin/hill-climb', authenticateToken, isAdmin, upload.fields([
-    { name: 'tattooImage', maxCount: 1 },
-    { name: 'skinImage', maxCount: 1 }
-]), async (req, res) => {
+app.post('/api/admin/hill-climb', authenticateToken, isAdmin, async (req, res) => {
     try {
-        const { baseParams, activeGroup, paramIndex, mask } = JSON.parse(req.body.jsonData);
-        const tattooImageFile = req.files.tattooImage ? req.files.tattooImage[0] : null;
-        const skinImageFile = req.files.skinImage ? req.files.skinImage[0] : null;
+        const { tattooImage, skinImage, baseParams, activeGroup, paramIndex, mask } = req.body;
 
-        if (!tattooImageFile || !skinImageFile || !baseParams || !activeGroup || !mask) {
-            return res.status(400).json({ error: 'tattooImage, skinImage, baseParams, activeGroup and mask are required.' });
+        if (!tattooImage || !skinImage || !baseParams || !activeGroup || paramIndex === undefined || !mask) {
+            return res.status(400).json({ error: 'tattooImage, skinImage, baseParams, activeGroup, paramIndex, and mask are all required.' });
         }
 
+        // Convert the base64 strings back to buffers for processing
+        const skinImageBuffer = Buffer.from(skinImage, 'base64');
+        const tattooImageBase64 = tattooImage; // Already in base64 format
+
         const variations = await hillClimbHandler.generateHillClimbVariations(
-            skinImageFile.buffer,
-            tattooImageFile.buffer.toString('base64'),
+            skinImageBuffer,
+            tattooImageBase64,
             mask,
             req.user.id,
             process.env.FLUX_API_KEY,

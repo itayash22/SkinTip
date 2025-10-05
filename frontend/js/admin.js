@@ -284,8 +284,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData(fluxSettingsForm);
         hillClimbingState.baseParams = {
             prompt: formData.get('prompt'),
-            tattooAngle: 0,
-            tattooScale: 1.0,
+            tattooAngle: adminDrawing.getRotation(),
+            tattooScale: adminDrawing.getScale(),
             behaviorFlags: {
                 adaptiveScaleEnabled: document.getElementById('adaptiveScaleEnabled').checked,
                 adaptiveEngineEnabled: document.getElementById('adaptiveEngineEnabled').checked,
@@ -316,6 +316,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     const runHillClimbIteration = async () => {
+        startHillClimbingBtn.disabled = true;
+        lockAndTestNextBtn.disabled = true;
+        hillClimbingResults.style.pointerEvents = 'none'; // Disable clicks on result buttons
+
         const activeGroupKey = Object.keys(hillClimbingState.paramGroups)[hillClimbingState.activeGroupIndex];
         const activeGroup = hillClimbingState.paramGroups[activeGroupKey];
         const paramToTest = activeGroup[hillClimbingState.paramIndex];
@@ -339,14 +343,23 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (!response.ok) {
-                throw new Error('Hill climb generation failed');
+                const errorText = await response.text().catch(() => 'Could not retrieve error details.');
+                throw new Error(`Hill climb generation failed (${response.status}): ${errorText}`);
             }
 
             const results = await response.json();
             displayHillClimbResults(results);
         } catch (error) {
             console.error('Hill climb error:', error);
-            utils.showError('Failed to generate hill climb variations.');
+            if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                utils.showError('Server unavailable — it may have crashed. Please check backend logs.');
+            } else {
+                utils.showError(`Hill climb failed: ${error.message}`);
+            }
+        } finally {
+            startHillClimbingBtn.disabled = false;
+            lockAndTestNextBtn.disabled = false;
+            hillClimbingResults.style.pointerEvents = 'auto'; // Re-enable clicks
         }
     };
 

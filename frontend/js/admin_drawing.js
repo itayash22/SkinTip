@@ -214,6 +214,16 @@ const adminDrawing = {
         maskCtx.putImageData(imageData, 0, 0);
 
         return maskCanvas.toDataURL('image/png').split(',')[1];
+    },
+
+    getRotation() {
+        // Return degrees
+        return this.tattoo.angle * (180 / Math.PI);
+    },
+
+    getScale() {
+        // Return the scale multiplier, not the percentage
+        return this.tattoo.scale / this.baseTattooScale;
     }
 };
 

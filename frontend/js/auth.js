@@ -54,6 +54,7 @@ const auth = {
             STATE.token = savedToken;
             try {
                 STATE.user = JSON.parse(savedUser);
+                console.log('DEBUG: User object loaded from localStorage:', STATE.user); // DEBUG LOG
                 
                 // --- JWT Expiration Check on Page Load ---
                 // Ensure jwt-decode library is loaded in index.html for this to work
@@ -208,6 +209,7 @@ const auth = {
             }
 
             // Authentication successful
+            console.log('DEBUG: User object received from login API:', data.user); // DEBUG LOG
             STATE.token = data.token;
             STATE.user = data.user;
             STATE.userTokens = data.user.tokens_remaining; // Update global state

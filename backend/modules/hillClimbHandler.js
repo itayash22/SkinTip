@@ -255,18 +255,25 @@ const hillClimbHandler = {
     variations[1].params[mainKey][subKey] += stepSizes[paramToVary];
     variations[2].params[mainKey][subKey] -= stepSizes[paramToVary];
 
-    const promises = variations.map(v =>
-        _generateSingleImage(
-            skinImageBuffer,
-            tattooDesignImageBase64,
-            maskBase64,
-            userId,
-            fluxApiKey,
-            v.params
-        )
-    );
-
-    const results = await Promise.all(promises);
+    const results = [];
+    for (const v of variations) {
+      try {
+        console.log(`Generating variation: "${v.label}"...`);
+        const url = await _generateSingleImage(
+          skinImageBuffer,
+          tattooDesignImageBase64,
+          maskBase64,
+          userId,
+          fluxApiKey,
+          v.params
+        );
+        results.push(url);
+        console.log(`Memory usage after variation: ${(process.memoryUsage().rss / 1024 / 1024).toFixed(1)} MB`);
+      } catch (err) {
+        console.error(`Variation "${v.label}" failed:`, err.message);
+        results.push(null); // Push null for failed variations to maintain order
+      }
+    }
 
     return results.map((url, i) => ({
         label: variations[i].label,

@@ -1,6 +1,13 @@
 // frontend/js/admin.js
 
 document.addEventListener('DOMContentLoaded', () => {
+    const fileToBase64 = (file) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result.split(',')[1]); // Get only the base64 part
+        reader.onerror = error => reject(error);
+    });
+
     const adminSection = document.getElementById('dashboardSection');
     const fluxSettingsForm = document.getElementById('fluxSettingsForm');
     const historyContainer = document.getElementById('historyContainer');
@@ -245,31 +252,36 @@ document.addEventListener('DOMContentLoaded', () => {
         const skinImageFile = document.getElementById('skinImage').files[0];
 
         if (!tattooImageFile || !skinImageFile) {
-            console.log('DEBUG: Missing tattoo or skin image file.');
             utils.showError('Please select both a tattoo and a skin image.');
             return;
         }
-        console.log('DEBUG: Tattoo and skin files selected:', { tattoo: tattooImageFile.name, skin: skinImageFile.name });
 
-
-        hillClimbingState.tattooImage = tattooImageFile;
-        hillClimbingState.skinImage = skinImageFile;
-
-        const tattooUrl = URL.createObjectURL(tattooImageFile);
-        const skinUrl = URL.createObjectURL(skinImageFile);
-
-        // Clean the tattoo background before initializing the canvas
         try {
-            console.log('DEBUG: Cleaning tattoo background...');
+            // Convert images to Base64 for the backend and create Object URLs for the canvas
+            const [tattooBase64, skinBase64] = await Promise.all([
+                fileToBase64(tattooImageFile),
+                fileToBase64(skinImageFile)
+            ]);
+
+            hillClimbingState.tattooImage = tattooBase64;
+            hillClimbingState.skinImage = skinBase64;
+
+            const tattooUrl = URL.createObjectURL(tattooImageFile);
+            const skinUrl = URL.createObjectURL(skinImageFile);
+
+            console.log('DEBUG: Cleaning tattoo background for canvas display...');
             const cleanedTattooUrl = await cleanStencilWhiteBg(tattooUrl);
-            console.log('DEBUG: Tattoo background cleaned. Displaying drawing section.');
+
+            console.log('DEBUG: Displaying drawing section.');
             drawingSection.style.display = 'block';
+
             console.log('DEBUG: Initializing adminDrawing module.');
             adminDrawing.init('adminDrawingCanvas', skinUrl, cleanedTattooUrl);
             console.log('DEBUG: adminDrawing.init called.');
+
         } catch (error) {
-            console.error("Failed to clean tattoo background:", error);
-            utils.showError("Could not process the tattoo image to remove the background.");
+            console.error("Failed to process images for canvas setup:", error);
+            utils.showError("Could not process the selected images. Please try again.");
         }
     });
 
@@ -319,29 +331,31 @@ document.addEventListener('DOMContentLoaded', () => {
     const runHillClimbIteration = async () => {
         startHillClimbingBtn.disabled = true;
         lockAndTestNextBtn.disabled = true;
-        hillClimbingResults.style.pointerEvents = 'none'; // Disable clicks on result buttons
-        loadingIndicator.style.display = 'flex'; // Show loading indicator
+        hillClimbingResults.style.pointerEvents = 'none';
+        loadingIndicator.style.display = 'flex';
 
         const activeGroupKey = Object.keys(hillClimbingState.paramGroups)[hillClimbingState.activeGroupIndex];
         const activeGroup = hillClimbingState.paramGroups[activeGroupKey];
         const paramToTest = activeGroup[hillClimbingState.paramIndex];
         currentTestInfo.textContent = `Testing Group: ${activeGroupKey} - Parameter: ${paramToTest}`;
 
-        const formData = new FormData();
-        formData.append('tattooImage', hillClimbingState.tattooImage);
-        formData.append('skinImage', hillClimbingState.skinImage);
-        formData.append('jsonData', JSON.stringify({
+        const payload = {
+            tattooImage: hillClimbingState.tattooImage, // Now base64
+            skinImage: hillClimbingState.skinImage,     // Now base64
             baseParams: hillClimbingState.baseParams,
             activeGroup: activeGroupKey,
             paramIndex: hillClimbingState.paramIndex,
             mask: hillClimbingState.mask
-        }));
+        };
 
         try {
             const response = await fetch(`${CONFIG.API_URL}/admin/hill-climb`, {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${STATE.token}` },
-                body: formData
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${STATE.token}`
+                },
+                body: JSON.stringify(payload)
             });
 
             if (!response.ok) {

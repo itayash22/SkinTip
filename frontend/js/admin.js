@@ -237,6 +237,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const hillClimbingResults = document.getElementById('hillClimbingResults');
     const currentTestInfo = document.getElementById('currentTestInfo');
     const lockAndTestNextBtn = document.getElementById('lockAndTestNext');
+    const loadingIndicator = document.getElementById('loadingIndicator');
 
     setupCanvasBtn.addEventListener('click', async () => {
         console.log('DEBUG: setupCanvasBtn clicked.');
@@ -319,6 +320,7 @@ document.addEventListener('DOMContentLoaded', () => {
         startHillClimbingBtn.disabled = true;
         lockAndTestNextBtn.disabled = true;
         hillClimbingResults.style.pointerEvents = 'none'; // Disable clicks on result buttons
+        loadingIndicator.style.display = 'flex'; // Show loading indicator
 
         const activeGroupKey = Object.keys(hillClimbingState.paramGroups)[hillClimbingState.activeGroupIndex];
         const activeGroup = hillClimbingState.paramGroups[activeGroupKey];
@@ -360,6 +362,7 @@ document.addEventListener('DOMContentLoaded', () => {
             startHillClimbingBtn.disabled = false;
             lockAndTestNextBtn.disabled = false;
             hillClimbingResults.style.pointerEvents = 'auto'; // Re-enable clicks
+            loadingIndicator.style.display = 'none'; // Hide loading indicator
         }
     };
 

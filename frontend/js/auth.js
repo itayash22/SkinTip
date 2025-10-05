@@ -264,8 +264,8 @@ const auth = {
                 logoutBtn.style.display = 'block'; // Show logout button
             }
             if (adminLink) {
-                // Show admin link only if user has the 'admin' role
-                if (STATE.user && STATE.user.role === 'admin') {
+                // Show admin link only if user is an admin
+                if (STATE.user && STATE.user.is_admin === true) {
                     adminLink.style.display = 'block';
                 } else {
                     adminLink.style.display = 'none';

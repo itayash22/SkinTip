@@ -248,8 +248,10 @@ const auth = {
         // Use the already referenced elements (auth.userInfoSpan, auth.logoutBtn)
         const userInfoSpan = auth.userInfoSpan;
         const logoutBtn = auth.logoutBtn;
+        const adminLink = document.getElementById('adminLink');
+
         // These elements are on welcome.html, so still get them here
-        const loginBtn = document.getElementById('loginBtn'); 
+        const loginBtn = document.getElementById('loginBtn');
         const registerBtn = document.getElementById('registerBtn');
         const heroRegisterBtn = document.getElementById('heroRegisterBtn');
 
@@ -260,6 +262,14 @@ const auth = {
             }
             if (logoutBtn) {
                 logoutBtn.style.display = 'block'; // Show logout button
+            }
+            if (adminLink) {
+                // Show admin link only if user has the 'admin' role
+                if (STATE.user && STATE.user.role === 'admin') {
+                    adminLink.style.display = 'block';
+                } else {
+                    adminLink.style.display = 'none';
+                }
             }
             // Hide welcome page buttons if on welcome.html and logged in
             const currentPage = window.location.pathname.split('/').pop();
@@ -275,6 +285,9 @@ const auth = {
             }
             if (logoutBtn) {
                 logoutBtn.style.display = 'none'; // Hide logout button
+            }
+            if (adminLink) {
+                adminLink.style.display = 'none'; // Hide admin link for logged out users
             }
             // Show welcome page buttons if on welcome.html and logged out
             const currentPage = window.location.pathname.split('/').pop();

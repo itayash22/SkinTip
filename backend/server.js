@@ -225,7 +225,8 @@ app.post('/api/auth/login', async (req, res) => {
                 id: user.id,
                 email: user.email,
                 username: user.username,
-                tokens_remaining: user.tokens_remaining
+                tokens_remaining: user.tokens_remaining,
+                role: user.role // Include the user's role
             }
         });
     } catch (error) {

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FLUX Hill Climb Tester</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <h1>FLUX Hill Climb Tester</h1>
+    <div class="container">
+        <div class="upload-section">
+            <p>Upload a HillFlux CSV to begin.</p>
+            <input type="file" id="csv-file-input" accept=".csv">
+            <button id="submit-csv-button">Run Test</button>
+        </div>
+
+        <div id="loading-indicator" style="display: none;">
+            <p>Running FLUX tasks, please wait...</p>
+        </div>
+
+        <div id="results-section" style="display: none;">
+            <div id="info-banner"></div>
+            <div class="images-container" id="images-container">
+                <!-- Images will be dynamically inserted here -->
+            </div>
+            <div class="feedback-section">
+                <h3>Submit Feedback</h3>
+                <p>Choose the best image and provide your feedback.</p>
+                <div id="pick-of-the-litter-options">
+                    <!-- Radio buttons will be dynamically inserted here -->
+                </div>
+                <textarea id="iteration-feedback-input" placeholder="Enter your feedback..."></textarea>
+                <button id="submit-feedback-button">Update CSV</button>
+                <button id="copy-params-button" style="display: none;">Copy Best Params</button>
+            </div>
+        </div>
+    </div>
+    <script src="js/admin_flux.js"></script>
+</body>
+</html>

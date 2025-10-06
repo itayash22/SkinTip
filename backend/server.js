@@ -18,6 +18,7 @@ import tokenService from './modules/tokenService.js'; // Added .js extension
 import fluxKontextHandler from './modules/fluxPlacementHandler.js'; // Added .js extension
 import hillClimbHandler from './modules/hillClimbHandler.js'; // Added for admin panel
 import fluxSettingsHandler from './modules/fluxSettingsHandler.js'; // Added for settings panel
+import { runFluxTest, updateCsvWithFeedback } from './modules/fluxTestHandler.js'; // Added for FLUX testing
 // --- END OF ACTUAL IMPORTS ---
 
 // Function to generate a dynamic timestamp for deployment tracking
@@ -430,6 +431,56 @@ app.post('/api/admin/update-csv', authenticateToken, async (req, res) => {
         });
     }
 });
+
+// --- FLUX Hill Climb Tester Endpoints ---
+app.post('/hillflux-test', async (req, res) => {
+    try {
+        const { csvData, fileName } = req.body;
+        if (!csvData || !fileName) {
+            return res.status(400).json({ message: 'Missing csvData or fileName.' });
+        }
+
+        // Since we are not using authentication for this specific tool, we pass a placeholder for userId
+        const results = await runFluxTest(csvData, fileName);
+        res.json(results);
+
+    } catch (error) {
+        console.error('API Error in /hillflux-test:', error);
+        res.status(500).json({
+            message: 'An internal server error occurred during the FLUX test.',
+            details: error.message
+        });
+    }
+});
+
+app.post('/update-hillflux-csv', async (req, res) => {
+    try {
+        const { csvData, pickOfTheLitter, iterationFeedback, fileName } = req.body;
+
+        if (!csvData || !pickOfTheLitter || !fileName) {
+            return res.status(400).json({ message: 'Missing csvData, pickOfTheLitter, or fileName.' });
+        }
+
+        const updatedCsv = updateCsvWithFeedback(
+            csvData,
+            pickOfTheLitter,
+            iterationFeedback || ''
+        );
+
+        const updatedFileName = fileName.replace('.csv', '_updated.csv');
+        res.setHeader('Content-Disposition', `attachment; filename="${updatedFileName}"`);
+        res.setHeader('Content-Type', 'text/csv');
+        res.send(updatedCsv);
+
+    } catch (error) {
+        console.error('API Error in /update-hillflux-csv:', error);
+        res.status(500).json({
+            message: 'An internal server error occurred while updating the CSV.',
+            details: error.message
+        });
+    }
+});
+
 
 // --- FLUX Settings API Endpoints ---
 app.get('/api/admin/flux-settings', authenticateToken, async (req, res) => {

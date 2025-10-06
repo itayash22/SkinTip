@@ -178,7 +178,7 @@ app.post('/api/auth/register', async (req, res) => {
                 id: newUser.id,
                 email: newUser.email,
                 username: newUser.username,
-                tokens_remaining: newUser.tokens_remaining
+                tokens_remaining: 20
             }
         });
     } catch (error) {

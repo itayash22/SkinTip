@@ -264,12 +264,8 @@ const auth = {
                 logoutBtn.style.display = 'block'; // Show logout button
             }
             if (adminLink) {
-                // Show admin link only if user has the 'admin' role
-                if (STATE.user && STATE.user.role === 'admin') {
-                    adminLink.style.display = 'block';
-                } else {
-                    adminLink.style.display = 'none';
-                }
+                // Show admin link for any authenticated user
+                adminLink.style.display = 'block';
             }
             // Hide welcome page buttons if on welcome.html and logged in
             const currentPage = window.location.pathname.split('/').pop();

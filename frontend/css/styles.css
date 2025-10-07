@@ -51,6 +51,12 @@ body {
     font-weight: 500;
 }
 
+.nav-menu .btn.active {
+    background-color: #4f46e5;
+    color: white;
+    cursor: default;
+}
+
 /* Buttons */
 .btn {
     padding: 0.6rem 1.2rem;

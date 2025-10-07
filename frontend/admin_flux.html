@@ -3,39 +3,78 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FLUX Hill Climb Tester</title>
-    <link rel="stylesheet" href="css/style.css">
+    <title>Admin - FLUX Tester</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/admin.css">
 </head>
 <body>
-    <h1>FLUX Hill Climb Tester</h1>
-    <div class="container">
-        <div class="upload-section">
-            <p>Upload a HillFlux CSV to begin.</p>
-            <input type="file" id="csv-file-input" accept=".csv">
-            <button id="submit-csv-button">Run Test</button>
-        </div>
-
-        <div id="loading-indicator" style="display: none;">
-            <p>Running FLUX tasks, please wait...</p>
-        </div>
-
-        <div id="results-section" style="display: none;">
-            <div id="info-banner"></div>
-            <div class="images-container" id="images-container">
-                <!-- Images will be dynamically inserted here -->
+    <nav class="navbar">
+        <div class="container">
+            <div class="nav-brand">
+                <h1>Slate.Tattoo - Admin</h1>
             </div>
-            <div class="feedback-section">
-                <h3>Submit Feedback</h3>
-                <p>Choose the best image and provide your feedback.</p>
-                <div id="pick-of-the-litter-options">
-                    <!-- Radio buttons will be dynamically inserted here -->
+            <div class="nav-menu">
+                <a href="/admin.html" class="btn btn-outline">HillFlux Runner</a>
+                <a href="/admin_flux.html" class="btn btn-outline active">FLUX Tester</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="container">
+            <section id="fluxTesterSection" class="section">
+                <div class="section-header">
+                    <h2>FLUX Hill Climb Tester</h2>
+                    <p>Upload a HillFlux CSV to execute the defined FLUX image generation tasks.</p>
                 </div>
-                <textarea id="iteration-feedback-input" placeholder="Enter your feedback..."></textarea>
-                <button id="submit-feedback-button">Update CSV</button>
-                <button id="copy-params-button" style="display: none;">Copy Best Params</button>
+
+                <div class="upload-area" id="csvUploadArea">
+                    <input type="file" id="csv-file-input" accept=".csv" hidden>
+                    <div class="upload-placeholder">
+                         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <p>Click to upload or drag and drop a CSV file</p>
+                    </div>
+                </div>
+                 <button id="submit-csv-button" class="btn btn-primary" style="display: block; margin-top: 1rem; margin-left: auto;">Run Test</button>
+            </section>
+
+            <div id="loading-indicator" class="loading-overlay" style="display: none;">
+                <div class="loading-content">
+                    <div class="spinner"></div>
+                    <p>Running FLUX tasks, please wait...</p>
+                </div>
             </div>
+
+            <section id="results-section" class="section" style="display: none;">
+                <div id="info-banner" class="info-banner" style="display: none;"></div>
+                <div class="results-grid" id="images-container">
+                    <!-- Images will be dynamically inserted here -->
+                </div>
+
+                <div id="feedbackSection" class="feedback-section" style="display: none;">
+                    <h3>Submit Feedback</h3>
+                    <form id="feedbackForm">
+                        <div class="form-group">
+                            <label>Which image is the "Pick of the Litter"?</label>
+                            <div class="radio-group" id="pick-of-the-litter-options">
+                                <!-- Radio buttons will be populated here -->
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="iteration-feedback-input">Iteration Feedback:</label>
+                            <textarea id="iteration-feedback-input" rows="3" placeholder="e.g., Edges blend well but slightly bright..."></textarea>
+                        </div>
+                        <button id="submit-feedback-button" type="button" class="btn btn-primary">Update & Download CSV</button>
+                        <button id="copy-params-button" type="button" class="btn btn-secondary" style="display: none;">Copy Best Params</button>
+                    </form>
+                </div>
+            </section>
         </div>
-    </div>
+    </main>
     <script src="js/admin_flux.js"></script>
 </body>
 </html>

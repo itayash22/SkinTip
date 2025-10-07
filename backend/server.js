@@ -15,7 +15,7 @@ import sizeOf from 'image-size'; // image-size default export might be different
 
 // Import our new modularized services
 import tokenService from './modules/tokenService.js'; // Added .js extension
-import fluxKontextHandler from './modules/fluxPlacementHandler.js'; // Added .js extension
+import fluxPlacementHandler from './modules/fluxPlacementHandler.js'; // Added .js extension
 // --- END OF ACTUAL IMPORTS ---
 
 // Function to generate a dynamic timestamp for deployment tracking
@@ -428,8 +428,8 @@ app.post('/api/generate-final-tattoo',
             }
 
             // --- CRITICAL FIX HERE: ARGUMENT ORDER ---
-            // The 'prompt: userPromptText' from req.body is no longer passed to fluxKontextHandler.placeTattooOnSkin
-            const generatedImageUrls = await fluxKontextHandler.placeTattooOnSkin(
+            // The 'prompt: userPromptText' from req.body is no longer passed to fluxPlacementHandler.placeTattooOnSkin
+            const generatedImageUrls = await fluxPlacementHandler.placeTattooOnSkin(
                 skinImageBuffer,
                 tattooDesignImageBase64,
                 mask,
@@ -490,6 +490,64 @@ app.post('/api/generate-final-tattoo',
 
             res.status(500).json({
                 error: 'An internal server error occurred during tattoo generation.',
+                details: error.message
+            });
+        }
+    }
+);
+
+app.post('/api/admin/generate-variants',
+    authenticateToken,
+    upload.fields([
+        { name: 'skinImage', maxCount: 1 },
+        { name: 'tattooDesignImage', maxCount: 1 }
+    ]),
+    async (req, res) => {
+        try {
+            console.log('API: /api/admin/generate-variants endpoint called.');
+
+            const userId = req.user.id;
+            const { mask, variants: variantsJSON } = req.body;
+            const skinImageFile = req.files.skinImage ? req.files.skinImage[0] : null;
+            const tattooDesignImageFile = req.files.tattooDesignImage ? req.files.tattooDesignImage[0] : null;
+
+            if (!skinImageFile || !tattooDesignImageFile || !mask || !variantsJSON) {
+                return res.status(400).json({ error: 'Skin image, tattoo design, mask, and variants JSON are all required.' });
+            }
+
+            let variants;
+            try {
+                variants = JSON.parse(variantsJSON);
+                if (!Array.isArray(variants) || variants.length === 0) {
+                    throw new Error("Variants must be a non-empty array.");
+                }
+            } catch (e) {
+                return res.status(400).json({ error: `Invalid variants JSON: ${e.message}` });
+            }
+
+            const skinImageBuffer = skinImageFile.buffer;
+            const tattooDesignImageBase64 = tattooDesignImageFile.buffer.toString('base64');
+
+            const generatedImageUrls = await fluxPlacementHandler.placeTattooOnSkinWithVariants(
+                skinImageBuffer,
+                tattooDesignImageBase64,
+                mask,
+                userId,
+                variants,
+                process.env.FLUX_API_KEY
+            );
+
+            res.json({
+                images: generatedImageUrls
+            });
+
+        } catch (error) {
+            console.error('API Error in /api/admin/generate-variants:', error);
+            if (error.message.includes('Flux API')) {
+                return res.status(502).json({ error: error.message });
+            }
+            res.status(500).json({
+                error: 'An internal server error occurred during variant generation.',
                 details: error.message
             });
         }

@@ -35,6 +35,7 @@
                 <h1>Slate.Tattoo</h1>
                 <span class="tagline">AI Tattoo Platform</span> </div>
             <div class="nav-menu">
+                <button id="adminBtn" class="btn btn-outline">Admin</button>
                 <span id="userInfo" class="user-info"></span>
                 <button id="logoutBtn" class="btn btn-outline" style="display:none;">Logout</button>
             </div>
@@ -180,6 +181,27 @@
                 </div>
 
                 <div id="artistsGrid" class="artists-grid">
+                </div>
+            </section>
+
+            <section id="adminSection" class="section" style="display: none;">
+                <div class="section-header">
+                    <h2>Admin Panel</h2>
+                    <p>Paste JSON for FLUX variants</p>
+                </div>
+                <textarea id="jsonInput" rows="10" style="width: 100%;"></textarea>
+                <button id="generateVariantsBtn" class="btn btn-primary" style="margin-top: 1rem;">Generate Variants</button>
+            </section>
+
+            <section id="adminResultsSection" class="section" style="display: none;">
+                <div class="section-header">
+                    <h2>Generated Variants</h2>
+                </div>
+                <div class="results-grid" id="adminResultsGrid">
+                </div>
+                <div class="feedback-section" style="margin-top: 1rem;">
+                  <textarea id="feedbackInput" rows="4" style="width: 100%;" placeholder="Provide feedback on the best image..."></textarea>
+                  <button id="sendFeedbackBtn" class="btn btn-secondary" style="margin-top: 0.5rem;">Send Feedback</button>
                 </div>
             </section>
         </div>
@@ -1246,7 +1268,122 @@
 
         // This block is intentionally left empty as the logic will be moved
         // into the results display section.
+        (() => {
+            const adminBtn = document.getElementById('adminBtn');
+            const adminSection = document.getElementById('adminSection');
+            if (adminBtn && adminSection) {
+                const jsonInput = document.getElementById('jsonInput');
+                const generateVariantsBtn = document.getElementById('generateVariantsBtn');
+                const adminResultsSection = document.getElementById('adminResultsSection');
+                const adminResultsGrid = document.getElementById('adminResultsGrid');
+                const feedbackInput = document.getElementById('feedbackInput');
+                const sendFeedbackBtn = document.getElementById('sendFeedbackBtn');
 
+                adminBtn.addEventListener('click', () => {
+                    const isVisible = adminSection.style.display === 'block';
+                    adminSection.style.display = isVisible ? 'none' : 'block';
+                });
+
+                generateVariantsBtn.addEventListener('click', async () => {
+                    let variants;
+                    try {
+                        const parsed = JSON.parse(jsonInput.value);
+                        if (!parsed.variants || !Array.isArray(parsed.variants) || parsed.variants.length === 0) {
+                            throw new Error('JSON must have a "variants" property containing a non-empty array.');
+                        }
+                        variants = parsed.variants;
+                    } catch (error) {
+                        utils.showError(`Invalid JSON: ${error.message}`);
+                        return;
+                    }
+
+                    if ((!STATE.selectedStencil && !STATE.uploadedTattooDesignBase64) || !STATE.currentImage) {
+                        utils.showError('Please ensure you have selected a stencil or uploaded a design, and uploaded a skin photo before generating variants.');
+                        return;
+                    }
+
+                    utils.showLoading('Generating admin variants...');
+
+                    try {
+                        await drawing.updateMask();
+                        if (!drawing.selectedArea) {
+                            throw new Error('Could not generate the tattoo mask.');
+                        }
+                        STATE.currentMask = drawing.selectedArea;
+
+                        const formData = new FormData();
+                        formData.append('skinImage', STATE.currentImage);
+                        const tattooImageUrl = STATE.selectedStencil?.cleanedUrl ?? STATE.uploadedTattooDesignBase64;
+                        const tattooDesignBlob = await (await fetch(tattooImageUrl)).blob();
+                        formData.append('tattooDesignImage', tattooDesignBlob, 'tattoo_design.png');
+                        let maskToSend = STATE.currentMask.split(',')[1];
+                        formData.append('mask', maskToSend);
+                        formData.append('variants', JSON.stringify(variants));
+
+                        const response = await fetch(`${CONFIG.API_URL}/api/admin/generate-variants`, {
+                            method: 'POST',
+                            headers: { 'Authorization': `Bearer ${STATE.token}` },
+                            body: formData
+                        });
+
+                        if (!response.ok) {
+                            const errorData = await response.json();
+                            throw new Error(errorData.error || 'Failed to generate variants.');
+                        }
+
+                        const data = await response.json();
+
+                        adminResultsGrid.innerHTML = data.images.map((imageUrl, index) => `
+                        <div class="result-item" data-image-id="${index + 1}">
+                            <img src="${imageUrl}" alt="Generated variant ${index + 1}">
+                            <div class="result-label">Image ${index + 1}</div>
+                        </div>
+                    `).join('');
+
+                        adminResultsSection.style.display = 'block';
+                        adminResultsSection.scrollIntoView({ behavior: 'smooth' });
+
+                    } catch (error) {
+                        utils.showError(`Variant generation failed: ${error.message}`);
+                    } finally {
+                        utils.hideLoading();
+                    }
+                });
+
+                adminResultsGrid.addEventListener('click', (e) => {
+                    const resultItem = e.target.closest('.result-item');
+                    if (!resultItem) return;
+
+                    adminResultsGrid.querySelectorAll('.result-item').forEach(item => {
+                        item.classList.remove('selected');
+                    });
+
+                    resultItem.classList.add('selected');
+                });
+
+                sendFeedbackBtn.addEventListener('click', () => {
+                    const selectedItem = adminResultsGrid.querySelector('.result-item.selected');
+                    const feedbackText = feedbackInput.value.trim();
+
+                    if (!selectedItem) {
+                        utils.showError('Please select one of the generated images before sending feedback.');
+                        return;
+                    }
+                    if (!feedbackText) {
+                        utils.showError('Please enter some feedback text.');
+                        return;
+                    }
+
+                    const imageId = selectedItem.dataset.imageId;
+                    const imageUrl = selectedItem.querySelector('img').src;
+
+                    console.log('--- Admin Feedback ---');
+                    console.log(`Selected Image: Image ${imageId} (${imageUrl})`);
+                    console.log(`Feedback: "${feedbackText}"`);
+                    alert('Feedback sent to agent (logged in console).');
+                });
+            }
+        })();
         console.log('✅ SkinTip ready!');
     });
     console.log('Main inline script finished.');

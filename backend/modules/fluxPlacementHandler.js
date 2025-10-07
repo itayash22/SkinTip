@@ -587,6 +587,138 @@ const fluxPlacementHandler = {
     }
 
     return generatedImageUrls;
+  },
+
+  placeTattooOnSkinWithVariants: async (
+    skinImageBuffer,
+    tattooDesignImageBase64,
+    maskBase64,
+    userId,
+    variants,
+    fluxApiKey
+  ) => {
+    // Most of the initial setup is the same as placeTattooOnSkin, let's reuse it.
+    // We can consider refactoring this into a helper function in the future to keep it DRY.
+    const tattooDesignOriginalBuffer = Buffer.from(tattooDesignImageBase64, 'base64');
+    const tattooDesignPng = await fluxPlacementHandler.removeImageBackground(tattooDesignOriginalBuffer);
+    const stats = await analyzeTattooAlpha(tattooDesignPng);
+    const { scale: adaptScale, isThinLine } = ADAPTIVE_SCALE_ENABLED ? chooseAdaptiveScale(stats) : { scale: 1.0, isThinLine: false };
+
+    const originalMaskBuffer = Buffer.from(maskBase64, 'base64');
+    const maskMeta = await sharp(originalMaskBuffer).metadata();
+    const maskGrayRaw = await sharp(originalMaskBuffer).grayscale().raw().toBuffer();
+
+    function getMaskBBox(buf, w, h) {
+      let minX = w, minY = h, maxX = -1, maxY = -1, found = false;
+      for (let y = 0; y < h; y++) { for (let x = 0; x < w; x++) { if (buf[y * w + x] > 0) { found = true; if (x < minX) minX = x; if (y < minY) minY = y; if (x > maxX) maxX = x; if (y > maxY) maxY = y; } } }
+      if (!found) return { isEmpty: true };
+      return { isEmpty: false, minX, minY, maxX, maxY, width: maxX - minX + 1, height: maxY - minY + 1 };
+    }
+    const maskBBox = getMaskBBox(maskGrayRaw, maskMeta.width, maskMeta.height);
+    if (maskBBox.isEmpty) throw new Error('Mask area is empty.');
+
+    const growPx = clamp(Math.round(MODEL_MASK_GROW_PCT * Math.max(maskBBox.width, maskBBox.height)), MODEL_MASK_GROW_MIN, MODEL_MASK_GROW_MAX);
+    const grownMaskPng = await dilateGrayMaskToPng(maskGrayRaw, maskMeta.width, maskMeta.height, growPx);
+
+    const skinMeta = await sharp(skinImageBuffer).metadata();
+
+    // --- Start Variant Loop ---
+    const allGeneratedUrls = [];
+    const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
+    const commonSeed = Date.now(); // Use a common seed for the round
+
+    for (const [index, variant] of variants.entries()) {
+        console.log(`Processing variant ${index + 1}/${variants.length}...`);
+
+        const engine = variant.engine || FLUX_ENGINE_DEFAULT;
+        const ENGINE_SIZE_BIAS = engine.includes('kontext') ? ENGINE_KONTEXT_SIZE_BIAS : ENGINE_FILL_SIZE_BIAS;
+        const EFFECTIVE_SCALE = 1.0 * GLOBAL_SCALE_UP * adaptScale * ENGINE_SIZE_BIAS;
+
+        const targetW = Math.round(maskBBox.width * EFFECTIVE_SCALE);
+        const targetH = Math.round(maskBBox.height * EFFECTIVE_SCALE);
+        const resizedTattoo = await sharp(tattooDesignPng).resize({ width: targetW, height: targetH, fit: sharp.fit.inside, withoutEnlargement: false }).toBuffer();
+        const rotatedTattoo = await sharp(resizedTattoo).rotate(0, { background: { r: 0, g: 0, b: 0, alpha: 0 } }).toBuffer();
+        const rotMeta = await sharp(rotatedTattoo).metadata();
+        const centeredLeft = maskBBox.minX + (maskBBox.width - targetW) / 2;
+        const centeredTop = maskBBox.minY + (maskBBox.height - targetH) / 2;
+        const placementLeft = Math.round(centeredLeft - (rotMeta.width - targetW) / 2);
+        const placementTop = Math.round(centeredTop - (rotMeta.height - targetH) / 2);
+
+        const positionedCanvas = await sharp({ create: { width: skinMeta.width, height: skinMeta.height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+            .composite([{ input: rotatedTattoo, left: placementLeft, top: placementTop }])
+            .png().toBuffer();
+
+        const guideComposite = await bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvas);
+
+        const endpoint = `https://api.bfl.ai/v1/${engine}`;
+        const inputBase64 = guideComposite.toString('base64');
+        const maskB64 = Buffer.from(grownMaskPng).toString('base64');
+
+        // Construct payload from variant params
+        const payload = {
+            ...variant.params, // Spread the params from the JSON
+            input_image: inputBase64,
+            mask_image: maskB64,
+            output_format: 'png',
+            n: 1,
+            seed: commonSeed + index, // Ensure unique seed per call but deterministic for the round
+            safety_tolerance: 2,
+        };
+
+        // FLUX Call
+        let task;
+        try {
+            const res = await axios.post(endpoint, payload, { headers: fluxHeaders, timeout: 90000 });
+            task = res.data;
+        } catch (e) {
+            console.error(`FLUX post failed for variant ${index + 1}:`, e.response?.data || e.message);
+            continue; // Skip to next variant
+        }
+
+        if (!task?.polling_url) {
+            console.warn(`FLUX variant ${index + 1}: missing polling_url`);
+            continue;
+        }
+
+        // Poll for results
+        let attempts = 0, done = false;
+        while (!done && attempts < 60) {
+            await new Promise(r => setTimeout(r, 2000));
+            attempts++;
+            try {
+                const poll = await axios.get(task.polling_url, { headers: { 'x-key': fluxApiKey || FLUX_API_KEY }, timeout: 15000 });
+                const data = poll.data;
+
+                if (data.status === 'Ready') {
+                    const url = data.result?.sample;
+                    if (url) {
+                        const imgRes = await axios.get(url, { responseType: 'arraybuffer' });
+                        const watermarked = await fluxPlacementHandler.applyWatermark(Buffer.from(imgRes.data));
+                        const fileName = `tattoo-variant-${uuidv4()}.png`;
+                        const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarked, fileName, userId, 'admin-variants');
+                        allGeneratedUrls.push(publicUrl);
+                    }
+                    done = true;
+                } else if (data.status === 'Error' || data.status === 'Content Moderated') {
+                    console.warn(`FLUX polling end for variant ${index + 1}:`, data.status, data.details || '');
+                    done = true;
+                }
+            } catch (pollError) {
+                console.error(`Polling failed for variant ${index + 1}:`, pollError.message);
+                done = true; // Stop polling on error
+            }
+        }
+         // Add a small delay between variants to be safe
+         if(index < variants.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+    }
+
+    if (allGeneratedUrls.length === 0) {
+        throw new Error('Flux API: No images were generated for any of the variants.');
+    }
+
+    return allGeneratedUrls;
   }
 };
 

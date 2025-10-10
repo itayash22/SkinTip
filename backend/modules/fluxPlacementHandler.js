@@ -663,14 +663,19 @@ const fluxPlacementHandler = {
         const basePrompt =
       'Preserve the exact silhouette, proportions and interior details of the tattoo. Blend it realistically into the skin with lighting, micro-shadowing and subtle ink diffusion. Do not redraw, restyle or resize. Keep the original tonal balance and colors; avoid pure white ink effects or global darkening.';
         const payload = {
-            ...variant.params, // Spread the params from the JSON
+            // Default parameters that can be overridden by the user's JSON
             prompt: basePrompt,
-            input_image: inputBase64,
-            mask_image: maskB64,
             output_format: 'png',
             n: 1,
-            seed: commonSeed + index, // Ensure unique seed per call but deterministic for the round
             safety_tolerance: 2,
+
+            // User-provided parameters from JSON, which will override the defaults above
+            ...variant.params,
+
+            // Essential parameters that are always set by the server and cannot be overridden
+            input_image: inputBase64,
+            mask_image: maskB64,
+            seed: commonSeed + index,
         };
 
         // FLUX Call

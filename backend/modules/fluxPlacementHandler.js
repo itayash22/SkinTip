@@ -650,7 +650,12 @@ const fluxPlacementHandler = {
 
         const guideComposite = await bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvas);
 
-        const endpoint = `https://api.bfl.ai/v1/${engine}`;
+        let endpoint;
+        if (engine === 'flux-fill' || engine === 'fill') {
+            endpoint = 'https://api.bfl.ai/v1/flux-fill';
+        } else { // Default to kontext-pro
+            endpoint = 'https://api.bfl.ai/v1/flux-kontext-pro';
+        }
         const inputBase64 = guideComposite.toString('base64');
         const maskB64 = Buffer.from(grownMaskPng).toString('base64');
 

@@ -1323,7 +1323,7 @@
                         formData.append('mask', maskToSend);
                         formData.append('variants', JSON.stringify(variants));
 
-                        const response = await fetch(`${CONFIG.API_URL}/api/admin/generate-variants`, {
+                    const response = await fetch(`${CONFIG.API_URL}/admin/generate-variants`, {
                             method: 'POST',
                             headers: { 'Authorization': `Bearer ${STATE.token}` },
                             body: formData

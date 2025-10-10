@@ -1338,7 +1338,9 @@
 
                         adminResultsGrid.innerHTML = data.images.map((imageUrl, index) => `
                         <div class="result-item" data-image-id="${index + 1}">
-                            <img src="${imageUrl}" alt="Generated variant ${index + 1}">
+                            <a href="${imageUrl}" target="_blank">
+                                <img src="${imageUrl}" alt="Generated variant ${index + 1}">
+                            </a>
                             <div class="result-label">Image ${index + 1}</div>
                         </div>
                     `).join('');

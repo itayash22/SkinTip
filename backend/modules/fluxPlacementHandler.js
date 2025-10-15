@@ -594,9 +594,10 @@ const fluxPlacementHandler = {
     tattooDesignImageBase64,
     maskBase64,
     userId,
-    variants,
+    jsonData,
     fluxApiKey
   ) => {
+    const { variants, locked_params } = jsonData;
     // Most of the initial setup is the same as placeTattooOnSkin, let's reuse it.
     // We can consider refactoring this into a helper function in the future to keep it DRY.
     const tattooDesignOriginalBuffer = Buffer.from(tattooDesignImageBase64, 'base64');
@@ -670,12 +671,13 @@ const fluxPlacementHandler = {
             safety_tolerance: 2,
 
             // User-provided parameters from JSON, which will override the defaults above
+            ...locked_params,
             ...variant.params,
 
             // Essential parameters that are always set by the server and cannot be overridden
             input_image: inputBase64,
             mask_image: maskB64,
-            seed: commonSeed + index,
+            seed: variant.metadata?.seed ?? commonSeed + index,
         };
 
         // FLUX Call

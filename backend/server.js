@@ -515,11 +515,11 @@ app.post('/api/admin/generate-variants',
                 return res.status(400).json({ error: 'Skin image, tattoo design, mask, and variants JSON are all required.' });
             }
 
-            let variants;
+            let jsonData;
             try {
-                variants = JSON.parse(variantsJSON);
-                if (!Array.isArray(variants) || variants.length === 0) {
-                    throw new Error("Variants must be a non-empty array.");
+                jsonData = JSON.parse(variantsJSON);
+                if (!jsonData.variants || !Array.isArray(jsonData.variants)) {
+                    throw new Error("JSON must have a 'variants' property containing an array.");
                 }
             } catch (e) {
                 return res.status(400).json({ error: `Invalid variants JSON: ${e.message}` });
@@ -533,7 +533,7 @@ app.post('/api/admin/generate-variants',
                 tattooDesignImageBase64,
                 mask,
                 userId,
-                variants,
+                jsonData, // Pass the full JSON object
                 process.env.FLUX_API_KEY
             );
 

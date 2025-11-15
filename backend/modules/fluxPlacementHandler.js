@@ -401,6 +401,81 @@ const fluxPlacementHandler = {
     }
   },
 
+  /**
+   * Cleanup function: Delete images older than 5 minutes for a user
+   * Only cleans files in the root user folder (not subfolders like 'debug')
+   */
+  cleanupOldImages: async (userId, maxAgeMinutes = 5) => {
+    try {
+      await ensureSupabaseBucket();
+      const userFolder = `${userId}/`;
+      
+      // List all files in the user's folder
+      const { data: files, error: listError } = await supabase.storage
+        .from(SUPABASE_STORAGE_BUCKET)
+        .list(userFolder, {
+          limit: 1000,
+          offset: 0
+        });
+
+      if (listError) {
+        console.warn('[CLEANUP] Error listing files:', listError.message);
+        return;
+      }
+
+      if (!files || files.length === 0) {
+        return; // No files to clean up
+      }
+
+      const now = new Date();
+      const maxAgeMs = maxAgeMinutes * 60 * 1000;
+      const filesToDelete = [];
+
+      // Check each file's creation time
+      for (const file of files) {
+        // Skip subfolders (folders don't have an 'id' field, only files do)
+        if (!file.id) continue;
+        
+        // Supabase Storage list() returns files with 'created_at' as ISO string
+        // or we can use 'updated_at' as fallback
+        const fileCreatedAt = file.created_at || file.updated_at;
+        if (!fileCreatedAt) {
+          // If no timestamp available, skip this file
+          continue;
+        }
+        
+        const fileDate = new Date(fileCreatedAt);
+        if (isNaN(fileDate.getTime())) {
+          // Invalid date, skip
+          continue;
+        }
+        
+        const ageMs = now - fileDate;
+
+        if (ageMs > maxAgeMs) {
+          const filePath = `${userFolder}${file.name}`;
+          filesToDelete.push(filePath);
+        }
+      }
+
+      // Delete old files
+      if (filesToDelete.length > 0) {
+        const { error: deleteError } = await supabase.storage
+          .from(SUPABASE_STORAGE_BUCKET)
+          .remove(filesToDelete);
+
+        if (deleteError) {
+          console.warn('[CLEANUP] Error deleting old files:', deleteError.message);
+        } else {
+          console.log(`[CLEANUP] Deleted ${filesToDelete.length} old image(s) older than ${maxAgeMinutes} minutes for user ${userId}`);
+        }
+      }
+    } catch (error) {
+      console.warn('[CLEANUP] Cleanup failed:', error.message);
+      // Don't throw - cleanup failures shouldn't break the upload process
+    }
+  },
+
   uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '', contentType = 'image/png') => {
     const filePath = folder ? `${userId}/${folder}/${fileName}` : `${userId}/${fileName}`;
     await ensureSupabaseBucket();
@@ -413,6 +488,12 @@ const fluxPlacementHandler = {
     const { data: pub } = supabase.storage.from(SUPABASE_STORAGE_BUCKET).getPublicUrl(filePath);
     if (!pub?.publicUrl) throw new Error('Failed to get public URL for uploaded image.');
     console.log('Image uploaded to Supabase:', pub.publicUrl);
+    
+    // Cleanup old images after successful upload (non-blocking)
+    fluxPlacementHandler.cleanupOldImages(userId, 5).catch(err => {
+      console.warn('[CLEANUP] Background cleanup error:', err.message);
+    });
+    
     return pub.publicUrl;
   },
 

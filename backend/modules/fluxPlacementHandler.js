@@ -570,6 +570,13 @@ const fluxPlacementHandler = {
 
     console.log(`Making ${numVariations} calls to FLUX (${endpoint.split('/').pop()})...`);
 
+    // Helper function to generate slightly varied parameters for each variation
+    function getVariedParams(baseValue, variationIndex, variationRange = 0.15) {
+      // Create a small random offset between -variationRange and +variationRange
+      const offset = (Math.random() - 0.5) * 2 * variationRange;
+      return clamp(baseValue * (1 + offset), baseValue * (1 - variationRange), baseValue * (1 + variationRange));
+    }
+
     for (let i = 0; i < numVariations; i++) {
       // Add a 1-second delay between API calls to avoid overwhelming the server, but not before the first call.
       if (i > 0) {
@@ -579,6 +586,14 @@ const fluxPlacementHandler = {
 
       const prompt = `${basePrompt} ${variationDescriptors[i % variationDescriptors.length]}`;
 
+      // Generate slightly varied parameters for each image
+      const variedFillGuidance = getVariedParams(ENGINE_FILL_GUIDANCE, i, 0.12);
+      const variedKontextGuidance = getVariedParams(ENGINE_KONTEXT_GUIDANCE, i, 0.10);
+      const variedKontextFidelity = getVariedParams(ENGINE_KONTEXT_FIDELITY, i, 0.08);
+      const variedSafetyTolerance = Math.round(clamp(2 + (Math.random() - 0.5) * 0.8, 1.5, 2.5));
+
+      console.log(`[VARIATION ${i + 1}] guidance=${engine === 'fill' ? variedFillGuidance.toFixed(2) : variedKontextGuidance.toFixed(2)}${engine === 'kontext' ? ` fidelity=${variedKontextFidelity.toFixed(3)}` : ''} safety=${variedSafetyTolerance.toFixed(1)}`);
+
       const payload = engine === 'fill'
         ? {
             prompt,
@@ -586,9 +601,9 @@ const fluxPlacementHandler = {
             mask_image: maskB64,
             output_format: 'png',
             n: 1,
-            guidance_scale: ENGINE_FILL_GUIDANCE,
+            guidance_scale: variedFillGuidance,
             prompt_upsampling: true,
-            safety_tolerance: 2,
+            safety_tolerance: variedSafetyTolerance,
             seed
           }
         : {
@@ -597,10 +612,10 @@ const fluxPlacementHandler = {
             mask_image: maskB64,
             output_format: 'png',
             n: 1,
-            fidelity: ENGINE_KONTEXT_FIDELITY,
-            guidance_scale: ENGINE_KONTEXT_GUIDANCE,
+            fidelity: variedKontextFidelity,
+            guidance_scale: variedKontextGuidance,
             prompt_upsampling: true,
-            safety_tolerance: 2,
+            safety_tolerance: variedSafetyTolerance,
             seed
           };
 

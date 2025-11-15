@@ -1,0 +1,63 @@
+services:
+  - type: web
+    name: skintip-backend
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: FRONTEND_URL
+        sync: false  # Set this in Render dashboard
+      - key: JWT_SECRET
+        generateValue: true  # Render will generate a secure random value
+      - key: SUPABASE_URL
+        sync: false  # Set this in Render dashboard
+      - key: SUPABASE_ANON_KEY
+        sync: false  # Set this in Render dashboard
+      - key: SUPABASE_SERVICE_KEY
+        sync: false  # Set this in Render dashboard (keep secret!)
+      - key: SUPABASE_STORAGE_BUCKET
+        value: generated-tattoos
+      - key: FLUX_API_KEY
+        sync: false  # Set this in Render dashboard
+      - key: REMOVE_BG_API_KEY
+        sync: false  # Optional - set in Render dashboard if you have it
+      # Optional: Flux tuning parameters (with defaults)
+      - key: ADAPTIVE_SCALE_ENABLED
+        value: "true"
+      - key: ADAPTIVE_ENGINE_ENABLED
+        value: "true"
+      - key: MODEL_SCALE_UP
+        value: "1.5"
+      - key: FLUX_ENGINE
+        value: "kontext"
+      - key: ENGINE_KONTEXT_SIZE_BIAS
+        value: "1.08"
+      - key: ENGINE_FILL_SIZE_BIAS
+        value: "1.02"
+      - key: MODEL_MASK_GROW_PCT
+        value: "0.06"
+      - key: MODEL_MASK_GROW_MIN
+        value: "4"
+      - key: MODEL_MASK_GROW_MAX
+        value: "28"
+      - key: BAKE_TATTOO_BRIGHTNESS
+        value: "0.96"
+      - key: BAKE_TATTOO_GAMMA
+        value: "1.00"
+      - key: BAKE_OVERLAY_OPACITY
+        value: "0.28"
+      - key: BAKE_SOFTLIGHT_OPACITY
+        value: "0.35"
+      - key: BAKE_MULTIPLY_OPACITY
+        value: "0.12"
+      - key: ENGINE_KONTEXT_FIDELITY
+        value: "0.65"
+      - key: ENGINE_KONTEXT_GUIDANCE
+        value: "6.2"
+      - key: ENGINE_FILL_GUIDANCE
+        value: "6.0"
+

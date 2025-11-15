@@ -35,9 +35,13 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_KEY || !process.env.JWT_SECRET || !process.env.FLUX_API_KEY || !process.env.SUPABASE_STORAGE_BUCKET) {
-    console.error('CRITICAL ERROR: One or more required environment variables are missing!');
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_KEY || !process.env.JWT_SECRET || !process.env.FLUX_API_KEY) {
+    console.error('CRITICAL ERROR: One or more required environment variables are missing! (SUPABASE_STORAGE_BUCKET is optional)');
     process.exit(1);
+}
+
+if (!process.env.SUPABASE_STORAGE_BUCKET) {
+    console.warn('WARNING: SUPABASE_STORAGE_BUCKET is not set. Using default value "generated-tattoos".');
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
@@ -544,5 +548,5 @@ app.listen(PORT, () => {
     console.log(`🔑 Flux API: ${process.env.FLUX_API_KEY ? 'Configured' : 'Not configured (using mock)'}`);
     console.log(`🔗 Supabase URL: ${SUPABASE_URL ? 'Configured' : 'Not configured'}`);
     console.log(`🔐 Supabase Service Key: ${SUPABASE_SERVICE_KEY ? 'Configured' : 'Not configured'}`);
-    console.log(`📦 Supabase Storage Bucket: ${process.env.SUPABASE_STORAGE_BUCKET ? 'Configured' : 'Not configured'}`);
+    console.log(`📦 Supabase Storage Bucket: ${process.env.SUPABASE_STORAGE_BUCKET || 'generated-tattoos'}`);
 });

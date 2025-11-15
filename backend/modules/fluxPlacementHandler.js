@@ -547,15 +547,16 @@ const fluxPlacementHandler = {
     // -----------------------------
     const generatedImageUrls = [];
     const basePrompt = [
+      'CRITICAL: Only modify pixels INSIDE the mask area. Every pixel OUTSIDE the mask must remain EXACTLY identical to the input image.',
       'Render this tattoo healed into real human skin with natural ink diffusion, softened edges and subtle color absorption.',
       'Maintain the original silhouette and proportions but allow gentle tonal shifts, pore-level texture and realistic micro-shadowing.',
-      'Absolutely freeze every pixel outside the supplied mask — match the guide image lighting, texture, pores and background exactly with zero drift or cleanup.',
-      'Do not restyle, smooth, or recolor any non-masked skin; only reinterpret the ink that sits inside the mask area.'
+      'ABSOLUTE REQUIREMENT: Preserve every pixel outside the mask area with zero changes — match the input image lighting, texture, pores, skin tone, and background pixel-perfectly.',
+      'Do not restyle, smooth, recolor, brighten, darken, or modify any non-masked skin area. Only reinterpret the tattoo ink that sits inside the mask area.'
     ].join(' ');
     const variationDescriptors = [
-      'Variation A: keep the ink crisp with moderate saturation, a healed matte finish, and microscopic skin detail completely unchanged elsewhere.',
-      'Variation B: add a subtly softer edge diffusion with a warmer undertone inside the tattoo while cloning the guide skin pixel-for-pixel outside the mask.',
-      'Variation C: introduce a faintly desaturated healed patina with delicate micro-highlights, still locking every surrounding pixel to the untouched guide skin.'
+      'Variation A: Crisp, well-defined ink with moderate saturation and a healed matte finish. Keep the tattoo edges sharp with minimal diffusion. The surrounding skin must remain completely unchanged.',
+      'Variation B: Softer edge diffusion with a warmer, more vibrant undertone inside the tattoo. Add subtle color warmth to the ink while maintaining realistic skin texture. All non-masked areas must be pixel-perfect identical to input.',
+      'Variation C: Slightly desaturated healed patina with delicate micro-highlights and softer overall appearance. The tattoo should look more aged and settled. Every pixel outside the mask must match the input image exactly.'
     ];
 
     const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
@@ -570,11 +571,15 @@ const fluxPlacementHandler = {
 
     console.log(`Making ${numVariations} calls to FLUX (${endpoint.split('/').pop()})...`);
 
-    // Helper function to generate slightly varied parameters for each variation
-    function getVariedParams(baseValue, variationIndex, variationRange = 0.15) {
-      // Create a small random offset between -variationRange and +variationRange
-      const offset = (Math.random() - 0.5) * 2 * variationRange;
-      return clamp(baseValue * (1 + offset), baseValue * (1 - variationRange), baseValue * (1 + variationRange));
+    // Helper function to generate varied parameters for each variation
+    // Uses deterministic offsets based on index to ensure consistent but distinct variations
+    function getVariedParams(baseValue, variationIndex, variationRange = 0.20) {
+      // Create deterministic offsets: -range, 0, +range for variations 0, 1, 2
+      const offsets = [-variationRange, 0, variationRange];
+      const offset = offsets[variationIndex % 3];
+      // Add small random component for additional variation
+      const randomComponent = (Math.random() - 0.5) * 0.05; // ±2.5% random
+      return clamp(baseValue * (1 + offset + randomComponent), baseValue * (1 - variationRange * 1.1), baseValue * (1 + variationRange * 1.1));
     }
 
     for (let i = 0; i < numVariations; i++) {
@@ -582,15 +587,18 @@ const fluxPlacementHandler = {
       if (i > 0) {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
-      const seed = Date.now() + i;
+      // Use more varied seeds to ensure different outputs
+      const seed = Date.now() + i * 1000 + Math.floor(Math.random() * 1000);
 
       const prompt = `${basePrompt} ${variationDescriptors[i % variationDescriptors.length]}`;
 
-      // Generate slightly varied parameters for each image
-      const variedFillGuidance = getVariedParams(ENGINE_FILL_GUIDANCE, i, 0.12);
-      const variedKontextGuidance = getVariedParams(ENGINE_KONTEXT_GUIDANCE, i, 0.10);
-      const variedKontextFidelity = getVariedParams(ENGINE_KONTEXT_FIDELITY, i, 0.08);
-      const variedSafetyTolerance = Math.round(clamp(2 + (Math.random() - 0.5) * 0.8, 1.5, 2.5));
+      // Generate more varied parameters for each image to create visually distinct results
+      // Variation 0: Lower guidance (more creative), Variation 1: Medium, Variation 2: Higher (more controlled)
+      const variedFillGuidance = getVariedParams(ENGINE_FILL_GUIDANCE, i, 0.18);
+      const variedKontextGuidance = getVariedParams(ENGINE_KONTEXT_GUIDANCE, i, 0.15);
+      // Fidelity: Lower for more variation, higher for more faithful to input
+      const variedKontextFidelity = getVariedParams(ENGINE_KONTEXT_FIDELITY, i, 0.12);
+      const variedSafetyTolerance = Math.round(clamp(2 + (i % 3) * 0.3 + (Math.random() - 0.5) * 0.2, 1.5, 2.5));
 
       console.log(`[VARIATION ${i + 1}] guidance=${engine === 'fill' ? variedFillGuidance.toFixed(2) : variedKontextGuidance.toFixed(2)}${engine === 'kontext' ? ` fidelity=${variedKontextFidelity.toFixed(3)}` : ''} safety=${variedSafetyTolerance.toFixed(1)}`);
 

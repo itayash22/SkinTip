@@ -25,9 +25,11 @@ const FLUX_API_KEY = process.env.FLUX_API_KEY;
 // Behavior flags + knobs
 // -----------------------------
 const ADAPTIVE_SCALE_ENABLED  = (process.env.ADAPTIVE_SCALE_ENABLED  ?? 'true').toLowerCase() === 'true';
-const ADAPTIVE_ENGINE_ENABLED = (process.env.ADAPTIVE_ENGINE_ENABLED ?? 'true').toLowerCase() === 'true';
+// Engine adaptation caused us to hit the unsupported flux-fill endpoint on some accounts.
+// For now, always use 'kontext-pro', which we know works in production.
+const ADAPTIVE_ENGINE_ENABLED = false;
 const GLOBAL_SCALE_UP         = Number(process.env.MODEL_SCALE_UP || '1.5');          // applied always
-const FLUX_ENGINE_DEFAULT     = (process.env.FLUX_ENGINE || 'fill').toLowerCase(); // 'fill' is better for inpainting than 'kontext'
+const FLUX_ENGINE_DEFAULT     = (process.env.FLUX_ENGINE || 'kontext').toLowerCase(); // default to 'kontext'
 
 // Engine-specific size bias to counter model shrink
 const ENGINE_KONTEXT_SIZE_BIAS = Number(process.env.ENGINE_KONTEXT_SIZE_BIAS || '1.08');
@@ -287,8 +289,9 @@ function chooseAdaptiveScale(stats) {
 }
 
 function pickEngine(baseEngine, adaptiveEnabled, isThinLine) {
-  if (!adaptiveEnabled) return baseEngine;
-  return isThinLine ? 'fill' : baseEngine;
+  // IMPORTANT: For now we hard-lock to kontext-pro to avoid 404s from flux-fill.
+  // If we ever re-enable 'fill', we must ensure the endpoint is supported for this account.
+  return baseEngine;
 }
 
 // ------ simple “dilation” for 8-bit gray mask using box-convolve + threshold

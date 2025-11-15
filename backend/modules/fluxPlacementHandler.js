@@ -550,7 +550,7 @@ const fluxPlacementHandler = {
       'Render this tattoo healed into real human skin with natural ink diffusion, softened edges and subtle color absorption.',
       'Maintain the original silhouette and proportions but allow gentle tonal shifts, pore-level texture and realistic micro-shadowing.',
       'Avoid dramatic restyling or large geometry changes; no hard white overlays or over-darkening.',
-      'Use the provided mask to confine all edits to the tattoo region while replicating every unmasked pixel from the guide image so the surrounding skin remains identical to the reference.'
+      'Use the provided mask to confine every change strictly inside the tattoo region and replicate the guide image for every unmasked pixel so the surrounding skin remains identical to the reference.'
     ].join(' ');
     const maskGuardrailPrompt = [
       'Treat the supplied alpha mask as the only editable region: paste the guide image pixels everywhere the mask is transparent so the surrounding skin, hairs, light falloff and jewelry stay identical.',
@@ -561,9 +561,9 @@ const fluxPlacementHandler = {
       'No smoothing, noise reduction, blur, glow, color grading, added artifacts or exposure changes beyond the masked tattoo region.'
     ].join(' ');
     const variationDescriptors = [
-      'Variation A: keep the ink crisp with moderate saturation and a healed matte finish while every unmasked pixel remains identical to the guide image.',
-      'Variation B: add a subtly softer edge blend with a hint of warm undertone in the ink, but copy the surrounding skin texture exactly outside the mask so unmasked pixels stay unchanged.',
-      'Variation C: retain the sharp line work yet introduce a faintly desaturated slate patina, ensuring zero alterations beyond the tattoo mask region.'
+      'Variation A: keep the ink crisp with true-to-original saturation and a neutral matte finish while the unmasked skin stays perfectly unchanged from the guide image.',
+      'Variation B: blend the ink edges slightly softer with a gentle warm undertone inside the mask and copy every unmasked pixel exactly so the surrounding skin is identical to the reference.',
+      'Variation C: introduce a faint cool slate patina with defined line work and preserve every unmasked detail, background element and lighting cue verbatim from the guide image.'
     ];
     const promptBase = [basePrompt, maskGuardrailPrompt].join(' ');
 

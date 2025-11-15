@@ -353,6 +353,7 @@ const fluxPlacementHandler = {
 
   uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '', contentType = 'image/png') => {
     const filePath = folder ? `${userId}/${folder}/${fileName}` : `${userId}/${fileName}`;
+    console.log(`Attempting to upload to Supabase bucket: '${SUPABASE_STORAGE_BUCKET}'`);
     const { error } = await supabase.storage.from(SUPABASE_STORAGE_BUCKET)
       .upload(filePath, imageBuffer, { contentType, upsert: false });
     if (error) {

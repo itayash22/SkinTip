@@ -627,17 +627,30 @@ const fluxPlacementHandler = {
     // FLUX call(s)
     // -----------------------------
     const generatedImageUrls = [];
+    
+    // Use original mask for stricter control (not the grown one)
+    // The grown mask is only for preventing shrinkage, but we'll use original for API
+    const originalMaskB64 = Buffer.from(originalMaskBuffer).toString('base64');
+    
     const basePrompt = [
-      'CRITICAL: Only modify pixels INSIDE the mask area. Every pixel OUTSIDE the mask must remain EXACTLY identical to the input image.',
-      'Render this tattoo healed into real human skin with natural ink diffusion, softened edges and subtle color absorption.',
-      'Maintain the original silhouette and proportions but allow gentle tonal shifts, pore-level texture and realistic micro-shadowing.',
-      'ABSOLUTE REQUIREMENT: Preserve every pixel outside the mask area with zero changes — match the input image lighting, texture, pores, skin tone, and background pixel-perfectly.',
-      'Do not restyle, smooth, recolor, brighten, darken, or modify any non-masked skin area. Only reinterpret the tattoo ink that sits inside the mask area.'
+      'Render ONLY the tattoo area inside the mask as a healed tattoo on real human skin.',
+      'The tattoo should have natural ink diffusion, realistic skin texture integration, and subtle color absorption.',
+      'ONLY modify pixels that are INSIDE the white mask area. Every single pixel OUTSIDE the mask must be IDENTICAL to the input image.',
+      'DO NOT change, modify, alter, adjust, brighten, darken, recolor, restyle, smooth, or touch ANY pixel outside the mask area.',
+      'The skin, background, lighting, shadows, pores, and texture OUTSIDE the mask must remain pixel-perfect identical to the input image.'
     ].join(' ');
+    
+    const negativePrompt = [
+      'DO NOT modify any area outside the mask.',
+      'DO NOT change the skin color, texture, or lighting outside the tattoo area.',
+      'DO NOT alter the background or any non-masked regions.',
+      'DO NOT apply any effects, filters, or adjustments to areas outside the mask.'
+    ].join(' ');
+    
     const variationDescriptors = [
-      'Variation A: Crisp, well-defined ink with moderate saturation and a healed matte finish. Keep the tattoo edges sharp with minimal diffusion. The surrounding skin must remain completely unchanged.',
-      'Variation B: Softer edge diffusion with a warmer, more vibrant undertone inside the tattoo. Add subtle color warmth to the ink while maintaining realistic skin texture. All non-masked areas must be pixel-perfect identical to input.',
-      'Variation C: Slightly desaturated healed patina with delicate micro-highlights and softer overall appearance. The tattoo should look more aged and settled. Every pixel outside the mask must match the input image exactly.'
+      'Variation A: Sharp, crisp tattoo edges with high contrast and moderate saturation. The ink should look freshly healed with minimal diffusion. Make the tattoo visually distinct and well-defined.',
+      'Variation B: Softer tattoo edges with warmer color tones and more pronounced ink diffusion. The tattoo should have a warmer, more vibrant appearance with subtle color variations.',
+      'Variation C: Aged, settled tattoo appearance with desaturated colors and softer edges. The tattoo should look like it has been healed for months with natural fading and patina.'
     ];
 
     const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
@@ -648,7 +661,8 @@ const fluxPlacementHandler = {
 
     // Use the baked guide as the driving input
     const inputBase64 = guideComposite.toString('base64');          // RAW b64 (no data URI)
-    const maskB64     = Buffer.from(grownMaskPng).toString('base64'); // grown mask
+    // Use original mask for strict control - only modify the exact mask area
+    const maskB64     = originalMaskB64; // Use original mask, not grown, for precise control
 
     console.log(`Making ${numVariations} calls to FLUX (${endpoint.split('/').pop()})...`);
 
@@ -674,11 +688,13 @@ const fluxPlacementHandler = {
       const prompt = `${basePrompt} ${variationDescriptors[i % variationDescriptors.length]}`;
 
       // Generate more varied parameters for each image to create visually distinct results
-      // Variation 0: Lower guidance (more creative), Variation 1: Medium, Variation 2: Higher (more controlled)
-      const variedFillGuidance = getVariedParams(ENGINE_FILL_GUIDANCE, i, 0.18);
-      const variedKontextGuidance = getVariedParams(ENGINE_KONTEXT_GUIDANCE, i, 0.15);
-      // Fidelity: Lower for more variation, higher for more faithful to input
-      const variedKontextFidelity = getVariedParams(ENGINE_KONTEXT_FIDELITY, i, 0.12);
+      // Use HIGH fidelity to preserve skin outside mask, but vary guidance for tattoo variation
+      // Variation 0: Lower guidance (more creative tattoo), Variation 1: Medium, Variation 2: Higher (more controlled)
+      const variedFillGuidance = getVariedParams(ENGINE_FILL_GUIDANCE, i, 0.20);
+      const variedKontextGuidance = getVariedParams(ENGINE_KONTEXT_GUIDANCE, i, 0.18);
+      // Use HIGH fidelity (0.8-0.9) to preserve skin, but allow variation in tattoo area via guidance
+      // Higher fidelity = more faithful to input (preserves skin), lower guidance = more creative (varies tattoo)
+      const variedKontextFidelity = clamp(0.80 + (i % 3) * 0.05, 0.75, 0.90); // High fidelity to preserve skin
       const variedSafetyTolerance = Math.round(clamp(2 + (i % 3) * 0.3 + (Math.random() - 0.5) * 0.2, 1.5, 2.5));
 
       console.log(`[VARIATION ${i + 1}] guidance=${engine === 'fill' ? variedFillGuidance.toFixed(2) : variedKontextGuidance.toFixed(2)}${engine === 'kontext' ? ` fidelity=${variedKontextFidelity.toFixed(3)}` : ''} safety=${variedSafetyTolerance.toFixed(1)}`);
@@ -686,6 +702,7 @@ const fluxPlacementHandler = {
       const payload = engine === 'fill'
         ? {
             prompt,
+            negative_prompt: negativePrompt,
             input_image: inputBase64,
             mask_image: maskB64,
             output_format: 'png',
@@ -697,6 +714,7 @@ const fluxPlacementHandler = {
           }
         : {
             prompt,
+            negative_prompt: negativePrompt,
             input_image: inputBase64,
             mask_image: maskB64,
             output_format: 'png',

@@ -561,9 +561,9 @@ const fluxPlacementHandler = {
       'No smoothing, noise reduction, blur, glow, color grading, added artifacts or exposure changes beyond the masked tattoo region.'
     ].join(' ');
     const variationDescriptors = [
-      'Keep the ink crisp with moderate saturation and a healed matte finish while every unmasked pixel remains identical to the guide image.',
-      'Add a subtly softer edge blend with a hint of warm undertone in the ink, but copy the surrounding skin texture exactly outside the mask so unmasked pixels stay unchanged.',
-      'Retain the sharp line work yet introduce a faintly desaturated slate patina, ensuring zero alterations beyond the tattoo mask region.'
+      'Variation A: keep the ink crisp with moderate saturation and a healed matte finish while every unmasked pixel remains identical to the guide image.',
+      'Variation B: add a subtly softer edge blend with a hint of warm undertone in the ink, but copy the surrounding skin texture exactly outside the mask so unmasked pixels stay unchanged.',
+      'Variation C: retain the sharp line work yet introduce a faintly desaturated slate patina, ensuring zero alterations beyond the tattoo mask region.'
     ];
     const promptBase = [basePrompt, maskGuardrailPrompt].join(' ');
 

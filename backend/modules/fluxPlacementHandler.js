@@ -549,8 +549,18 @@ const fluxPlacementHandler = {
     const basePrompt = [
       'Render this tattoo healed into real human skin with natural ink diffusion, softened edges and subtle color absorption.',
       'Maintain the original silhouette and proportions but allow gentle tonal shifts, pore-level texture and realistic micro-shadowing.',
-      'Avoid dramatic restyling or large geometry changes; no hard white overlays or over-darkening.'
+      'Avoid dramatic restyling or large geometry changes; no hard white overlays or over-darkening.',
+      'Respect the supplied alpha mask as a hard boundary: apply adjustments strictly where the mask is opaque and copy every pixel outside the mask exactly from the guide image including pores, hair, lighting and color.'
     ].join(' ');
+    const negativePrompt = [
+      'Do not modify skin, lighting, nails, jewelry, clothing or background that falls outside the tattoo mask.',
+      'No global color shifts, exposure changes, blur, smoothing or added artifacts beyond the masked tattoo region.'
+    ].join(' ');
+    const variationDescriptors = [
+      'Variation A: keep the ink crisp with moderate saturation and a healed matte finish while the surrounding skin remains untouched.',
+      'Variation B: introduce a warmer undertone within the ink fill and a slightly softer edge diffusion but leave unmasked skin pixel-perfect to the guide.',
+      'Variation C: cool the ink hues slightly with a muted patina and preserve the sharp outline, ensuring zero change outside the masked tattoo.'
+    ];
 
     const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
 
@@ -571,9 +581,11 @@ const fluxPlacementHandler = {
       }
       const seed = Date.now() + i;
 
+      const prompt = `${basePrompt} ${variationDescriptors[i % variationDescriptors.length]}`;
+
       const payload = engine === 'fill'
         ? {
-            prompt: basePrompt,
+            prompt,
             input_image: inputBase64,
             mask_image: maskB64,
             output_format: 'png',
@@ -581,10 +593,11 @@ const fluxPlacementHandler = {
             guidance_scale: ENGINE_FILL_GUIDANCE,
             prompt_upsampling: true,
             safety_tolerance: 2,
+            negative_prompt: negativePrompt,
             seed
           }
         : {
-            prompt: basePrompt,
+            prompt,
             input_image: inputBase64,
             mask_image: maskB64,
             output_format: 'png',
@@ -593,6 +606,7 @@ const fluxPlacementHandler = {
             guidance_scale: ENGINE_KONTEXT_GUIDANCE,
             prompt_upsampling: true,
             safety_tolerance: 2,
+            negative_prompt: negativePrompt,
             seed
           };
 

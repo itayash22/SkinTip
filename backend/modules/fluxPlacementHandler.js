@@ -549,7 +549,8 @@ const fluxPlacementHandler = {
     const basePrompt = [
       'Render this tattoo healed into real human skin with natural ink diffusion, softened edges and subtle color absorption.',
       'Maintain the original silhouette and proportions but allow gentle tonal shifts, pore-level texture and realistic micro-shadowing.',
-      'Avoid dramatic restyling or large geometry changes; no hard white overlays or over-darkening.'
+      'Avoid dramatic restyling or large geometry changes; no hard white overlays or over-darkening.',
+      'Use the provided mask to confine all edits to the tattoo region while replicating every unmasked pixel from the guide image.'
     ].join(' ');
     const maskGuardrailPrompt = [
       'Treat the supplied alpha mask as the only editable region: paste the guide image pixels everywhere the mask is transparent so the surrounding skin, hairs, light falloff and jewelry stay identical.',

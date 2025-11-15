@@ -549,17 +549,17 @@ const fluxPlacementHandler = {
     const basePrompt = [
       'Render this tattoo healed into real human skin with natural ink diffusion, softened edges and subtle color absorption.',
       'Maintain the original silhouette and proportions but allow gentle tonal shifts, pore-level texture and realistic micro-shadowing.',
-      'Avoid dramatic restyling or large geometry changes; no hard white overlays or over-darkening.',
-      'Respect the supplied alpha mask as a hard boundary: apply adjustments strictly where the mask is opaque and copy every pixel outside the mask exactly from the guide image including pores, hair, lighting and color.'
+      'Treat the supplied alpha mask as the only editable region: paste the guide image pixels everywhere the mask is transparent so the surrounding skin, hairs, light falloff and jewelry stay identical.',
+      'Avoid dramatic restyling or large geometry changes; no hard white overlays, over-darkening or global retouching.'
     ].join(' ');
     const negativePrompt = [
-      'Do not modify skin, lighting, nails, jewelry, clothing or background that falls outside the tattoo mask.',
-      'No global color shifts, exposure changes, blur, smoothing or added artifacts beyond the masked tattoo region.'
+      'Do not modify or repaint any area of the photo outside the tattoo mask including skin, lighting, shadows, nails, jewelry, clothing or background.',
+      'No smoothing, noise reduction, blur, glow, color grading, added artifacts or exposure changes beyond the masked tattoo region.'
     ].join(' ');
     const variationDescriptors = [
-      'Variation A: keep the ink crisp with moderate saturation and a healed matte finish while the surrounding skin remains untouched.',
-      'Variation B: introduce a warmer undertone within the ink fill and a slightly softer edge diffusion but leave unmasked skin pixel-perfect to the guide.',
-      'Variation C: cool the ink hues slightly with a muted patina and preserve the sharp outline, ensuring zero change outside the masked tattoo.'
+      'Give the healed ink a neutral matte finish with true-to-original saturation while the unmasked skin remains perfectly unchanged.',
+      'Introduce a subtle warm undertone inside the ink fill with slightly softer edge diffusion but leave every unmasked pixel identical to the reference.',
+      'Cool the ink hues with a faint slate patina and keep the outline crisp, ensuring zero alterations to any unmasked skin or background detail.'
     ];
 
     const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };

@@ -549,30 +549,33 @@ const fluxPlacementHandler = {
     const generatedImageUrls = [];
     const basePrompt = [
       'Render this tattoo healed into real human skin with natural ink diffusion, softened edges and subtle color absorption.',
-      'Maintain the original silhouette and proportions but allow gentle tonal shifts, pore-level texture and realistic micro-shadowing inside the mask only.',
-      'Absolutely freeze every pixel outside the supplied mask — match the guide image lighting, texture, pores and background exactly with zero drift, cleanup, smoothing or recoloring.',
-      'Reinterpret ink that sits inside the mask area only and leave all non-masked skin completely untouched and identical to the guide image.'
+      'Focus every edit strictly within the tattoo mask while keeping the surrounding skin perfectly frozen to the guide image.',
+      'Respect the existing silhouette and proportions but allow realistic healed shading, pore-level texture and micro-shadowing inside the mask.',
+      'Outside the mask keep lighting, skin tone, pores, background and blemishes pixel-identical to the provided guide image.'
     ].join(' ');
     const negativePromptBase = [
-      'Do not modify any unmasked skin pixel, lighting, background or texture.',
-      'Avoid blur, haze, glow, denoising or color drift outside the mask.',
-      'No restyling, clean-up or beautification passes beyond the tattoo mask.'
+      'Do not modify or beautify any unmasked skin pixel, lighting, background or texture.',
+      'Avoid blur, haze, glow, denoising or color drift outside the mask region.',
+      'No cleanup, smoothing, or restyling on non-masked areas — edits must stay inside the tattoo mask only.'
     ].join(' ');
     const variationBlueprints = [
       {
-        promptSuffix: 'Variation A: keep the healed ink bold with saturated mid-tones, crisp edge retention and a matte finish while cloning untouched skin pixels outside the mask.',
+        label: 'Variation A',
+        promptSuffix: 'Variation A: keep the healed ink bold with saturated mid-tones, crisp edge retention and a matte finish strictly within the tattoo mask.',
         negativeSuffix: 'No added gloss or specular highlights on skin outside the mask.',
         guidanceScaleOffset: 0.4,
         fidelityMultiplier: 1.05
       },
       {
-        promptSuffix: 'Variation B: create a softer healed look with gentle diffusion, a slightly warmer undertone and restrained gloss strictly inside the mask while freezing the surrounding skin.',
+        label: 'Variation B',
+        promptSuffix: 'Variation B: create a softer healed look with gentle edge diffusion and a slightly warmer undertone only inside the mask while surrounding skin stays frozen.',
         negativeSuffix: 'Prevent warmth, smoothing or glow from leaking outside the tattoo mask.',
         guidanceScaleOffset: -0.3,
         fidelityMultiplier: 0.97
       },
       {
-        promptSuffix: 'Variation C: deliver an aged patina with subtle desaturation, fine micro-highlights and faint ink breakup inside the mask while maintaining pixel-perfect guide skin elsewhere.',
+        label: 'Variation C',
+        promptSuffix: 'Variation C: deliver an aged patina with subtle desaturation, fine micro-highlights and faint ink breakup inside the mask while guide skin outside remains untouched.',
         negativeSuffix: 'No cracking, grain or patina effects outside the ink mask area.',
         guidanceScaleOffset: 0.15,
         fidelityMultiplier: 1.0
@@ -605,6 +608,8 @@ const fluxPlacementHandler = {
       const guidanceScale = clamp(baseGuidance + (blueprint.guidanceScaleOffset ?? 0), 1, 20);
       const fidelityBase = ENGINE_KONTEXT_FIDELITY;
       const fidelity = clamp(fidelityBase * (blueprint.fidelityMultiplier ?? 1), 0.1, 1);
+
+      console.log(`[FLUX] ${blueprint.label} seed=${seed} guidance=${guidanceScale.toFixed(2)}${engine === 'fill' ? '' : ` fidelity=${fidelity.toFixed(2)}`}`);
 
       const payload = engine === 'fill'
         ? {

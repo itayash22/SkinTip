@@ -550,7 +550,7 @@ const fluxPlacementHandler = {
       'Render this tattoo healed into real human skin with natural ink diffusion, softened edges and subtle color absorption.',
       'Maintain the original silhouette and proportions but allow gentle tonal shifts, pore-level texture and realistic micro-shadowing.',
       'Avoid dramatic restyling or large geometry changes; no hard white overlays or over-darkening.',
-      'Use the provided mask to confine all edits to the tattoo region while replicating every unmasked pixel from the guide image.'
+      'Use the provided mask to confine all edits to the tattoo region while replicating every unmasked pixel from the guide image so the surrounding skin remains identical to the reference.'
     ].join(' ');
     const maskGuardrailPrompt = [
       'Treat the supplied alpha mask as the only editable region: paste the guide image pixels everywhere the mask is transparent so the surrounding skin, hairs, light falloff and jewelry stay identical.',
@@ -561,9 +561,9 @@ const fluxPlacementHandler = {
       'No smoothing, noise reduction, blur, glow, color grading, added artifacts or exposure changes beyond the masked tattoo region.'
     ].join(' ');
     const variationDescriptors = [
-      'Variation A: give the healed ink a neutral matte finish with true-to-original saturation while every unmasked pixel stays perfectly unchanged.',
-      'Variation B: introduce a subtle warm undertone inside the ink fill with slightly softer edge diffusion but leave every unmasked pixel identical to the reference.',
-      'Variation C: cool the ink hues with a faint slate patina and keep the outline crisp, ensuring zero alterations to any unmasked skin or background detail.'
+      'Keep the ink crisp with moderate saturation and a healed matte finish while every unmasked pixel remains identical to the guide image.',
+      'Add a subtly softer edge blend with a hint of warm undertone in the ink, but copy the surrounding skin texture exactly outside the mask so unmasked pixels stay unchanged.',
+      'Retain the sharp line work yet introduce a faintly desaturated slate patina, ensuring zero alterations beyond the tattoo mask region.'
     ];
     const promptBase = [basePrompt, maskGuardrailPrompt].join(' ');
 

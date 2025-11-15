@@ -633,9 +633,19 @@ const fluxPlacementHandler = {
     // -----------------------------
     const generatedImageUrls = [];
     
-    // Use original mask for stricter control (not the grown one)
-    // The grown mask is only for preventing shrinkage, but we'll use original for API
-    const originalMaskB64 = Buffer.from(originalMaskBuffer).toString('base64');
+    // FLUX API interprets mask as: WHITE = preserve, BLACK = modify
+    // Our mask has: WHITE = tattoo area (what we want to modify), BLACK = skin (what we want to preserve)
+    // So we need to INVERT the mask before sending to FLUX
+    const invertedMaskBuffer = await sharp(originalMaskBuffer)
+      .greyscale()
+      .negate() // Invert: white becomes black, black becomes white
+      .png()
+      .toBuffer();
+    
+    // Debug: upload inverted mask to verify it's correct
+    await uploadDebug(invertedMaskBuffer, userId, 'mask_inverted_for_flux');
+    
+    const maskB64 = invertedMaskBuffer.toString('base64');
     
     const basePrompt = [
       'Render a REALISTIC, LIFE-LIKE healed tattoo on real human skin with full color preservation.',
@@ -670,8 +680,7 @@ const fluxPlacementHandler = {
 
     // Use the baked guide as the driving input
     const inputBase64 = guideComposite.toString('base64');          // RAW b64 (no data URI)
-    // Use original mask for strict control - only modify the exact mask area
-    const maskB64     = originalMaskB64; // Use original mask, not grown, for precise control
+    // Mask is already inverted above - FLUX will now modify the tattoo area (black in inverted mask = white in original)
 
     console.log(`Making ${numVariations} calls to FLUX (${endpoint.split('/').pop()})...`);
 

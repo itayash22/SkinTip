@@ -6,6 +6,7 @@ import sharp from 'sharp';
 import { createClient } from '@supabase/supabase-js';
 import { v4 as uuidv4 } from 'uuid';
 import FormData from 'form-data';
+import crypto from 'crypto';
 
 // -----------------------------
 // Supabase setup
@@ -548,14 +549,34 @@ const fluxPlacementHandler = {
     const generatedImageUrls = [];
     const basePrompt = [
       'Render this tattoo healed into real human skin with natural ink diffusion, softened edges and subtle color absorption.',
-      'Maintain the original silhouette and proportions but allow gentle tonal shifts, pore-level texture and realistic micro-shadowing.',
-      'Avoid dramatic restyling or large geometry changes; no hard white overlays or over-darkening.',
-      'Use the provided mask to confine every change strictly inside the tattoo region and leave all other pixels identical to the guide image.'
+      'Maintain the original silhouette and proportions but allow gentle tonal shifts, pore-level texture and realistic micro-shadowing inside the mask only.',
+      'Absolutely freeze every pixel outside the supplied mask — match the guide image lighting, texture, pores and background exactly with zero drift, cleanup, smoothing or recoloring.',
+      'Reinterpret ink that sits inside the mask area only and leave all non-masked skin completely untouched and identical to the guide image.'
     ].join(' ');
-    const variationDescriptors = [
-      'Variation A: keep the ink crisp with moderate saturation and a healed matte finish while the surrounding skin remains untouched.',
-      'Variation B: add a subtly softer edge blend with a hint of warm undertone in the ink, but copy the input skin texture exactly outside the mask.',
-      'Variation C: retain the sharp line work yet introduce a faintly desaturated healed patina, ensuring zero alterations beyond the masked tattoo.'
+    const negativePromptBase = [
+      'Do not modify any unmasked skin pixel, lighting, background or texture.',
+      'Avoid blur, haze, glow, denoising or color drift outside the mask.',
+      'No restyling, clean-up or beautification passes beyond the tattoo mask.'
+    ].join(' ');
+    const variationBlueprints = [
+      {
+        promptSuffix: 'Variation A: keep the healed ink bold with saturated mid-tones, crisp edge retention and a matte finish while cloning untouched skin pixels outside the mask.',
+        negativeSuffix: 'No added gloss or specular highlights on skin outside the mask.',
+        guidanceScaleOffset: 0.4,
+        fidelityMultiplier: 1.05
+      },
+      {
+        promptSuffix: 'Variation B: create a softer healed look with gentle diffusion, a slightly warmer undertone and restrained gloss strictly inside the mask while freezing the surrounding skin.',
+        negativeSuffix: 'Prevent warmth, smoothing or glow from leaking outside the tattoo mask.',
+        guidanceScaleOffset: -0.3,
+        fidelityMultiplier: 0.97
+      },
+      {
+        promptSuffix: 'Variation C: deliver an aged patina with subtle desaturation, fine micro-highlights and faint ink breakup inside the mask while maintaining pixel-perfect guide skin elsewhere.',
+        negativeSuffix: 'No cracking, grain or patina effects outside the ink mask area.',
+        guidanceScaleOffset: 0.15,
+        fidelityMultiplier: 1.0
+      }
     ];
 
     const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
@@ -575,30 +596,38 @@ const fluxPlacementHandler = {
       if (i > 0) {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
-      const seed = Date.now() + i;
+      const blueprint = variationBlueprints[i % variationBlueprints.length];
+      const prompt = `${basePrompt} ${blueprint.promptSuffix}`;
+      const negativePrompt = `${negativePromptBase} ${blueprint.negativeSuffix}`;
+      const seed = crypto.randomInt(0, 2_147_483_647);
 
-      const prompt = `${basePrompt} ${variationDescriptors[i % variationDescriptors.length]}`;
+      const baseGuidance = engine === 'fill' ? ENGINE_FILL_GUIDANCE : ENGINE_KONTEXT_GUIDANCE;
+      const guidanceScale = clamp(baseGuidance + (blueprint.guidanceScaleOffset ?? 0), 1, 20);
+      const fidelityBase = ENGINE_KONTEXT_FIDELITY;
+      const fidelity = clamp(fidelityBase * (blueprint.fidelityMultiplier ?? 1), 0.1, 1);
 
       const payload = engine === 'fill'
         ? {
             prompt,
+            negative_prompt: negativePrompt,
             input_image: inputBase64,
             mask_image: maskB64,
             output_format: 'png',
             n: 1,
-            guidance_scale: ENGINE_FILL_GUIDANCE,
+            guidance_scale: guidanceScale,
             prompt_upsampling: true,
             safety_tolerance: 2,
             seed
           }
         : {
             prompt,
+            negative_prompt: negativePrompt,
             input_image: inputBase64,
             mask_image: maskB64,
             output_format: 'png',
             n: 1,
-            fidelity: ENGINE_KONTEXT_FIDELITY,
-            guidance_scale: ENGINE_KONTEXT_GUIDANCE,
+            fidelity,
+            guidance_scale: guidanceScale,
             prompt_upsampling: true,
             safety_tolerance: 2,
             seed
@@ -650,6 +679,12 @@ const fluxPlacementHandler = {
 
     return generatedImageUrls;
   }
+};
+
+export const __testables = {
+  clamp,
+  chooseAdaptiveScale,
+  pickEngine
 };
 
 export default fluxPlacementHandler;

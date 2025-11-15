@@ -549,8 +549,14 @@ const fluxPlacementHandler = {
     const basePrompt = [
       'Render this tattoo healed into real human skin with natural ink diffusion, softened edges and subtle color absorption.',
       'Maintain the original silhouette and proportions but allow gentle tonal shifts, pore-level texture and realistic micro-shadowing.',
-      'Avoid dramatic restyling or large geometry changes; no hard white overlays or over-darkening.'
+      'Avoid dramatic restyling or large geometry changes; no hard white overlays or over-darkening.',
+      'Use the provided mask to confine every change strictly inside the tattoo region and leave all other pixels identical to the guide image.'
     ].join(' ');
+    const variationDescriptors = [
+      'Variation A: keep the ink crisp with moderate saturation and a healed matte finish while the surrounding skin remains untouched.',
+      'Variation B: add a subtly softer edge blend with a hint of warm undertone in the ink, but copy the input skin texture exactly outside the mask.',
+      'Variation C: retain the sharp line work yet introduce a faintly desaturated healed patina, ensuring zero alterations beyond the masked tattoo.'
+    ];
 
     const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
 
@@ -571,9 +577,11 @@ const fluxPlacementHandler = {
       }
       const seed = Date.now() + i;
 
+      const prompt = `${basePrompt} ${variationDescriptors[i % variationDescriptors.length]}`;
+
       const payload = engine === 'fill'
         ? {
-            prompt: basePrompt,
+            prompt,
             input_image: inputBase64,
             mask_image: maskB64,
             output_format: 'png',
@@ -584,7 +592,7 @@ const fluxPlacementHandler = {
             seed
           }
         : {
-            prompt: basePrompt,
+            prompt,
             input_image: inputBase64,
             mask_image: maskB64,
             output_format: 'png',

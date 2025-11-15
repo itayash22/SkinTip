@@ -648,28 +648,30 @@ const fluxPlacementHandler = {
     const maskB64 = invertedMaskBuffer.toString('base64');
     
     const basePrompt = [
-      'Render a REALISTIC, LIFE-LIKE healed tattoo on real human skin with full color preservation.',
+      'CRITICAL MASK INSTRUCTION: The mask image shows WHITE areas to PRESERVE and BLACK areas to MODIFY.',
+      'ONLY modify the BLACK areas in the mask. DO NOT touch, change, alter, or modify ANY WHITE areas in the mask.',
+      'Every pixel in WHITE mask areas must remain EXACTLY identical to the input image - zero changes, zero modifications.',
+      'Render a REALISTIC, LIFE-LIKE healed tattoo on real human skin with full color preservation ONLY in the BLACK mask areas.',
       'The tattoo must look like an actual professional tattoo that has healed naturally on real skin.',
       'Preserve ALL original colors from the tattoo design - maintain vibrant, rich colors with natural skin integration.',
       'The tattoo should have realistic ink saturation, natural skin texture showing through, subtle ink diffusion into skin, and authentic healed appearance.',
       'Include realistic details: skin pores visible through ink, natural lighting on tattooed skin, subtle ink bleeding at edges, and authentic tattoo depth.',
-      'ONLY modify pixels that are INSIDE the white mask area. Every single pixel OUTSIDE the mask must be IDENTICAL to the input image.',
       'DO NOT desaturate, make black and white, or remove color. Keep the tattoo FULLY COLORED and vibrant.',
-      'The skin, background, lighting, shadows, pores, and texture OUTSIDE the mask must remain pixel-perfect identical to the input image.'
+      'ABSOLUTE REQUIREMENT: The skin, background, lighting, shadows, pores, and texture in WHITE mask areas must remain pixel-perfect identical to the input image with zero modifications.'
     ].join(' ');
     
     const negativePrompt = [
       'black and white, grayscale, desaturated, monochrome, colorless, faded colors, washed out',
       'unrealistic tattoo, fake tattoo, digital art, illustration, cartoon, stylized',
-      'DO NOT modify any area outside the mask.',
-      'DO NOT change the skin color, texture, or lighting outside the tattoo area.',
-      'DO NOT alter the background or any non-masked regions.'
+      'modifying white mask areas, changing white mask areas, altering white mask areas',
+      'changing skin outside mask, modifying background, altering non-masked regions',
+      'any changes to white areas, any modifications to preserved areas'
     ].join(', ');
     
     const variationDescriptors = [
-      'Variation A: Freshly healed realistic tattoo with sharp, crisp edges and full color saturation. The ink should look vibrant and well-settled into the skin with minimal diffusion. High contrast, realistic depth, and authentic tattoo appearance.',
-      'Variation B: Realistic healed tattoo with softer edges and natural ink diffusion. Warmer color tones with full saturation preserved. The tattoo should look naturally settled with realistic skin texture integration and authentic color vibrancy.',
-      'Variation C: Realistic aged tattoo appearance with natural color fading and patina. Full color preserved but with authentic healed appearance showing subtle color shifts. The tattoo should look like it has been on the skin for months with realistic aging.'
+      'Variation A: Sharp, crisp tattoo with high contrast and bold colors. Freshly healed appearance with minimal ink diffusion. The tattoo edges should be well-defined and the colors should be vibrant and saturated. Make this variation visually distinct with strong definition.',
+      'Variation B: Softer tattoo edges with moderate ink diffusion and warmer color tones. The tattoo should have a naturally settled appearance with realistic skin texture visible through the ink. Colors should be warm and vibrant but with more natural blending at edges.',
+      'Variation C: Aged tattoo with significant ink diffusion and softer, more muted colors. The tattoo should look like it has been healed for 6+ months with natural color fading and patina. Edges should be very soft with noticeable ink bleeding into skin.'
     ];
 
     const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
@@ -700,20 +702,45 @@ const fluxPlacementHandler = {
       if (i > 0) {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
-      // Use more varied seeds to ensure different outputs
-      const seed = Date.now() + i * 1000 + Math.floor(Math.random() * 1000);
+      // Use significantly different seeds for each variation to ensure distinct outputs
+      // Variation 0: base seed, Variation 1: +5000, Variation 2: +10000
+      const baseSeed = Date.now();
+      const seed = baseSeed + i * 5000 + Math.floor(Math.random() * 2000);
 
       const prompt = `${basePrompt} ${variationDescriptors[i % variationDescriptors.length]}`;
 
-      // Generate more varied parameters for each image to create visually distinct results
-      // For realistic tattoos: Use moderate-high fidelity to preserve skin, but allow creative variation in tattoo
-      // Higher guidance = more realistic, controlled results
-      const variedFillGuidance = getVariedParams(ENGINE_FILL_GUIDANCE, i, 0.20);
-      // Increase guidance for more realistic, controlled tattoo rendering
-      const variedKontextGuidance = clamp(ENGINE_KONTEXT_GUIDANCE * (1.0 + (i % 3) * 0.08), 6.5, 7.5);
-      // Use moderate-high fidelity (0.70-0.85) to preserve skin but allow realistic tattoo variation
-      // Slightly lower than before to allow more realistic tattoo rendering while still preserving skin
-      const variedKontextFidelity = clamp(0.70 + (i % 3) * 0.05, 0.68, 0.85);
+      // Generate MORE VARIED parameters for each image to create visually distinct results
+      // Variation 0: Lower guidance (more creative), Variation 1: Medium, Variation 2: Higher (more controlled)
+      const variedFillGuidance = getVariedParams(ENGINE_FILL_GUIDANCE, i, 0.25);
+      
+      // Make guidance scale MORE different between variations
+      // Variation 0: Lower (6.0-6.5), Variation 1: Medium (7.0-7.2), Variation 2: Higher (7.5-8.0)
+      const guidanceRanges = [
+        [6.0, 6.5],  // Variation A: Lower guidance for more creative/artistic
+        [7.0, 7.2],  // Variation B: Medium guidance for balanced
+        [7.5, 8.0]   // Variation C: Higher guidance for more controlled/precise
+      ];
+      const [minGuidance, maxGuidance] = guidanceRanges[i % 3];
+      const variedKontextGuidance = clamp(
+        minGuidance + (maxGuidance - minGuidance) * Math.random(),
+        minGuidance,
+        maxGuidance
+      );
+      
+      // Use MAXIMUM fidelity (0.85-0.95) to preserve skin outside mask
+      // Higher fidelity = more faithful to input = better preservation of non-masked areas
+      const fidelityRanges = [
+        [0.85, 0.90], // Variation A: High fidelity
+        [0.88, 0.92], // Variation B: Very high fidelity
+        [0.90, 0.95]  // Variation C: Maximum fidelity
+      ];
+      const [minFidelity, maxFidelity] = fidelityRanges[i % 3];
+      const variedKontextFidelity = clamp(
+        minFidelity + (maxFidelity - minFidelity) * Math.random(),
+        minFidelity,
+        maxFidelity
+      );
+      
       const variedSafetyTolerance = Math.round(clamp(2 + (i % 3) * 0.3 + (Math.random() - 0.5) * 0.2, 1.5, 2.5));
 
       console.log(`[VARIATION ${i + 1}] guidance=${engine === 'fill' ? variedFillGuidance.toFixed(2) : variedKontextGuidance.toFixed(2)}${engine === 'kontext' ? ` fidelity=${variedKontextFidelity.toFixed(3)}` : ''} safety=${variedSafetyTolerance.toFixed(1)}`);

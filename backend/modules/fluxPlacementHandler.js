@@ -549,8 +549,11 @@ const fluxPlacementHandler = {
     const basePrompt = [
       'Render this tattoo healed into real human skin with natural ink diffusion, softened edges and subtle color absorption.',
       'Maintain the original silhouette and proportions but allow gentle tonal shifts, pore-level texture and realistic micro-shadowing.',
+      'Avoid dramatic restyling or large geometry changes; no hard white overlays or over-darkening.'
+    ].join(' ');
+    const maskGuardrailPrompt = [
       'Treat the supplied alpha mask as the only editable region: paste the guide image pixels everywhere the mask is transparent so the surrounding skin, hairs, light falloff and jewelry stay identical.',
-      'Avoid dramatic restyling or large geometry changes; no hard white overlays, over-darkening or global retouching.'
+      'Do not perform global retouching or color shifts outside the mask; keep every unmasked pixel perfectly unchanged.'
     ].join(' ');
     const negativePrompt = [
       'Do not modify or repaint any area of the photo outside the tattoo mask including skin, lighting, shadows, nails, jewelry, clothing or background.',
@@ -561,6 +564,7 @@ const fluxPlacementHandler = {
       'Introduce a subtle warm undertone inside the ink fill with slightly softer edge diffusion but leave every unmasked pixel identical to the reference.',
       'Cool the ink hues with a faint slate patina and keep the outline crisp, ensuring zero alterations to any unmasked skin or background detail.'
     ];
+    const promptBase = [basePrompt, maskGuardrailPrompt].join(' ');
 
     const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
 
@@ -581,7 +585,10 @@ const fluxPlacementHandler = {
       }
       const seed = Date.now() + i;
 
-      const prompt = `${basePrompt} ${variationDescriptors[i % variationDescriptors.length]}`;
+      const prompt = [
+        promptBase,
+        variationDescriptors[i % variationDescriptors.length]
+      ].join(' ');
 
       const payload = engine === 'fill'
         ? {

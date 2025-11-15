@@ -50,8 +50,53 @@ const BAKE_MULTIPLY_OPACITY    = Number(process.env.BAKE_MULTIPLY_OPACITY  || '0
 // -----------------------------
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
+let ensureBucketPromise = null;
+
+async function ensureSupabaseBucket() {
+  if (!SUPABASE_STORAGE_BUCKET) {
+    throw new Error('Supabase storage bucket name is not configured.');
+  }
+
+  if (!ensureBucketPromise) {
+    ensureBucketPromise = (async () => {
+      try {
+        const { data, error } = await supabase.storage.getBucket(SUPABASE_STORAGE_BUCKET);
+        if (error) {
+          // Supabase returns a 400/404 style error when the bucket does not exist yet.
+          if (error.status === 400 || error.status === 404 || /not found/i.test(error.message || '')) {
+            const { error: createError } = await supabase.storage.createBucket(SUPABASE_STORAGE_BUCKET, { public: true });
+            if (createError && !/already exists/i.test(createError.message || '')) {
+              throw createError;
+            }
+            if (!createError) {
+              console.log(`[SUPABASE] Created missing bucket "${SUPABASE_STORAGE_BUCKET}"`);
+            }
+          } else {
+            throw error;
+          }
+        } else if (!data) {
+          // If the SDK returned no data and no error, fall back to creating the bucket.
+          const { error: createError } = await supabase.storage.createBucket(SUPABASE_STORAGE_BUCKET, { public: true });
+          if (createError && !/already exists/i.test(createError.message || '')) {
+            throw createError;
+          }
+          if (!createError) {
+            console.log(`[SUPABASE] Created missing bucket "${SUPABASE_STORAGE_BUCKET}"`);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to ensure Supabase bucket exists:', err);
+        throw err;
+      }
+    })();
+  }
+
+  return ensureBucketPromise;
+}
+
 async function uploadDebug(imageBuffer, userId, name, contentType = 'image/png', folder = 'debug') {
   try {
+    await ensureSupabaseBucket();
     const fileName = `${name}_${uuidv4()}.${contentType.startsWith('image/png') ? 'png' : 'jpg'}`;
     const filePath = `${userId}/${folder}/${fileName}`;
     const { error } = await supabase.storage.from(SUPABASE_STORAGE_BUCKET)
@@ -353,6 +398,7 @@ const fluxPlacementHandler = {
 
   uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '', contentType = 'image/png') => {
     const filePath = folder ? `${userId}/${folder}/${fileName}` : `${userId}/${fileName}`;
+    await ensureSupabaseBucket();
     const { error } = await supabase.storage.from(SUPABASE_STORAGE_BUCKET)
       .upload(filePath, imageBuffer, { contentType, upsert: false });
     if (error) {

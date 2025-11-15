@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-08-12_ADAPTIVE_SCALE_MASK_GROW_V2');
+console.log('FLUX_HANDLER_VERSION: 2025-08-21_SKIN_REALISM_TUNING');
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -39,11 +39,16 @@ const MODEL_MASK_GROW_MIN = Number(process.env.MODEL_MASK_GROW_MIN || '4');    /
 const MODEL_MASK_GROW_MAX = Number(process.env.MODEL_MASK_GROW_MAX || '28');   // px
 
 // --- NEW: baked-guide tuning (neutral; prevents white-out and over-darkening)
-const BAKE_TATTOO_BRIGHTNESS   = Number(process.env.BAKE_TATTOO_BRIGHTNESS || '1.00'); // 0.95–1.05
+const BAKE_TATTOO_BRIGHTNESS   = Number(process.env.BAKE_TATTOO_BRIGHTNESS || '0.96'); // 0.92–1.02 sweet spot for skin absorption
 const BAKE_TATTOO_GAMMA        = Number(process.env.BAKE_TATTOO_GAMMA      || '1.00'); // 0.95–1.05
 const BAKE_OVERLAY_OPACITY     = Number(process.env.BAKE_OVERLAY_OPACITY   || '0.28');
-const BAKE_SOFTLIGHT_OPACITY   = Number(process.env.BAKE_SOFTLIGHT_OPACITY || '0.22');
-const BAKE_MULTIPLY_OPACITY    = Number(process.env.BAKE_MULTIPLY_OPACITY  || '0.06');
+const BAKE_SOFTLIGHT_OPACITY   = Number(process.env.BAKE_SOFTLIGHT_OPACITY || '0.35');
+const BAKE_MULTIPLY_OPACITY    = Number(process.env.BAKE_MULTIPLY_OPACITY  || '0.12');
+
+// Prompt + guidance tuning sourced from common Flux forum recommendations for skin realism
+const ENGINE_KONTEXT_FIDELITY  = Number(process.env.ENGINE_KONTEXT_FIDELITY  || '0.65');
+const ENGINE_KONTEXT_GUIDANCE  = Number(process.env.ENGINE_KONTEXT_GUIDANCE  || '6.2');
+const ENGINE_FILL_GUIDANCE     = Number(process.env.ENGINE_FILL_GUIDANCE     || '6.0');
 
 // -----------------------------
 // Small helpers
@@ -541,8 +546,11 @@ const fluxPlacementHandler = {
     // FLUX call(s)
     // -----------------------------
     const generatedImageUrls = [];
-    const basePrompt =
-      'Preserve the exact silhouette, proportions and interior details of the tattoo. Blend it realistically into the skin with lighting, micro-shadowing and subtle ink diffusion. Do not redraw, restyle or resize. Keep the original tonal balance and colors; avoid pure white ink effects or global darkening.';
+    const basePrompt = [
+      'Render this tattoo healed into real human skin with natural ink diffusion, softened edges and subtle color absorption.',
+      'Maintain the original silhouette and proportions but allow gentle tonal shifts, pore-level texture and realistic micro-shadowing.',
+      'Avoid dramatic restyling or large geometry changes; no hard white overlays or over-darkening.'
+    ].join(' ');
 
     const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
 
@@ -570,7 +578,7 @@ const fluxPlacementHandler = {
             mask_image: maskB64,
             output_format: 'png',
             n: 1,
-            guidance_scale: 8.0,
+            guidance_scale: ENGINE_FILL_GUIDANCE,
             prompt_upsampling: true,
             safety_tolerance: 2,
             seed
@@ -581,8 +589,8 @@ const fluxPlacementHandler = {
             mask_image: maskB64,
             output_format: 'png',
             n: 1,
-            fidelity: 0.8,
-            guidance_scale: 8.0,
+            fidelity: ENGINE_KONTEXT_FIDELITY,
+            guidance_scale: ENGINE_KONTEXT_GUIDANCE,
             prompt_upsampling: true,
             safety_tolerance: 2,
             seed

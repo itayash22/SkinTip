@@ -549,13 +549,13 @@ const fluxPlacementHandler = {
     const basePrompt = [
       'Render this tattoo healed into real human skin with natural ink diffusion, softened edges and subtle color absorption.',
       'Maintain the original silhouette and proportions but allow gentle tonal shifts, pore-level texture and realistic micro-shadowing.',
-      'Avoid dramatic restyling or large geometry changes; no hard white overlays or over-darkening.',
-      'Use the provided mask to confine every change strictly inside the tattoo region and leave all other pixels identical to the guide image.'
+      'Absolutely freeze every pixel outside the supplied mask — match the guide image lighting, texture, pores and background exactly with zero drift or cleanup.',
+      'Do not restyle, smooth, or recolor any non-masked skin; only reinterpret the ink that sits inside the mask area.'
     ].join(' ');
     const variationDescriptors = [
-      'Variation A: keep the ink crisp with moderate saturation and a healed matte finish while the surrounding skin remains untouched.',
-      'Variation B: add a subtly softer edge blend with a hint of warm undertone in the ink, but copy the input skin texture exactly outside the mask.',
-      'Variation C: retain the sharp line work yet introduce a faintly desaturated healed patina, ensuring zero alterations beyond the masked tattoo.'
+      'Variation A: keep the ink crisp with moderate saturation, a healed matte finish, and microscopic skin detail completely unchanged elsewhere.',
+      'Variation B: add a subtly softer edge diffusion with a warmer undertone inside the tattoo while cloning the guide skin pixel-for-pixel outside the mask.',
+      'Variation C: introduce a faintly desaturated healed patina with delicate micro-highlights, still locking every surrounding pixel to the untouched guide skin.'
     ];
 
     const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };

@@ -549,35 +549,35 @@ const fluxPlacementHandler = {
     const generatedImageUrls = [];
     const basePrompt = [
       'Render this tattoo healed into real human skin with natural ink diffusion, softened edges and subtle color absorption.',
-      'Focus every edit strictly within the tattoo mask while keeping the surrounding skin perfectly frozen to the guide image.',
-      'Respect the existing silhouette and proportions but allow realistic healed shading, pore-level texture and micro-shadowing inside the mask.',
-      'Outside the mask keep lighting, skin tone, pores, background and blemishes pixel-identical to the provided guide image.'
+      'Only adjust the tattoo artwork that sits inside the supplied mask while keeping every pixel outside the mask absolutely identical to the guide image.',
+      'Preserve the silhouette and proportions of the ink but allow realistic healed shading, pore-level texture and micro-shadowing strictly within the mask region.',
+      'Deliver three distinct healed looks so the user can choose a favorite, yet keep all non-masked skin, lighting, pores and background frozen to the guide photo.'
     ].join(' ');
     const negativePromptBase = [
-      'Do not modify or beautify any unmasked skin pixel, lighting, background or texture.',
-      'Avoid blur, haze, glow, denoising or color drift outside the mask region.',
-      'No cleanup, smoothing, or restyling on non-masked areas — edits must stay inside the tattoo mask only.'
+      'Do not alter, recolor, smooth, clean up or beautify any pixel outside the tattoo mask.',
+      'Avoid blur, haze, glow, denoising, saturation shift or lighting drift beyond the masked region.',
+      'No background edits, skin retouching or tonal balancing outside the tattoo mask area.'
     ].join(' ');
     const variationBlueprints = [
       {
         label: 'Variation A',
-        promptSuffix: 'Variation A: keep the healed ink bold with saturated mid-tones, crisp edge retention and a matte finish strictly within the tattoo mask.',
-        negativeSuffix: 'No added gloss or specular highlights on skin outside the mask.',
-        guidanceScaleOffset: 0.4,
-        fidelityMultiplier: 1.05
+        promptSuffix: 'Variation A: inside the mask keep the healed ink bold with saturated mid-tones, crisp edge retention and a matte finish while cloning untouched pixels elsewhere.',
+        negativeSuffix: 'No added gloss, specular hits or sharpening outside the mask.',
+        guidanceScaleOffset: 0.5,
+        fidelityMultiplier: 1.08
       },
       {
         label: 'Variation B',
-        promptSuffix: 'Variation B: create a softer healed look with gentle edge diffusion and a slightly warmer undertone only inside the mask while surrounding skin stays frozen.',
-        negativeSuffix: 'Prevent warmth, smoothing or glow from leaking outside the tattoo mask.',
-        guidanceScaleOffset: -0.3,
-        fidelityMultiplier: 0.97
+        promptSuffix: 'Variation B: produce a softer healed look with gentle edge diffusion, a slightly warmer undertone and controlled sheen only inside the mask, leaving surrounding skin frozen.',
+        negativeSuffix: 'Prevent warmth, smoothing, glow or diffusion from leaking outside the tattoo mask.',
+        guidanceScaleOffset: -0.4,
+        fidelityMultiplier: 0.94
       },
       {
         label: 'Variation C',
-        promptSuffix: 'Variation C: deliver an aged patina with subtle desaturation, fine micro-highlights and faint ink breakup inside the mask while guide skin outside remains untouched.',
-        negativeSuffix: 'No cracking, grain or patina effects outside the ink mask area.',
-        guidanceScaleOffset: 0.15,
+        promptSuffix: 'Variation C: create an aged patina with subtle desaturation, delicate micro-highlights and faint ink breakup confined to the mask, keeping guide skin outside untouched.',
+        negativeSuffix: 'No cracking, grain, patina or desaturation effects outside the ink mask area.',
+        guidanceScaleOffset: 0.2,
         fidelityMultiplier: 1.0
       }
     ];

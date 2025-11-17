@@ -571,6 +571,7 @@ const fluxPlacementHandler = {
     console.log(`Input tattoo meta: ${tattooMeta0.width}x${tattooMeta0.height}, fmt=${tattooMeta0.format}`);
 
     // --- Ensure proper alpha on tattoo design ---
+    await uploadDebug(tattooDesignOriginalBuffer, userId, 'tattoo_design_original');
     const originalAlphaCoverage = await computeAlphaCoverage(tattooDesignOriginalBuffer);
     let tattooDesignPng = await fluxPlacementHandler.removeImageBackground(tattooDesignOriginalBuffer);
     const processedAlphaCoverage = await computeAlphaCoverage(tattooDesignPng);
@@ -579,6 +580,7 @@ const fluxPlacementHandler = {
       console.warn('[STENCIL] Processed coverage dropped too much. Reverting to original stencil (no background strip).');
       tattooDesignPng = await sharp(tattooDesignOriginalBuffer).ensureAlpha().png().toBuffer();
     }
+    await uploadDebug(tattooDesignPng, userId, 'tattoo_design_processed');
 
     // --- Analyze tattoo alpha for adaptive decisions ---
     const stats = await analyzeTattooAlpha(tattooDesignPng);

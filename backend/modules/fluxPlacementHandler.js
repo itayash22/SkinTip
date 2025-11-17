@@ -191,7 +191,9 @@ async function detectUniformWhiteBackground(pngBuffer) {
   const nearWhite = (minMean >= WHITE_BG_MIN_CHANNEL && maxMean >= 240 && chroma <= WHITE_BG_CHROMA_MAX);
   const lowVar    = (std[0] < 3.5 && std[1] < 3.5 && std[2] < 3.5);
 
-  return { isUniformWhite: nearWhite && lowVar, bgColor: mean };
+  const looksWhite = nearWhite && lowVar;
+  console.log('[BG-DETECT] mean=', mean.map(v => v.toFixed(1)).join(','), 'std=', std.map(v => v.toFixed(2)).join(','), 'looksWhite=', looksWhite);
+  return { isUniformWhite: looksWhite, bgColor: mean };
 }
 
 async function colorToAlphaWhite(buffer, bgColor = [255, 255, 255]) {
@@ -203,6 +205,7 @@ async function colorToAlphaWhite(buffer, bgColor = [255, 255, 255]) {
   const soft = 235, hard = 252;
   const ramp = Math.max(1, hard - soft);
   const [bgR, bgG, bgB] = bgColor;
+  console.log('[BG-REMOVE] using bgColor=', bgColor.map(v => v.toFixed(1)).join(','));
 
   for (let i = 0; i < w * h; i++) {
     const p = i * 4;
@@ -230,7 +233,9 @@ async function colorToAlphaWhite(buffer, bgColor = [255, 255, 255]) {
     raw[p + 3] = alpha;
   }
 
-  return await sharp(raw, { raw: { width: w, height: h, channels: 4 } }).png().toBuffer();
+  const output = await sharp(raw, { raw: { width: w, height: h, channels: 4 } }).png().toBuffer();
+  console.log('[BG-REMOVE] completed white→alpha conversion');
+  return output;
 }
 
 // -----------------------------
@@ -397,6 +402,7 @@ const fluxPlacementHandler = {
       console.warn('[BG] remove.bg failed; fallback to local:', error.message);
       try {
         const { isUniformWhite, bgColor } = await detectUniformWhiteBackground(imageBuffer);
+        console.log('[BG] fallback detector result:', { isUniformWhite, bgColor });
         if (isUniformWhite) return await colorToAlphaWhite(imageBuffer, bgColor);
       } catch (e) {}
       return await sharp(imageBuffer).png().toBuffer();

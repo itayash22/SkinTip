@@ -74,6 +74,18 @@ function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
 let ensureBucketPromise = null;
 
+async function computeAlphaCoverage(buffer) {
+  const img = sharp(buffer).ensureAlpha();
+  const meta = await img.metadata();
+  if (!meta.width || !meta.height) return 0;
+  const alpha = await img.extractChannel('alpha').raw().toBuffer();
+  let filled = 0;
+  for (let i = 0; i < alpha.length; i++) {
+    if (alpha[i] > 8) filled++;
+  }
+  return filled / alpha.length;
+}
+
 async function ensureSupabaseBucket() {
   if (!SUPABASE_STORAGE_BUCKET) {
     throw new Error('Supabase storage bucket name is not configured.');
@@ -553,7 +565,14 @@ const fluxPlacementHandler = {
     console.log(`Input tattoo meta: ${tattooMeta0.width}x${tattooMeta0.height}, fmt=${tattooMeta0.format}`);
 
     // --- Ensure proper alpha on tattoo design ---
-    const tattooDesignPng = await fluxPlacementHandler.removeImageBackground(tattooDesignOriginalBuffer);
+    const originalAlphaCoverage = await computeAlphaCoverage(tattooDesignOriginalBuffer);
+    let tattooDesignPng = await fluxPlacementHandler.removeImageBackground(tattooDesignOriginalBuffer);
+    const processedAlphaCoverage = await computeAlphaCoverage(tattooDesignPng);
+    console.log(`[STENCIL] alpha coverage original=${(originalAlphaCoverage*100).toFixed(2)}% processed=${(processedAlphaCoverage*100).toFixed(2)}%`);
+    if (processedAlphaCoverage < originalAlphaCoverage * 0.95) {
+      console.warn('[STENCIL] Processed coverage dropped too much. Reverting to original stencil (no background strip).');
+      tattooDesignPng = await sharp(tattooDesignOriginalBuffer).ensureAlpha().png().toBuffer();
+    }
 
     // --- Analyze tattoo alpha for adaptive decisions ---
     const stats = await analyzeTattooAlpha(tattooDesignPng);

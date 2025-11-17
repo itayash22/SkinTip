@@ -630,6 +630,7 @@ const fluxPlacementHandler = {
     }
     const maskBBox = getMaskBBox(maskGrayRaw, maskMeta.width, maskMeta.height);
     if (maskBBox.isEmpty) throw new Error('Mask area is empty.');
+    console.log(`[MASK] bbox=${maskBBox.width}x${maskBBox.height} origin=(${maskBBox.minX},${maskBBox.minY})`);
 
     // Grow (dilate) the mask for the model so it doesn’t shrink the tattoo
     const growPx = clamp(
@@ -646,10 +647,12 @@ const fluxPlacementHandler = {
     const resizedTattoo = await sharp(tattooDesignPng)
       .resize({ width: targetW, height: targetH, fit: sharp.fit.inside, withoutEnlargement: false })
       .toBuffer();
+    await uploadDebug(resizedTattoo, userId, 'tattoo_resized');
 
     const rotatedTattoo = await sharp(resizedTattoo)
       .rotate(tattooAngle, { background: { r: 0, g: 0, b: 0, alpha: 0 } })
       .toBuffer();
+    await uploadDebug(rotatedTattoo, userId, 'tattoo_rotated');
 
     const rotMeta = await sharp(rotatedTattoo).metadata();
 

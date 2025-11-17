@@ -39,6 +39,7 @@ const MODEL_MASK_GROW_MIN = Number(process.env.MODEL_MASK_GROW_MIN || '4');    /
 const MODEL_MASK_GROW_MAX = Number(process.env.MODEL_MASK_GROW_MAX || '28');   // px
 const WHITE_BG_MIN_CHANNEL = Number(process.env.WHITE_BG_MIN_CHANNEL || '215');
 const WHITE_BG_CHROMA_MAX  = Number(process.env.WHITE_BG_CHROMA_MAX  || '16');
+const BG_COLOR_TOLERANCE   = Number(process.env.BG_COLOR_TOLERANCE   || '28');
 
 // --- NEW: baked-guide tuning (neutral; prevents white-out and over-darkening)
 const BAKE_TATTOO_BRIGHTNESS   = Number(process.env.BAKE_TATTOO_BRIGHTNESS || '0.96'); // 0.92–1.02 sweet spot for skin absorption
@@ -193,7 +194,7 @@ async function detectUniformWhiteBackground(pngBuffer) {
   return { isUniformWhite: nearWhite && lowVar, bgColor: mean };
 }
 
-async function colorToAlphaWhite(buffer) {
+async function colorToAlphaWhite(buffer, bgColor = [255, 255, 255]) {
   // Gentle white→alpha with decontamination; preserves edges reasonably well
   const img = sharp(buffer).ensureAlpha();
   const { width: w, height: h } = await img.metadata();
@@ -201,6 +202,7 @@ async function colorToAlphaWhite(buffer) {
 
   const soft = 235, hard = 252;
   const ramp = Math.max(1, hard - soft);
+  const [bgR, bgG, bgB] = bgColor;
 
   for (let i = 0; i < w * h; i++) {
     const p = i * 4;
@@ -208,9 +210,12 @@ async function colorToAlphaWhite(buffer) {
     const wmax = Math.max(R, G, B);
     const wmin = Math.min(R, G, B);
     const chroma = wmax - wmin;
-    const looksWhite = (wmin >= WHITE_BG_MIN_CHANNEL && chroma <= WHITE_BG_CHROMA_MAX);
+    const looksBackgroundWhite = (wmin >= WHITE_BG_MIN_CHANNEL && chroma <= WHITE_BG_CHROMA_MAX);
+    const looksBackgroundColor =
+      Math.max(Math.abs(R - bgR), Math.abs(G - bgG), Math.abs(B - bgB)) <= BG_COLOR_TOLERANCE &&
+      chroma <= WHITE_BG_CHROMA_MAX + 6;
     let alpha = A;
-    if (wmax >= soft && looksWhite) {
+    if ((wmax >= soft && looksBackgroundWhite) || looksBackgroundColor) {
       const cut = Math.max(0, Math.min(1, (wmax - soft) / ramp));
       alpha = Math.round(A * (1 - cut));
       if (wmax >= hard) alpha = 0;
@@ -364,10 +369,10 @@ const fluxPlacementHandler = {
     // 1) If no key, try local white→alpha; if not uniform white, just pass-through
     if (!REMOVE_BG_API_KEY) {
       try {
-        const { isUniformWhite } = await detectUniformWhiteBackground(imageBuffer);
+        const { isUniformWhite, bgColor } = await detectUniformWhiteBackground(imageBuffer);
         if (isUniformWhite) {
           console.log('[BG] Uniform white detected → converting to alpha locally.');
-          return await colorToAlphaWhite(imageBuffer);
+          return await colorToAlphaWhite(imageBuffer, bgColor);
         }
       } catch (e) {
         console.warn('[BG] local white→alpha probe failed, passing-through:', e.message);
@@ -391,8 +396,8 @@ const fluxPlacementHandler = {
     } catch (error) {
       console.warn('[BG] remove.bg failed; fallback to local:', error.message);
       try {
-        const { isUniformWhite } = await detectUniformWhiteBackground(imageBuffer);
-        if (isUniformWhite) return await colorToAlphaWhite(imageBuffer);
+        const { isUniformWhite, bgColor } = await detectUniformWhiteBackground(imageBuffer);
+        if (isUniformWhite) return await colorToAlphaWhite(imageBuffer, bgColor);
       } catch (e) {}
       return await sharp(imageBuffer).png().toBuffer();
     }

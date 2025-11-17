@@ -159,7 +159,7 @@ app.post('/api/auth/register', async (req, res) => {
                 email,
                 password_hash: passwordHash,
                 username,
-                tokens_remaining: 20
+                tokens_remaining: 200
             })
             .select()
             .single();

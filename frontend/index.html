@@ -1131,8 +1131,15 @@
 
                 if (typeof data.tokens_remaining === 'number') {
                     STATE.userTokens = data.tokens_remaining;
+                    if (STATE.user) {
+                        STATE.user.tokens_remaining = data.tokens_remaining;
+                        localStorage.setItem('user_info', JSON.stringify(STATE.user));
+                    }
                 }
                 utils.updateTokenDisplay();
+                if (window.auth?.updateUIForAuth) {
+                    auth.updateUIForAuth(true);
+                }
 
                 utils.hideLoading();
 

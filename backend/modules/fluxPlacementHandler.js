@@ -52,7 +52,8 @@ const ENGINE_KONTEXT_GUIDANCE  = Number(process.env.ENGINE_KONTEXT_GUIDANCE  || 
 const ENGINE_FILL_GUIDANCE     = Number(process.env.ENGINE_FILL_GUIDANCE     || '3.0');
 
 const FLUX_STEPS = Number(process.env.FLUX_STEPS || '50');
-const MASK_BLUR_SIGMA = Number(process.env.MASK_BLUR_SIGMA || '1.3');
+const MASK_FEATHER_SIGMA = Number(process.env.MASK_FEATHER_SIGMA || '1.4');
+const MASK_CORE_THRESHOLD = Number(process.env.MASK_CORE_THRESHOLD || '196');
 
 const FLUX_FILL_ENDPOINTS = (process.env.FLUX_FILL_ENDPOINTS || 'https://api.bfl.ai/v1/flux-fill-pro,https://api.bfl.ai/v1/flux-fill')
   .split(',')
@@ -647,11 +648,23 @@ const fluxPlacementHandler = {
     
     // Prepare a Flux-friendly mask:
     // - Use the grown mask so the AI has room to blend ink
-    // - Apply a gentle blur so edges feather into skin instead of hard cut-offs
-    const fluxMaskBuffer = await sharp(grownMaskPng)
-      .blur(MASK_BLUR_SIGMA)
-      .threshold(16)
+    // Create a two-stage mask:
+    //  - coreMask keeps the exact selection fully white to stop Flux from touching preserved skin
+    //  - featherMask blends outward so the tattoo edge can fade naturally
+    const coreMaskBuffer = await sharp(originalMaskBuffer)
+      .threshold(MASK_CORE_THRESHOLD)
       .toColourspace('b-w')
+      .png()
+      .toBuffer();
+
+    const featherMaskBuffer = await sharp(grownMaskPng)
+      .blur(MASK_FEATHER_SIGMA)
+      .toColourspace('b-w')
+      .png()
+      .toBuffer();
+
+    const fluxMaskBuffer = await sharp(featherMaskBuffer)
+      .composite([{ input: coreMaskBuffer, blend: 'lighten' }])
       .png()
       .toBuffer();
     
@@ -661,12 +674,12 @@ const fluxPlacementHandler = {
     
     const basePrompt = [
       'Render a realistic healed tattoo integrated into human skin in the masked area.',
-      'The tattoo should look like a professional tattoo that has naturally healed and settled into the skin.',
+      'The tattoo should look like a professional tattoo that has freshly healed and settled into the skin.',
       'Maintain full vibrant colors from the original tattoo design with realistic ink saturation and skin texture showing through.',
       'Include authentic details: subtle ink diffusion at edges, natural skin pores visible through ink, realistic depth and shading.',
       'The tattoo should blend naturally with the surrounding skin tone and lighting while keeping colors rich and vivid.',
       'Maintain the exact artwork, shapes, and layout from the provided tattoo design — do not invent a new motif.',
-      'Make it look like real tattoo ink that has been professionally applied and healed on actual human skin.'
+      'Keep the tattoo looking vibrant and clean, like real ink that healed within the last few weeks.'
     ].join(' ');
     
     const negativePrompt = [
@@ -678,8 +691,8 @@ const fluxPlacementHandler = {
     
     const variationDescriptors = [
       'Style A: Fresh, bold tattoo with crisp edges and vibrant saturated colors. Recently healed with minimal ink spread.',
-      'Style B: Naturally settled tattoo with moderate ink diffusion and warm tones. Balanced appearance with realistic skin integration.',
-      'Style C: Well-aged tattoo with softer edges and natural color settling. Several months healed with subtle ink bleeding and authentic patina.'
+      'Style B: Balanced healed tattoo with gentle skin diffusion, soft micro-shadows, and preserved color vibrancy.',
+      'Style C: Slightly softened tattoo edges with subtle diffusion, but keep colors rich and avoid any faded or aged look.'
     ];
 
     const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };

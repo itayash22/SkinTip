@@ -40,6 +40,7 @@ const MODEL_MASK_GROW_MAX = Number(process.env.MODEL_MASK_GROW_MAX || '28');   /
 const WHITE_BG_MIN_CHANNEL = Number(process.env.WHITE_BG_MIN_CHANNEL || '215');
 const WHITE_BG_CHROMA_MAX  = Number(process.env.WHITE_BG_CHROMA_MAX  || '16');
 const BG_COLOR_TOLERANCE   = Number(process.env.BG_COLOR_TOLERANCE   || '28');
+const STENCIL_BG_STRIP_ENABLED = (process.env.STENCIL_BG_STRIP_ENABLED ?? 'false').toLowerCase() === 'true';
 
 // --- NEW: baked-guide tuning (neutral; prevents white-out and over-darkening)
 const BAKE_TATTOO_BRIGHTNESS   = Number(process.env.BAKE_TATTOO_BRIGHTNESS || '0.96'); // 0.92–1.02 sweet spot for skin absorption
@@ -383,6 +384,11 @@ async function bakeTattooGuideOnSkin(skinImageBuffer, positionedCanvasPNG) {
 const fluxPlacementHandler = {
 
   removeImageBackground: async (imageBuffer) => {
+    if (!STENCIL_BG_STRIP_ENABLED) {
+      console.log('[BG] Stripping disabled → returning original stencil with alpha intact.');
+      return await sharp(imageBuffer).ensureAlpha().png().toBuffer();
+    }
+
     // 1) If no key, try local white→alpha; if not uniform white, just pass-through
     if (!REMOVE_BG_API_KEY) {
       try {

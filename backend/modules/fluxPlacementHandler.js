@@ -52,7 +52,7 @@ const ENGINE_KONTEXT_GUIDANCE  = Number(process.env.ENGINE_KONTEXT_GUIDANCE  || 
 const ENGINE_FILL_GUIDANCE     = Number(process.env.ENGINE_FILL_GUIDANCE     || '3.0');
 
 const FLUX_STEPS = Number(process.env.FLUX_STEPS || '50');
-const MASK_FEATHER_SIGMA = Number(process.env.MASK_FEATHER_SIGMA || '1.4');
+const MASK_FEATHER_SIGMA = Number(process.env.MASK_FEATHER_SIGMA || '0.9');
 const MASK_CORE_THRESHOLD = Number(process.env.MASK_CORE_THRESHOLD || '196');
 
 const FLUX_FILL_ENDPOINTS = (process.env.FLUX_FILL_ENDPOINTS || 'https://api.bfl.ai/v1/flux-fill-pro,https://api.bfl.ai/v1/flux-fill')
@@ -677,6 +677,7 @@ const fluxPlacementHandler = {
       'The tattoo should look like a professional tattoo that has freshly healed and settled into the skin.',
       'Maintain full vibrant colors from the original tattoo design with realistic ink saturation and skin texture showing through.',
       'Preserve the exact stencil linework, proportions, and motifs — only add subtle healed effects, do NOT redraw the artwork.',
+      'Keep line edges within 2px of the stencil and limit ink diffusion so the tattoo still reads like the original design.',
       'Include authentic details: subtle ink diffusion at edges, natural skin pores visible through ink, realistic depth and shading.',
       'The tattoo should blend naturally with the surrounding skin tone and lighting while keeping colors rich and vivid.',
       'Maintain the exact artwork, shapes, and layout from the provided tattoo design — do not invent a new motif.',
@@ -691,8 +692,8 @@ const fluxPlacementHandler = {
     ].join(', ');
     
     const variationDescriptors = [
-      'Style A: Fresh, bold tattoo with crisp edges and vibrant saturated colors. Recently healed with minimal ink spread. Keep linework identical to the stencil.',
-      'Style B: Balanced healed tattoo with gentle skin diffusion, soft micro-shadows, and preserved color vibrancy. Maintain all original shapes and motifs.',
+      'Style A: Fresh, bold tattoo with crisp edges and vibrant saturated colors. Recently healed with minimal ink spread. Keep linework 95% identical to the stencil.',
+      'Style B: Balanced healed tattoo with gentle skin diffusion, soft micro-shadows, and preserved color vibrancy. Maintain all original shapes and motifs with only subtle texture.',
       'Style C: Slightly softened tattoo edges with subtle diffusion, but keep colors rich and avoid any faded or aged look. The stencil geometry must remain unchanged.'
     ];
 
@@ -730,23 +731,23 @@ const fluxPlacementHandler = {
 
       // Guidance / fidelity bands tuned for realism
       const fillGuidanceBand = [
-        [2.3, 2.9],
-        [2.6, 3.2],
-        [2.9, 3.5]
+        [2.1, 2.6],
+        [2.4, 2.9],
+        [2.7, 3.2]
       ][i % 3];
       const variedFillGuidance = randomInRange(fillGuidanceBand[0], fillGuidanceBand[1]);
 
       const kontextGuidanceBand = [
-        [2.5, 3.0],
-        [2.8, 3.4],
-        [3.1, 3.7]
+        [2.4, 2.9],
+        [2.7, 3.2],
+        [3.0, 3.4]
       ][i % 3];
       const variedKontextGuidance = randomInRange(kontextGuidanceBand[0], kontextGuidanceBand[1]);
       
       const fidelityBand = [
-        [0.70, 0.77],
-        [0.73, 0.80],
-        [0.76, 0.84]
+        [0.78, 0.86],
+        [0.82, 0.90],
+        [0.85, 0.93]
       ][i % 3];
       const variedKontextFidelity = randomInRange(fidelityBand[0], fidelityBand[1]);
       

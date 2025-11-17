@@ -122,4 +122,6 @@ SkinTip operates on a token system to manage AI generation costs.
 ---
 updated working version: stable-v1.1-w
 
+Latest backend push verification: `v2.0.0-stable` (Flux inpainting realism tweaks, 2025-11-17).
+
 Made with ❤️ by @itayash22 : itayash@gmail.com

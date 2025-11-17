@@ -743,9 +743,9 @@ const fluxPlacementHandler = {
       const variedKontextGuidance = randomInRange(kontextGuidanceBand[0], kontextGuidanceBand[1]);
       
       const fidelityBand = [
-        [0.55, 0.60],
-        [0.58, 0.64],
-        [0.60, 0.70]
+        [0.60, 0.64],
+        [0.62, 0.68],
+        [0.65, 0.72]
       ][i % 3];
       const variedKontextFidelity = randomInRange(fidelityBand[0], fidelityBand[1]);
       

@@ -25,11 +25,9 @@ const FLUX_API_KEY = process.env.FLUX_API_KEY;
 // Behavior flags + knobs
 // -----------------------------
 const ADAPTIVE_SCALE_ENABLED  = (process.env.ADAPTIVE_SCALE_ENABLED  ?? 'true').toLowerCase() === 'true';
-// Engine adaptation caused us to hit the unsupported flux-fill endpoint on some accounts.
-// For now, always use 'kontext-pro', which we know works in production.
-const ADAPTIVE_ENGINE_ENABLED = false;
+const ADAPTIVE_ENGINE_ENABLED = (process.env.ADAPTIVE_ENGINE_ENABLED ?? 'true').toLowerCase() === 'true';
 const GLOBAL_SCALE_UP         = Number(process.env.MODEL_SCALE_UP || '1.5');          // applied always
-const FLUX_ENGINE_DEFAULT     = (process.env.FLUX_ENGINE || 'kontext').toLowerCase(); // default to 'kontext'
+const FLUX_ENGINE_DEFAULT     = (process.env.FLUX_ENGINE || 'fill').toLowerCase(); // prefer fill for inpainting
 
 // Engine-specific size bias to counter model shrink
 const ENGINE_KONTEXT_SIZE_BIAS = Number(process.env.ENGINE_KONTEXT_SIZE_BIAS || '1.08');
@@ -48,13 +46,22 @@ const BAKE_SOFTLIGHT_OPACITY   = Number(process.env.BAKE_SOFTLIGHT_OPACITY || '0
 const BAKE_MULTIPLY_OPACITY    = Number(process.env.BAKE_MULTIPLY_OPACITY  || '0.12');
 
 // FLUX parameters for tattoo inpainting
-// CRITICAL: Fidelity must be MODERATE (0.50-0.65) to allow FLUX to render the tattoo
-// Too high fidelity (>0.8) = FLUX preserves everything, tattoo doesn't appear
-// Too low fidelity (<0.4) = FLUX changes too much, skin gets altered
-// Higher guidance = more realistic, controlled results
-const ENGINE_KONTEXT_FIDELITY  = Number(process.env.ENGINE_KONTEXT_FIDELITY  || '0.55'); // LOWERED from 0.70
-const ENGINE_KONTEXT_GUIDANCE  = Number(process.env.ENGINE_KONTEXT_GUIDANCE  || '3.5'); // LOWERED for better tattoo rendering
-const ENGINE_FILL_GUIDANCE     = Number(process.env.ENGINE_FILL_GUIDANCE     || '3.0'); // LOWERED for better inpainting
+// Moderate fidelity + guidance let Flux reshape the tattoo without destroying the skin.
+const ENGINE_KONTEXT_FIDELITY  = Number(process.env.ENGINE_KONTEXT_FIDELITY  || '0.60');
+const ENGINE_KONTEXT_GUIDANCE  = Number(process.env.ENGINE_KONTEXT_GUIDANCE  || '3.5');
+const ENGINE_FILL_GUIDANCE     = Number(process.env.ENGINE_FILL_GUIDANCE     || '3.0');
+
+const FLUX_STEPS = Number(process.env.FLUX_STEPS || '50');
+const MASK_BLUR_SIGMA = Number(process.env.MASK_BLUR_SIGMA || '1.3');
+
+const FLUX_FILL_ENDPOINTS = (process.env.FLUX_FILL_ENDPOINTS || 'https://api.bfl.ai/v1/flux-fill-pro,https://api.bfl.ai/v1/flux-fill')
+  .split(',')
+  .map(e => e.trim())
+  .filter(Boolean);
+const FLUX_KONTEXT_ENDPOINTS = (process.env.FLUX_KONTEXT_ENDPOINTS || 'https://api.bfl.ai/v1/flux-kontext-pro')
+  .split(',')
+  .map(e => e.trim())
+  .filter(Boolean);
 
 // -----------------------------
 // Small helpers
@@ -289,8 +296,8 @@ function chooseAdaptiveScale(stats) {
 }
 
 function pickEngine(baseEngine, adaptiveEnabled, isThinLine) {
-  // IMPORTANT: For now we hard-lock to kontext-pro to avoid 404s from flux-fill.
-  // If we ever re-enable 'fill', we must ensure the endpoint is supported for this account.
+  if (!adaptiveEnabled) return baseEngine;
+  if (isThinLine) return 'fill';
   return baseEngine;
 }
 
@@ -638,19 +645,19 @@ const fluxPlacementHandler = {
     // -----------------------------
     const generatedImageUrls = [];
     
-    // FLUX API interprets mask as: WHITE = preserve, BLACK = modify
-    // Our mask has: WHITE = tattoo area (what we want to modify), BLACK = skin (what we want to preserve)
-    // So we need to INVERT the mask before sending to FLUX
-    const invertedMaskBuffer = await sharp(originalMaskBuffer)
-      .greyscale()
-      .negate() // Invert: white becomes black, black becomes white
+    // Prepare a Flux-friendly mask:
+    // - Use the grown mask so the AI has room to blend ink
+    // - Apply a gentle blur so edges feather into skin instead of hard cut-offs
+    const fluxMaskBuffer = await sharp(grownMaskPng)
+      .blur(MASK_BLUR_SIGMA)
+      .threshold(16)
+      .toColourspace('b-w')
       .png()
       .toBuffer();
     
-    // Debug: upload inverted mask to verify it's correct
-    await uploadDebug(invertedMaskBuffer, userId, 'mask_inverted_for_flux');
+    await uploadDebug(fluxMaskBuffer, userId, 'mask_flux_final');
     
-    const maskB64 = invertedMaskBuffer.toString('base64');
+    const maskB64 = fluxMaskBuffer.toString('base64');
     
     const basePrompt = [
       'Render a realistic healed tattoo integrated into human skin in the masked area.',
@@ -658,6 +665,7 @@ const fluxPlacementHandler = {
       'Maintain full vibrant colors from the original tattoo design with realistic ink saturation and skin texture showing through.',
       'Include authentic details: subtle ink diffusion at edges, natural skin pores visible through ink, realistic depth and shading.',
       'The tattoo should blend naturally with the surrounding skin tone and lighting while keeping colors rich and vivid.',
+      'Maintain the exact artwork, shapes, and layout from the provided tattoo design — do not invent a new motif.',
       'Make it look like real tattoo ink that has been professionally applied and healed on actual human skin.'
     ].join(' ');
     
@@ -675,126 +683,126 @@ const fluxPlacementHandler = {
     ];
 
     const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
+    const engineEndpoints = {
+      fill: FLUX_FILL_ENDPOINTS,
+      kontext: FLUX_KONTEXT_ENDPOINTS
+    };
 
-    const endpoint = engine === 'fill'
-      ? 'https://api.bfl.ai/v1/flux-fill'
-      : 'https://api.bfl.ai/v1/flux-kontext-pro';
+    const preferredEngine = engine;
+    const engineAttemptOrder = preferredEngine === 'fill'
+      ? ['fill', 'kontext']
+      : [preferredEngine, preferredEngine === 'kontext' ? 'fill' : 'kontext'];
 
     // Use the baked guide as the driving input
     const inputBase64 = guideComposite.toString('base64');          // RAW b64 (no data URI)
-    // Mask is already inverted above - FLUX will now modify the tattoo area (black in inverted mask = white in original)
+    // Mask is already blurred above - Flux will modify only the tattoo area
 
-    console.log(`Making ${numVariations} calls to FLUX (${endpoint.split('/').pop()})...`);
+    console.log(`Making ${numVariations} calls to FLUX (preferred engine: ${preferredEngine})...`);
 
-    // Helper function to generate varied parameters for each variation
-    // Uses deterministic offsets based on index to ensure consistent but distinct variations
-    function getVariedParams(baseValue, variationIndex, variationRange = 0.20) {
-      // Create deterministic offsets: -range, 0, +range for variations 0, 1, 2
-      const offsets = [-variationRange, 0, variationRange];
-      const offset = offsets[variationIndex % 3];
-      // Add small random component for additional variation
-      const randomComponent = (Math.random() - 0.5) * 0.05; // ±2.5% random
-      return clamp(baseValue * (1 + offset + randomComponent), baseValue * (1 - variationRange * 1.1), baseValue * (1 + variationRange * 1.1));
+    function randomInRange(min, max) {
+      if (min >= max) return min;
+      return min + Math.random() * (max - min);
     }
 
+    const baseSeed = Date.now();
     for (let i = 0; i < numVariations; i++) {
       // Add a 1-second delay between API calls to avoid overwhelming the server, but not before the first call.
       if (i > 0) {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
-      // Use significantly different seeds for each variation to ensure distinct outputs
-      // Variation 0: base seed, Variation 1: +5000, Variation 2: +10000
-      const baseSeed = Date.now();
       const seed = baseSeed + i * 5000 + Math.floor(Math.random() * 2000);
 
       const prompt = `${basePrompt} ${variationDescriptors[i % variationDescriptors.length]}`;
 
-      // Generate MORE VARIED parameters for each image to create visually distinct results
-      // Variation 0: Lower guidance (more creative), Variation 1: Medium, Variation 2: Higher (more controlled)
-      const variedFillGuidance = getVariedParams(ENGINE_FILL_GUIDANCE, i, 0.25);
+      // Guidance / fidelity bands tuned for realism
+      const fillGuidanceBand = [
+        [2.6, 3.1],
+        [2.8, 3.4],
+        [3.1, 3.8]
+      ][i % 3];
+      const variedFillGuidance = randomInRange(fillGuidanceBand[0], fillGuidanceBand[1]);
+
+      const kontextGuidanceBand = [
+        [2.7, 3.2],
+        [3.0, 3.5],
+        [3.4, 4.0]
+      ][i % 3];
+      const variedKontextGuidance = randomInRange(kontextGuidanceBand[0], kontextGuidanceBand[1]);
       
-      // CRITICAL FIX: Use MODERATE guidance for FLUX inpainting (2.5-4.5, not 6-8)
-      // Lower guidance allows FLUX to actually render the tattoo
-      // Variation 0: Lower (2.5-3.0), Variation 1: Medium (3.0-3.5), Variation 2: Higher (3.5-4.5)
-      const guidanceRanges = [
-        [2.5, 3.0],  // Variation A: Lower guidance for more creative/artistic tattoo
-        [3.0, 3.5],  // Variation B: Medium guidance for balanced tattoo
-        [3.5, 4.5]   // Variation C: Higher guidance for more controlled tattoo
-      ];
-      const [minGuidance, maxGuidance] = guidanceRanges[i % 3];
-      const variedKontextGuidance = clamp(
-        minGuidance + (maxGuidance - minGuidance) * Math.random(),
-        minGuidance,
-        maxGuidance
-      );
-      
-      // CRITICAL FIX: Use MODERATE fidelity (0.45-0.65) to allow FLUX to render the tattoo
-      // Too high fidelity (>0.80) = FLUX preserves input too much = NO TATTOO APPEARS
-      // Moderate fidelity = FLUX can modify the tattoo area while respecting the mask
-      const fidelityRanges = [
-        [0.45, 0.52], // Variation A: Lower fidelity for more creative tattoo
-        [0.50, 0.58], // Variation B: Medium fidelity for balanced
-        [0.55, 0.65]  // Variation C: Higher fidelity but still allows modification
-      ];
-      const [minFidelity, maxFidelity] = fidelityRanges[i % 3];
-      const variedKontextFidelity = clamp(
-        minFidelity + (maxFidelity - minFidelity) * Math.random(),
-        minFidelity,
-        maxFidelity
-      );
+      const fidelityBand = [
+        [0.55, 0.60],
+        [0.58, 0.64],
+        [0.60, 0.70]
+      ][i % 3];
+      const variedKontextFidelity = randomInRange(fidelityBand[0], fidelityBand[1]);
       
       const variedSafetyTolerance = Math.round(clamp(2 + (i % 3) * 0.3 + (Math.random() - 0.5) * 0.2, 1.5, 2.5));
 
-      console.log(`[VARIATION ${i + 1}] guidance=${engine === 'fill' ? variedFillGuidance.toFixed(2) : variedKontextGuidance.toFixed(2)}${engine === 'kontext' ? ` fidelity=${variedKontextFidelity.toFixed(3)}` : ''} safety=${variedSafetyTolerance.toFixed(1)}`);
+      console.log(`[VARIATION ${i + 1}] seed=${seed} fillGuidance=${variedFillGuidance.toFixed(2)} | kontextGuidance=${variedKontextGuidance.toFixed(2)} fidelity=${variedKontextFidelity.toFixed(3)} safety=${variedSafetyTolerance.toFixed(1)}`);
 
-      const payload = engine === 'fill'
-        ? {
-            prompt,
-            negative_prompt: negativePrompt,
-            input_image: inputBase64,
-            mask_image: maskB64,
-            output_format: 'png',
-            n: 1,
-            guidance_scale: variedFillGuidance,
-            prompt_upsampling: true,
-            safety_tolerance: variedSafetyTolerance,
-            seed
+      let task = null;
+      let engineUsed = null;
+      let pollingUrl = null;
+
+      for (const engineCandidate of engineAttemptOrder) {
+        const endpoints = engineEndpoints[engineCandidate] || [];
+        if (!endpoints.length) continue;
+
+        const payload = {
+          prompt,
+          negative_prompt: negativePrompt,
+          input_image: inputBase64,
+          mask_image: maskB64,
+          output_format: 'png',
+          n: 1,
+          guidance_scale: engineCandidate === 'fill' ? variedFillGuidance : variedKontextGuidance,
+          prompt_upsampling: true,
+          safety_tolerance: variedSafetyTolerance,
+          seed,
+          steps: FLUX_STEPS
+        };
+        if (engineCandidate === 'kontext') {
+          payload.fidelity = variedKontextFidelity;
+        }
+
+        let endpointHit = false;
+        for (const endpointUrl of endpoints) {
+          try {
+            const res = await axios.post(endpointUrl, payload, { headers: fluxHeaders, timeout: 120000 });
+            task = res.data;
+            pollingUrl = task?.polling_url;
+            engineUsed = engineCandidate;
+            endpointHit = true;
+            console.log(`[FLUX] Variation ${i + 1} using ${engineCandidate} (${endpointUrl.split('/').pop()}) status=${res.status} id=${task?.id || 'NA'}`);
+            break;
+          } catch (e) {
+            const status = e.response?.status;
+            const detail = e.response?.data?.detail || e.response?.data?.message;
+            console.warn(`[FLUX] POST failed via ${endpointUrl}:`, detail || e.message);
+            if (status === 404 && engineCandidate === 'fill') {
+              console.warn('[FLUX] fill endpoint unavailable, trying fallback...');
+              continue;
+            }
+            // Non-404 or non-fill errors should break to try the next engine option.
+            break;
           }
-        : {
-            prompt,
-            negative_prompt: negativePrompt,
-            input_image: inputBase64,
-            mask_image: maskB64,
-            output_format: 'png',
-            n: 1,
-            fidelity: variedKontextFidelity,
-            guidance_scale: variedKontextGuidance,
-            prompt_upsampling: true,
-            safety_tolerance: variedSafetyTolerance,
-            seed
-          };
+        }
+        if (endpointHit && task) break;
+      }
 
-      let task;
-      try {
-        const res = await axios.post(endpoint, payload, { headers: fluxHeaders, timeout: 90000 });
-        task = res.data;
-        console.log(`DEBUG: FLUX POST status=${res.status} id=${task.id}`);
-      } catch (e) {
-        console.error('FLUX post failed:', e.response?.data || e.message);
+      if (!task || !pollingUrl) {
+        console.warn(`[FLUX] Variation ${i + 1}: no task returned after trying all engines.`);
         continue;
       }
 
-      if (!task?.polling_url) {
-        console.warn('FLUX: missing polling_url');
-        continue;
-      }
+      console.log(`[FLUX] Variation ${i + 1} polling via ${engineUsed}`);
 
       // Poll
       let attempts = 0, done = false;
       while (!done && attempts < 60) {
         attempts++;
         await new Promise(r => setTimeout(r, 2000));
-        const poll = await axios.get(task.polling_url, { headers: { 'x-key': fluxApiKey || FLUX_API_KEY }, timeout: 15000 });
+        const poll = await axios.get(pollingUrl, { headers: { 'x-key': fluxApiKey || FLUX_API_KEY }, timeout: 15000 });
         const data = poll.data;
 
         if (data.status === 'Ready') {

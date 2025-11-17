@@ -37,6 +37,8 @@ const ENGINE_FILL_SIZE_BIAS    = Number(process.env.ENGINE_FILL_SIZE_BIAS    || 
 const MODEL_MASK_GROW_PCT = Number(process.env.MODEL_MASK_GROW_PCT || '0.06'); // 6% of bbox max dim
 const MODEL_MASK_GROW_MIN = Number(process.env.MODEL_MASK_GROW_MIN || '4');    // px
 const MODEL_MASK_GROW_MAX = Number(process.env.MODEL_MASK_GROW_MAX || '28');   // px
+const WHITE_BG_MIN_CHANNEL = Number(process.env.WHITE_BG_MIN_CHANNEL || '215');
+const WHITE_BG_CHROMA_MAX  = Number(process.env.WHITE_BG_CHROMA_MAX  || '16');
 
 // --- NEW: baked-guide tuning (neutral; prevents white-out and over-darkening)
 const BAKE_TATTOO_BRIGHTNESS   = Number(process.env.BAKE_TATTOO_BRIGHTNESS || '0.96'); // 0.92–1.02 sweet spot for skin absorption
@@ -182,7 +184,10 @@ async function detectUniformWhiteBackground(pngBuffer) {
     (s1.std[2] + s2.std[2] + s3.std[2] + s4.std[2]) / 4,
   ];
 
-  const nearWhite = (mean[0] >= 242 && mean[1] >= 242 && mean[2] >= 242);
+  const minMean = Math.min(mean[0], mean[1], mean[2]);
+  const maxMean = Math.max(mean[0], mean[1], mean[2]);
+  const chroma  = maxMean - minMean;
+  const nearWhite = (minMean >= WHITE_BG_MIN_CHANNEL && maxMean >= 240 && chroma <= WHITE_BG_CHROMA_MAX);
   const lowVar    = (std[0] < 3.5 && std[1] < 3.5 && std[2] < 3.5);
 
   return { isUniformWhite: nearWhite && lowVar, bgColor: mean };
@@ -201,8 +206,11 @@ async function colorToAlphaWhite(buffer) {
     const p = i * 4;
     const R = raw[p], G = raw[p + 1], B = raw[p + 2], A = raw[p + 3];
     const wmax = Math.max(R, G, B);
+    const wmin = Math.min(R, G, B);
+    const chroma = wmax - wmin;
+    const looksWhite = (wmin >= WHITE_BG_MIN_CHANNEL && chroma <= WHITE_BG_CHROMA_MAX);
     let alpha = A;
-    if (wmax >= soft) {
+    if (wmax >= soft && looksWhite) {
       const cut = Math.max(0, Math.min(1, (wmax - soft) / ramp));
       alpha = Math.round(A * (1 - cut));
       if (wmax >= hard) alpha = 0;

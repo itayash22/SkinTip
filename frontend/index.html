@@ -248,8 +248,13 @@
     <script type="module">
         console.log('Main inline script starting...');
 
+        const CLEAN_STENCIL_ENABLED = false;
+
         // ---- White/near-white → alpha (no libs) ----
         async function cleanStencilWhiteBg(urlOrDataUrl, { soft = 235, hard = 252 } = {}) {
+          if (!CLEAN_STENCIL_ENABLED) {
+            return urlOrDataUrl;
+          }
           // 1) Fetch as blob so we avoid tainted canvas (works for cross-origin URLs)
           const resp = await fetch(urlOrDataUrl, { mode: 'cors' });
           const srcBlob = await resp.blob();

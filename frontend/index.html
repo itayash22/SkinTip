@@ -819,13 +819,19 @@
             const togglePanBtn = document.getElementById('togglePanBtn');
             let panMode = false;
 
-            togglePanBtn?.addEventListener('click', () => {
-              panMode = !panMode;
-              togglePanBtn.classList.toggle('active', panMode);
-              togglePanBtn.textContent = panMode ? 'Done Moving Skin' : 'Move Skin';
-              if (window.drawing && drawing.setPanMode) {
+            function setPanModeUI(enabled) {
+              panMode = !!enabled;
+              if (togglePanBtn) {
+                togglePanBtn.classList.toggle('active', panMode);
+                togglePanBtn.textContent = panMode ? 'Done Moving Skin' : 'Move Skin';
+              }
+              if (window.drawing?.setPanMode) {
                 drawing.setPanMode(panMode);
               }
+            }
+
+            togglePanBtn?.addEventListener('click', () => {
+              setPanModeUI(!panMode);
             });
 
             const rotationSlider = document.getElementById('rotationSlider');
@@ -870,6 +876,7 @@
                 if (resultsSection) resultsSection.style.display = 'none';
                 if (artistsSection) artistsSection.style.display = 'none';
                 if (socialShareDiv) socialShareDiv.style.display = 'none';
+                setPanModeUI(false);
                 if (fileInput) fileInput.value = '';
                 if (stencilFileInput) stencilFileInput.value = '';
 

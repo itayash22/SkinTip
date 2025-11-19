@@ -13,6 +13,11 @@ const auth = {
     authError: null,
     logoutBtn: null,
     userInfoSpan: null, // Ensure this is correctly referenced
+    tosGroup: null,
+    tosCheckbox: null,
+    tosModal: null,
+    openTosBtn: null,
+    closeTosBtn: null,
 
     isRegisterMode: false,
 
@@ -28,6 +33,11 @@ const auth = {
         auth.authSwitchText = document.getElementById('authSwitchText');
         auth.authSwitchLink = document.getElementById('authSwitchLink');
         auth.authError = document.getElementById('authError');
+        auth.tosGroup = document.getElementById('tosGroup');
+        auth.tosCheckbox = document.getElementById('tosCheckbox');
+        auth.tosModal = document.getElementById('tosModal');
+        auth.openTosBtn = document.getElementById('openTosBtn');
+        auth.closeTosBtn = document.getElementById('closeTosBtn');
         
         // These elements are in index.html, but auth.js needs to manage them globally
         auth.logoutBtn = document.getElementById('logoutBtn');
@@ -103,6 +113,11 @@ const auth = {
         if (auth.logoutBtn) { // Logout button is in index.html
             auth.logoutBtn.addEventListener('click', auth.logout);
         }
+        auth.openTosBtn?.addEventListener('click', auth.showTosModal);
+        auth.closeTosBtn?.addEventListener('click', auth.hideTosModal);
+        auth.tosModal?.addEventListener('click', (e) => {
+            if (e.target === auth.tosModal) auth.hideTosModal();
+        });
 
         // This log should now correctly reflect the user's state after all checks
         console.log(`Auth init: User state after init. Logged in: ${STATE.user ? 'Yes' : 'No'}, Tokens: ${STATE.userTokens}`);
@@ -161,6 +176,8 @@ const auth = {
             auth.authForm.querySelector('button[type="submit"]').textContent = 'Register';
             auth.usernameGroup.style.display = 'block';
             auth.usernameInput.setAttribute('required', 'required');
+            if (auth.tosGroup) auth.tosGroup.style.display = 'block';
+            auth.tosCheckbox?.setAttribute('required', 'required');
         } else {
             auth.authTitle.textContent = 'Login to Slate.Tattoo';
             auth.authSwitchText.textContent = "Don't have an account?";
@@ -168,6 +185,11 @@ const auth = {
             auth.authForm.querySelector('button[type="submit"]').textContent = 'Login';
             auth.usernameGroup.style.display = 'none';
             auth.usernameInput.removeAttribute('required');
+            if (auth.tosGroup) auth.tosGroup.style.display = 'none';
+            if (auth.tosCheckbox) {
+                auth.tosCheckbox.checked = false;
+                auth.tosCheckbox.removeAttribute('required');
+            }
         }
     },
 
@@ -184,11 +206,17 @@ const auth = {
         const email = auth.emailInput.value;
         const password = auth.passwordInput.value;
         const username = auth.usernameInput.value; // Only used for register
+        if (auth.isRegisterMode && auth.tosCheckbox && !auth.tosCheckbox.checked) {
+            utils.hideLoading();
+            auth.authError.textContent = 'You must accept the Terms of Service.';
+            return;
+        }
 
         let endpoint = auth.isRegisterMode ? 'register' : 'login';
         let body = { email, password };
         if (auth.isRegisterMode) {
             body.username = username;
+            body.tosAccepted = !!auth.tosCheckbox?.checked;
         }
 
         try {
@@ -285,6 +313,14 @@ const auth = {
             }
         }
     },
+
+    showTosModal: () => {
+        if (auth.tosModal) auth.tosModal.style.display = 'block';
+    },
+
+    hideTosModal: () => {
+        if (auth.tosModal) auth.tosModal.style.display = 'none';
+    }
 };
 
 // Expose the auth object globally

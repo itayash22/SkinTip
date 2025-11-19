@@ -135,10 +135,14 @@ const authenticateToken = async (req, res, next) => {
 
 app.post('/api/auth/register', async (req, res) => {
     try {
-        const { email, password, username } = req.body;
+        const { email, password, username, tosAccepted } = req.body;
 
         if (!email || !password || !username) {
             return res.status(400).json({ error: 'All fields are required' });
+        }
+
+        if (!tosAccepted) {
+            return res.status(400).json({ error: 'You must accept the Terms of Service' });
         }
 
         const { data: existingUser } = await supabase

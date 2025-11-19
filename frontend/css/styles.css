@@ -101,6 +101,27 @@ body {
     font-size: 1.1rem;
 }
 
+.link-button {
+    background: none;
+    border: none;
+    color: #6366f1;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 0;
+    font: inherit;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    font-size: 0.95rem;
+}
+
+.checkbox-label input[type="checkbox"] {
+    margin-top: 0.2rem;
+}
+
 /* Modals (Auth) */
 .modal {
     display: none; /* Hidden by default */
@@ -128,6 +149,19 @@ body {
     box-sizing: border-box; /* Ensure padding is included in width */
     max-height: 80vh;
     overflow-y: auto;
+}
+
+.tos-modal-content .auth-container {
+    max-width: 720px;
+    text-align: left;
+}
+
+.tos-body {
+    max-height: 60vh;
+    overflow-y: auto;
+    margin-bottom: 1rem;
+    padding-right: 0.5rem;
+    line-height: 1.5;
 }
 
 .auth-container {

@@ -69,6 +69,12 @@
                             <label for="username">Username</label>
                             <input type="text" id="username" name="username">
                         </div>
+                        <div id="tosGroup" class="form-group" style="display: none;">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="tosCheckbox">
+                                <span>I have read and accept the <button type="button" id="openTosBtn" class="link-button">Terms of Service</button></span>
+                            </label>
+                        </div>
                         <button type="submit" class="btn btn-primary">Login</button>
                         <p class="auth-switch">
                             <span id="authSwitchText">Don't have an account?</span>
@@ -76,6 +82,53 @@
                         </p>
                     </form>
                     <div id="authError" class="error-message"></div>
+                </div>
+            </div>
+        </div>
+        <div id="tosModal" class="modal">
+            <div class="modal-content tos-modal-content">
+                <div class="auth-container">
+                    <h2>Terms of Service</h2>
+                    <div class="tos-body">
+                        <p><strong>Last Updated:</strong> 11/20/2025</p>
+                        <p>These Terms of Service (“Terms”) govern your access to and use of the tattoo-rendering website operated by [Company Name TBD] (“Company”, “we”, “us”, or “our”). By creating an account or using the Service, you agree to be bound by these Terms. If you do not agree, you must not use the Service.</p>
+                        <h3>1. Eligibility (18+ Only)</h3>
+                        <p>You must be at least 18 years old to use the Service. By creating an account, you represent and warrant that you are 18+ and legally capable of entering binding agreements. We may request proof of age and may terminate accounts suspected to belong to minors.</p>
+                        <h3>2. Account Registration and Security</h3>
+                        <p>You must create an account to use the Service’s features. You agree to provide accurate and complete information. You are responsible for maintaining the confidentiality of your login credentials and are liable for all activity under your account.</p>
+                        <h3>3. Description of the Service</h3>
+                        <p>The Service allows you to upload tattoo designs and skin photos to receive AI-generated renderings. Rendering is performed by Black Forest Labs (https://bfl.ai/). Images are illustrative only.</p>
+                        <h3>4. User Content & Licensing</h3>
+                        <p>You retain ownership of uploads but grant the Company and its service providers a worldwide, irrevocable, transferable, sublicensable, royalty-free license to use, host, store, reproduce, modify, adapt, publish, translate, create derivative works, display, distribute, use in promotional materials, conduct internal research, train AI, and share with Black Forest Labs. This license survives account deletion.</p>
+                        <h3>5. Content Restrictions</h3>
+                        <p>No nudity, exposed intimate areas, minors, other people, illegal content, hate/abuse, copyrighted designs you do not own, or sensitive IDs/documents.</p>
+                        <h3>6. Third-Party Processing</h3>
+                        <p>Your images are transmitted to Black Forest Labs. We cannot guarantee permanent deletion of your content because of third-party caching/storage.</p>
+                        <h3>7. Personal Data & Privacy</h3>
+                        <p>See our Privacy Policy regarding collection, storage, AI training, international transfers, and promotional use.</p>
+                        <h3>8. Tattoo Artist Recommendations</h3>
+                        <p>Recommendations are informational only and may include promotional relationships. We are not liable for artist interactions or outcomes.</p>
+                        <h3>9. Permissible Use</h3>
+                        <p>No hacking, scraping, botting, reverse-engineering, or illegal use.</p>
+                        <h3>10. Intellectual Property</h3>
+                        <p>The Service code, text, design, and UI belong to the Company. You receive a limited non-transferable license to use the Service.</p>
+                        <h3>11. Disclaimer of Warranties</h3>
+                        <p>Service provided “AS IS”. We do not guarantee uninterrupted service, accuracy, or realistic tattoo outcomes.</p>
+                        <h3>12. Limitation of Liability</h3>
+                        <p>Company not liable for indirect, incidental, consequential damages. Maximum liability equals fees paid in last 12 months or USD $100.</p>
+                        <h3>13. Indemnification</h3>
+                        <p>You will indemnify the Company and partners (including BFL) for claims arising from your uploads or violations.</p>
+                        <h3>14. Account Termination & Data Retention</h3>
+                        <p>You may delete your account, but uploads may persist due to third-party processing, backups, AI training, and promotional usage.</p>
+                        <h3>15. Governing Law</h3>
+                        <p>These Terms are governed by Israeli law, venue in Tel Aviv.</p>
+                        <h3>16. Changes</h3>
+                        <p>We may update these Terms; continued use constitutes acceptance.</p>
+                        <h3>17. Contact</h3>
+                        <p>Email: itayash@gmail.com.</p>
+                        <p>By using the Service, you confirm you have read, understood, and agree to these Terms.</p>
+                    </div>
+                    <button type="button" class="btn btn-primary" id="closeTosBtn">Close</button>
                 </div>
             </div>
         </div>

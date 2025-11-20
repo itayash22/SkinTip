@@ -197,6 +197,8 @@ body {
 #tosGroup .checkbox-label {
     justify-content: flex-start;
     text-align: left;
+    flex-direction: row;
+    align-items: center;
 }
 
 .auth-container form {

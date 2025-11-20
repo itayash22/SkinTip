@@ -133,7 +133,6 @@ body {
     height: 100%; /* Full height */
     overflow: auto; /* Enable scroll if needed */
     background-color: rgba(0, 0, 0, 0.6); /* Black w/ opacity */
-    display: flex;
     justify-content: center;
     align-items: center;
 }
@@ -188,6 +187,16 @@ body {
 
 .modal-actions .btn {
     min-width: 120px;
+}
+
+#tosGroup {
+    width: 100%;
+    text-align: left;
+}
+
+#tosGroup .checkbox-label {
+    justify-content: flex-start;
+    text-align: left;
 }
 
 .auth-container form {

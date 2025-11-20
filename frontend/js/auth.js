@@ -126,7 +126,7 @@ const auth = {
     // Show auth modal, optionally setting mode
     showModal: (mode = 'login') => {
         if (auth.modal) {
-            auth.modal.style.display = 'block';
+            auth.modal.style.display = 'flex';
             auth.authError.textContent = ''; // Clear previous errors
             auth.authForm.reset(); // Clear form fields
             auth.setAuthMode(mode === 'register');
@@ -315,7 +315,7 @@ const auth = {
     },
 
     showTosModal: () => {
-        if (auth.tosModal) auth.tosModal.style.display = 'block';
+        if (auth.tosModal) auth.tosModal.style.display = 'flex';
     },
 
     hideTosModal: () => {

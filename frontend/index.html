@@ -194,6 +194,26 @@
             <button id="closeStencilModalBtn" class="btn btn-outline" style="margin-top: 1rem;">Close</button>
         </div>
     </div>
+    <div id="skinConfirmModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="auth-container">
+                <h2>Before You Upload</h2>
+                <p>Please confirm the following before uploading your skin photo:</p>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="skinCheckboxNoIntimate">
+                    <span>I confirm the photo does NOT contain nudity or intimate/private body parts.</span>
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="skinCheckboxThirdParty">
+                    <span>I agree my photo will be stored and processed by an external third party and may not be fully deletable.</span>
+                </label>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="skinCancelBtn">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="skinConfirmBtn">Continue</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div id="loadingOverlay" class="loading-overlay" style="display: none;">
         <div class="loading-content">
@@ -317,24 +337,38 @@
           return URL.createObjectURL(blob);
         }
 
-        async function logUserEvent(eventType, artistId, stencilId) {
-            if (!STATE.token) return; // Don't log events for anonymous users
+        async function logUserEvent(eventType, artistId, stencilId, extraDetails) {
+            if (!STATE.token) return false; // Don't log events for anonymous users
+
+            const payload = {
+                event_type: eventType,
+                artist_id: artistId,
+                stencil_id: stencilId
+            };
+
+            if (extraDetails && typeof extraDetails === 'object') {
+                payload.details = extraDetails;
+            }
 
             try {
-                await fetch(`${CONFIG.API_URL}/log-event`, {
+                const response = await fetch(`${CONFIG.API_URL}/log-event`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${STATE.token}`
                     },
-                    body: JSON.stringify({
-                        event_type: eventType,
-                        artist_id: artistId,
-                        stencil_id: stencilId
-                    })
+                    body: JSON.stringify(payload)
                 });
+
+                if (!response.ok) {
+                    console.warn('Failed to log user event: Non-200 response', response.status);
+                    return false;
+                }
+
+                return true;
             } catch (error) {
                 console.warn('Failed to log user event:', error);
+                return false;
             }
         }
 
@@ -957,9 +991,76 @@
                 fileInput.click();
             });
 
-            fileInput?.addEventListener('change', async (e) => {
+            const skinConfirmModal = document.getElementById('skinConfirmModal');
+            const skinConfirmBtn = document.getElementById('skinConfirmBtn');
+            const skinCancelBtn = document.getElementById('skinCancelBtn');
+            const skinCheckbox1 = document.getElementById('skinCheckboxNoIntimate');
+            const skinCheckbox2 = document.getElementById('skinCheckboxThirdParty');
+            let pendingSkinFile = null;
+
+            function openSkinConfirmModal(file) {
+                pendingSkinFile = file;
+                if (skinCheckbox1) skinCheckbox1.checked = false;
+                if (skinCheckbox2) skinCheckbox2.checked = false;
+                if (skinConfirmModal) skinConfirmModal.style.display = 'flex';
+            }
+
+            function closeSkinConfirmModal() {
+                pendingSkinFile = null;
+                if (skinConfirmModal) skinConfirmModal.style.display = 'none';
+                if (fileInput) fileInput.value = '';
+            }
+
+            skinConfirmBtn?.addEventListener('click', async () => {
+                if (!skinCheckbox1?.checked || !skinCheckbox2?.checked) {
+                    utils.showError('Please confirm both checkboxes before continuing.');
+                    return;
+                }
+
+                if (!pendingSkinFile) {
+                    utils.showError('No file selected. Please choose a skin photo again.');
+                    closeSkinConfirmModal();
+                    return;
+                }
+
+                utils.showLoading('Recording confirmation...');
+                const consentLogged = await logUserEvent(
+                    'SKIN_UPLOAD_APPROVED',
+                    null,
+                    null,
+                    {
+                        consent_no_intimate_content: true,
+                        consent_third_party_processing: true
+                    }
+                );
+                utils.hideLoading();
+
+                if (!consentLogged) {
+                    utils.showError('Could not record your confirmation. Please try again.');
+                    return;
+                }
+
+                const file = pendingSkinFile;
+                pendingSkinFile = null;
+                if (skinConfirmModal) skinConfirmModal.style.display = 'none';
+                if (file) {
+                    await handleSkinPhotoFile(file);
+                }
+            });
+
+            skinCancelBtn?.addEventListener('click', () => {
+                closeSkinConfirmModal();
+            });
+
+            skinConfirmModal?.addEventListener('click', (e) => {
+                if (e.target === skinConfirmModal) {
+                    closeSkinConfirmModal();
+                }
+            });
+
+            fileInput?.addEventListener('change', (e) => {
                 if (e.target.files.length > 0) {
-                    await handleSkinPhotoFile(e.target.files[0]);
+                    openSkinConfirmModal(e.target.files[0]);
                 }
             });
 

@@ -178,6 +178,18 @@ body {
     font-size: 1.75rem;
 }
 
+.modal-actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+    width: 100%;
+    margin-top: 1.5rem;
+}
+
+.modal-actions .btn {
+    min-width: 120px;
+}
+
 .auth-container form {
     width: 100%; /* Take full width of its flex container */
     max-width: 300px; /* Limit the max width of the form itself */

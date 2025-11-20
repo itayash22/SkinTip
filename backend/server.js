@@ -505,7 +505,7 @@ app.post('/api/generate-final-tattoo',
 );
 
 app.post('/api/log-event', authenticateToken, async (req, res) => {
-    const { event_type, artist_id, stencil_id } = req.body;
+    const { event_type, artist_id, stencil_id, details } = req.body;
     const user_id = req.user.id;
 
     if (!event_type) {
@@ -513,13 +513,19 @@ app.post('/api/log-event', authenticateToken, async (req, res) => {
     }
 
     try {
+        const eventDetails = {
+            recorded_at: new Date().toISOString(),
+            ...(details && typeof details === 'object' ? details : {})
+        };
+
         const { data, error } = await supabase
             .from('user_events')
             .insert({
                 user_id,
                 event_type,
                 artist_id,
-                stencil_id
+                stencil_id,
+                details: eventDetails
             });
 
         if (error) {

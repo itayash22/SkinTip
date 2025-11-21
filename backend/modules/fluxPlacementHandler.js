@@ -12,8 +12,11 @@ import FormData from 'form-data';
 // -----------------------------
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generated-tattoos';
+const envBucket = process.env.SUPABASE_STORAGE_BUCKET;
+const SUPABASE_STORAGE_BUCKET = (envBucket && envBucket.trim() !== '') ? envBucket.trim() : 'generated-tattoos';
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+console.log(`[INIT] Supabase Storage Bucket configured to: "${SUPABASE_STORAGE_BUCKET}"`);
 
 // -----------------------------
 // External API keys

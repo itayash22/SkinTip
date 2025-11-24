@@ -997,9 +997,11 @@
             const skinCheckbox1 = document.getElementById('skinCheckboxNoIntimate');
             const skinCheckbox2 = document.getElementById('skinCheckboxThirdParty');
             let pendingSkinFile = null;
+            let hasSkinUploadConsent = false;
 
             function openSkinConfirmModal(file) {
                 pendingSkinFile = file;
+                hasSkinUploadConsent = false;
                 if (skinCheckbox1) skinCheckbox1.checked = false;
                 if (skinCheckbox2) skinCheckbox2.checked = false;
                 if (skinConfirmModal) skinConfirmModal.style.display = 'flex';
@@ -1007,6 +1009,7 @@
 
             function closeSkinConfirmModal() {
                 pendingSkinFile = null;
+                hasSkinUploadConsent = false;
                 if (skinConfirmModal) skinConfirmModal.style.display = 'none';
                 if (fileInput) fileInput.value = '';
             }
@@ -1042,6 +1045,7 @@
 
                 const file = pendingSkinFile;
                 pendingSkinFile = null;
+                hasSkinUploadConsent = true;
                 if (skinConfirmModal) skinConfirmModal.style.display = 'none';
                 if (file) {
                     await handleSkinPhotoFile(file);
@@ -1066,6 +1070,10 @@
 
 
             async function handleSkinPhotoFile(file) {
+                if (!hasSkinUploadConsent) {
+                    utils.showError('Please confirm the upload requirements before continuing.');
+                    return;
+                }
                 if (!CONFIG.ALLOWED_FILE_TYPES.includes(file.type)) {
                     utils.showError('Please upload a JPEG, PNG, or WebP image for your skin photo.');
                     return;

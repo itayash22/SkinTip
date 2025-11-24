@@ -927,54 +927,44 @@
                 utils.updateTokenDisplay();
             }
 
-            // --- START Desktop Inactivity Auto-Logout Logic ---
+            // --- START Cross-Device Inactivity Auto-Logout Logic ---
             let inactivityTimeout; // Holds the timer reference
 
-            // Function to reset the timer (called on user activity)
-            function resetInactivityTimer() {
-                clearTimeout(inactivityTimeout); // Clear any existing timer
-                // Only set a new timer if the user is logged in AND it's likely a desktop device
-                // This heuristic roughly defines desktop vs mobile by checking for touch support.
-                const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (navigator.msMaxTouchPoints > 0);
-                
-                if (!isTouchDevice) { // Apply auto-logout ONLY if NOT a touch device (assumed desktop)
-                    if (STATE.user && STATE.token) { // Only auto-logout if user is currently logged in
-                        inactivityTimeout = setTimeout(handleInactivityLogout, CONFIG.DESKTOP_INACTIVITY_TIMEOUT_MS);
-                        console.log(`Inactivity timer reset. Auto-logout in ${CONFIG.DESKTOP_INACTIVITY_TIMEOUT_MS / 1000 / 60} minutes.`);
-                    } else {
-                        console.log("User not logged in or mobile device, inactivity timer not started/reset.");
-                    }
+            function startInactivityTimer() {
+                if (STATE.user && STATE.token) {
+                    inactivityTimeout = setTimeout(handleInactivityLogout, CONFIG.INACTIVITY_TIMEOUT_MS);
+                    console.log(`Inactivity timer set. Auto-logout in ${CONFIG.INACTIVITY_TIMEOUT_MS / 1000 / 60} minutes.`);
                 }
             }
 
-            // Function to be called when inactivity timeout is reached
+            function resetInactivityTimer() {
+                clearTimeout(inactivityTimeout);
+                startInactivityTimer();
+            }
+
             function handleInactivityLogout() {
-                console.log("User inactive for too long. Forcing logout.");
-                utils.showError('You have been logged out due to inactivity.');
-                // Call the unified logout function from auth.js
-                if (typeof auth !== 'undefined' && auth.forceLogoutAndShowModal) {
-                    auth.forceLogoutAndShowModal();
+                console.log('User inactive for too long. Forcing logout.');
+                utils.showError('Session expired. Please log in again.');
+                if (typeof auth !== 'undefined' && auth.logout) {
+                    auth.logout();
                 } else {
-                    // Fallback for simple logout if auth.js function isn't found
-                    localStorage.removeItem('token');
-                    localStorage.removeItem('user');
                     STATE.user = null;
                     STATE.token = null;
-                    utils.updateTokenDisplay();
-                    // window.location.reload(); // Or redirect to login page
+                    STATE.userTokens = 0;
+                    localStorage.removeItem('jwt_token');
+                    localStorage.removeItem('user_info');
+                    window.location.href = 'welcome.html';
                 }
             }
 
-            // Set up event listeners for user activity across the document
-            const activityEvents = ['mousemove', 'keydown', 'click', 'scroll'];
+            const activityEvents = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart', 'touchmove', 'touchend'];
             activityEvents.forEach(event => {
-                document.addEventListener(event, resetInactivityTimer);
+                document.addEventListener(event, resetInactivityTimer, { passive: true });
             });
 
-            // Initial call to set up the timer when the page finishes loading (if logged in)
-            resetInactivityTimer();
+            startInactivityTimer();
 
-            // --- END Desktop Inactivity Auto-Logout Logic ---
+            // --- END Cross-Device Inactivity Auto-Logout Logic ---
 
             // --- START Main Event Listeners Block (Correctly placed) ---
 

@@ -148,7 +148,13 @@ async function ensureSupabaseBucket() {
 }
 
 async function logImageMetadata(userId, filePath, fileUrl, expiresAt) {
+  if (!userId) {
+    console.warn(`[METADATA] Skipping log - userId is missing`);
+    return;
+  }
+  
   try {
+    console.log(`[METADATA] Attempting to log image: ${filePath} for user ${userId}`);
     const { data, error } = await supabase
       .from('image_metadata')
       .insert({
@@ -159,16 +165,30 @@ async function logImageMetadata(userId, filePath, fileUrl, expiresAt) {
       })
       .select();
     if (error) {
-      console.error(`[METADATA] Failed to log image upload: ${error.message}`, error);
+      console.error(`[METADATA] Failed to log image upload:`, {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        fullError: error
+      });
       // If table doesn't exist, log a helpful message
-      if (error.message.includes('relation') && error.message.includes('does not exist')) {
+      if (error.message && error.message.includes('relation') && error.message.includes('does not exist')) {
         console.error(`[METADATA] ERROR: The 'image_metadata' table does not exist! Please run the CREATE TABLE statement in Supabase SQL Editor.`);
       }
+      // If RLS is blocking, log a helpful message
+      if (error.code === '42501' || (error.message && error.message.includes('permission'))) {
+        console.error(`[METADATA] ERROR: Permission denied. Check Row Level Security (RLS) policies. You may need to: ALTER TABLE image_metadata DISABLE ROW LEVEL SECURITY;`);
+      }
     } else {
-      console.log(`[METADATA] Successfully logged image: ${filePath} for user ${userId}`);
+      console.log(`[METADATA] Successfully logged image: ${filePath} for user ${userId}`, data);
     }
   } catch (err) {
-    console.error(`[METADATA] Exception logging image: ${err.message}`, err);
+    console.error(`[METADATA] Exception logging image:`, {
+      message: err.message,
+      stack: err.stack,
+      fullError: err
+    });
   }
 }
 

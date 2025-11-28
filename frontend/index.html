@@ -1326,13 +1326,21 @@
                 utils.hideLoading();
 
                 // Store expiry timestamp computed once at response time
-                const expiryTimestamp = data.image_expiry_seconds 
+                // Backend returns array of { url, path, expires_at } objects
+                const fallbackExpiry = data.image_expiry_seconds 
                     ? Date.now() + data.image_expiry_seconds * 1000 
                     : null;
-                STATE.generatedImages = (data.images || []).map((url) => ({
-                    url,
-                    expires_at: expiryTimestamp
-                }));
+                STATE.generatedImages = (data.images || []).map((item) => {
+                    // Handle both string URLs (legacy) and object format
+                    if (typeof item === 'string') {
+                        return { url: item, expires_at: fallbackExpiry };
+                    }
+                    // Object format: use expires_at from backend if available
+                    const expiresAt = item.expires_at 
+                        ? new Date(item.expires_at).getTime() 
+                        : fallbackExpiry;
+                    return { url: item.url, expires_at: expiresAt };
+                });
                 STATE.imageExpirySeconds = data.image_expiry_seconds || null;
                 renderGeneratedResults();
 

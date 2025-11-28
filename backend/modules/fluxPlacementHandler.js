@@ -147,6 +147,42 @@ async function ensureSupabaseBucket() {
   return ensureBucketPromise;
 }
 
+async function logImageMetadata(userId, filePath, fileUrl, expiresAt) {
+  try {
+    const { error } = await supabase
+      .from('image_metadata')
+      .insert({
+        user_id: userId,
+        file_path: filePath,
+        file_url: fileUrl,
+        expires_at: expiresAt || null
+      });
+    if (error) {
+      console.warn(`[METADATA] Failed to log image upload: ${error.message}`);
+    }
+  } catch (err) {
+    console.warn(`[METADATA] Exception logging image: ${err.message}`);
+  }
+}
+
+async function markImageDeleted(filePath) {
+  try {
+    const { error } = await supabase
+      .from('image_metadata')
+      .update({
+        status: 'deleted',
+        deleted_at: new Date().toISOString()
+      })
+      .eq('file_path', filePath)
+      .eq('status', 'active');
+    if (error) {
+      console.warn(`[METADATA] Failed to mark image as deleted: ${error.message}`);
+    }
+  } catch (err) {
+    console.warn(`[METADATA] Exception marking image deleted: ${err.message}`);
+  }
+}
+
 function scheduleImageDeletion(filePath, label = 'image', ttlMs = TEMP_IMAGE_TTL_MS) {
   if (!filePath || !ttlMs || ttlMs <= 0) return;
 
@@ -166,6 +202,7 @@ function scheduleImageDeletion(filePath, label = 'image', ttlMs = TEMP_IMAGE_TTL
           console.warn(`[TTL] Failed to delete ${filePath}: ${error.message}`);
         } else {
           console.log(`[TTL] Deleted ${filePath} after TTL (${label}).`);
+          await markImageDeleted(filePath);
         }
       } catch (err) {
         console.warn(`[TTL] Exception while deleting ${filePath}: ${err.message}`);
@@ -516,8 +553,10 @@ const fluxPlacementHandler = {
     const { data: pub } = supabase.storage.from(SUPABASE_STORAGE_BUCKET).getPublicUrl(filePath);
     if (!pub?.publicUrl) throw new Error('Failed to get public URL for uploaded image.');
     console.log('Image uploaded to Supabase:', pub.publicUrl);
-    scheduleImageDeletion(filePath, 'result');
     const expiresAt = TEMP_IMAGE_TTL_MS > 0 ? new Date(Date.now() + TEMP_IMAGE_TTL_MS).toISOString() : null;
+    scheduleImageDeletion(filePath, 'result');
+    // Log image metadata for tracking
+    await logImageMetadata(userId, filePath, pub.publicUrl, expiresAt);
     return {
       url: pub.publicUrl,
       path: filePath,

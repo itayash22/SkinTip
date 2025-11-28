@@ -765,21 +765,20 @@ const fluxPlacementHandler = {
       // Higher fidelity = more faithful to original stencil
       // Lower guidance = more natural skin integration, less "AI processed" look
       
-      // Kontext-optimized bands (primary engine)
-      const kontextGuidanceBand = [
-        [2.0, 2.5],   // Variation 1: Most natural, lowest intervention
-        [2.3, 2.8],   // Variation 2: Balanced
-        [2.6, 3.1]    // Variation 3: Slightly more stylized
-      ][i % 3];
-      const variedKontextGuidance = randomInRange(kontextGuidanceBand[0], kontextGuidanceBand[1]);
+      // THREE DISTINCT STYLES with wider parameter spread:
+      // Style 1: "Fresh ink" - high fidelity, low guidance (closest to stencil, most natural)
+      // Style 2: "Healed realistic" - medium fidelity, medium guidance (balanced look)
+      // Style 3: "Artistic interpretation" - lower fidelity, higher guidance (more AI creativity)
       
-      // High fidelity to preserve stencil design
-      const fidelityBand = [
-        [0.78, 0.85],  // Variation 1: Some creative freedom
-        [0.82, 0.88],  // Variation 2: Balanced preservation
-        [0.85, 0.92]   // Variation 3: Maximum stencil fidelity
-      ][i % 3];
-      const variedKontextFidelity = randomInRange(fidelityBand[0], fidelityBand[1]);
+      const variationStyles = [
+        { guidance: [1.8, 2.2], fidelity: [0.88, 0.94], name: 'Fresh ink (closest to stencil)' },
+        { guidance: [2.5, 3.0], fidelity: [0.75, 0.82], name: 'Healed realistic' },
+        { guidance: [3.2, 3.8], fidelity: [0.62, 0.72], name: 'Artistic interpretation' }
+      ];
+      
+      const style = variationStyles[i % 3];
+      const variedKontextGuidance = randomInRange(style.guidance[0], style.guidance[1]);
+      const variedKontextFidelity = randomInRange(style.fidelity[0], style.fidelity[1]);
       
       // Legacy fill guidance (kept for future use)
       const variedFillGuidance = randomInRange(2.0, 2.8);
@@ -787,9 +786,9 @@ const fluxPlacementHandler = {
       // FLUX.2 guidance (when available) - optimized for multi-reference
       const variedFlux2Guidance = randomInRange(3.0, 4.0);
       
-      const variedSafetyTolerance = Math.round(clamp(2 + (i % 3) * 0.3 + (Math.random() - 0.5) * 0.2, 2, 3));
+      const variedSafetyTolerance = 2; // Keep consistent for cleaner comparison
 
-      console.log(`[VARIATION ${i + 1}] seed=${seed} guidance=${variedKontextGuidance.toFixed(2)} fidelity=${variedKontextFidelity.toFixed(3)} safety=${variedSafetyTolerance}`);
+      console.log(`[VARIATION ${i + 1}] ${style.name} | seed=${seed} guidance=${variedKontextGuidance.toFixed(2)} fidelity=${variedKontextFidelity.toFixed(3)}`);
 
       let task = null;
       let engineUsed = null;

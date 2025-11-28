@@ -1325,7 +1325,14 @@
 
                 utils.hideLoading();
 
-                STATE.generatedImages = data.images || [];
+                // Store expiry timestamp computed once at response time
+                const expiryTimestamp = data.image_expiry_seconds 
+                    ? Date.now() + data.image_expiry_seconds * 1000 
+                    : null;
+                STATE.generatedImages = (data.images || []).map((url) => ({
+                    url,
+                    expires_at: expiryTimestamp
+                }));
                 STATE.imageExpirySeconds = data.image_expiry_seconds || null;
                 renderGeneratedResults();
 

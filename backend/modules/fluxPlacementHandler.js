@@ -149,19 +149,26 @@ async function ensureSupabaseBucket() {
 
 async function logImageMetadata(userId, filePath, fileUrl, expiresAt) {
   try {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('image_metadata')
       .insert({
         user_id: userId,
         file_path: filePath,
         file_url: fileUrl,
         expires_at: expiresAt || null
-      });
+      })
+      .select();
     if (error) {
-      console.warn(`[METADATA] Failed to log image upload: ${error.message}`);
+      console.error(`[METADATA] Failed to log image upload: ${error.message}`, error);
+      // If table doesn't exist, log a helpful message
+      if (error.message.includes('relation') && error.message.includes('does not exist')) {
+        console.error(`[METADATA] ERROR: The 'image_metadata' table does not exist! Please run the CREATE TABLE statement in Supabase SQL Editor.`);
+      }
+    } else {
+      console.log(`[METADATA] Successfully logged image: ${filePath} for user ${userId}`);
     }
   } catch (err) {
-    console.warn(`[METADATA] Exception logging image: ${err.message}`);
+    console.error(`[METADATA] Exception logging image: ${err.message}`, err);
   }
 }
 

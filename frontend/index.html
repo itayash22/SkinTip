@@ -852,6 +852,7 @@
 
             const togglePanBtn = document.getElementById('togglePanBtn');
             let panMode = false;
+            let imageExpiryInterval = null;
 
             function setPanModeUI(enabled) {
               panMode = !!enabled;
@@ -862,6 +863,76 @@
               if (window.drawing?.setPanMode) {
                 drawing.setPanMode(panMode);
               }
+            }
+
+            function getGeneratedImageUrls() {
+                return (STATE.generatedImages || [])
+                    .map((entry) => typeof entry === 'string' ? entry : entry?.url)
+                    .filter(Boolean);
+            }
+
+            function getImageExpiryTimestamp(entry) {
+                if (entry && typeof entry === 'object' && entry.expires_at) {
+                    const ts = Date.parse(entry.expires_at);
+                    if (!Number.isNaN(ts)) {
+                        return ts;
+                    }
+                }
+                if (STATE.imageExpirySeconds) {
+                    return Date.now() + STATE.imageExpirySeconds * 1000;
+                }
+                return null;
+            }
+
+            function startImageExpiryCountdowns() {
+                if (imageExpiryInterval) {
+                    clearInterval(imageExpiryInterval);
+                    imageExpiryInterval = null;
+                }
+                const countdownEls = document.querySelectorAll('.image-expiry-countdown');
+                if (!countdownEls.length) return;
+
+                const update = () => {
+                    const now = Date.now();
+                    countdownEls.forEach((el) => {
+                        const expireAt = Number(el.dataset.expireAt);
+                        if (!expireAt) return;
+                        const remaining = Math.max(0, Math.ceil((expireAt - now) / 1000));
+                        el.textContent = remaining;
+                        if (remaining <= 0) {
+                            el.closest('.image-expiry-warning')?.classList.add('expired');
+                        }
+                    });
+                };
+
+                update();
+                imageExpiryInterval = setInterval(update, 1000);
+            }
+
+            function renderGeneratedResults() {
+                const resultsGrid = document.querySelector('.results-grid');
+                if (!resultsGrid) return;
+                const now = Date.now();
+                resultsGrid.innerHTML = (STATE.generatedImages || []).map((entry, index) => {
+                    const imageUrl = typeof entry === 'string' ? entry : entry?.url;
+                    if (!imageUrl) return '';
+                    const expireAt = getImageExpiryTimestamp(entry);
+                    const countdownAttr = expireAt ? `data-expire-at="${expireAt}"` : '';
+                    const countdownInitial = expireAt ? Math.max(0, Math.ceil((expireAt - now) / 1000)) : '';
+                    const warning = expireAt
+                        ? `<p class="image-expiry-warning">This image will be deleted from our DB in <span class="image-expiry-countdown" ${countdownAttr}>${countdownInitial}</span> seconds. If you want to keep this pic better save it on your device.</p>`
+                        : '';
+                    return `
+                        <div class="result-item">
+                            <img src="${imageUrl}" alt="Generated tattoo ${index + 1}">
+                            <div class="result-actions">
+                                <button class="btn btn-sm btn-outline" onclick="window.open('${imageUrl}', '_blank')">View Full Size</button>
+                            </div>
+                            ${warning}
+                        </div>
+                    `;
+                }).join('');
+                startImageExpiryCountdowns();
             }
 
             togglePanBtn?.addEventListener('click', () => {
@@ -923,6 +994,11 @@
                 STATE.currentImage = null;
                 STATE.currentMask = null;
                 STATE.generatedImages = [];
+                STATE.imageExpirySeconds = null;
+                if (imageExpiryInterval) {
+                    clearInterval(imageExpiryInterval);
+                    imageExpiryInterval = null;
+                }
 
                 utils.updateTokenDisplay();
             }
@@ -1249,16 +1325,9 @@
 
                 utils.hideLoading();
 
-                STATE.generatedImages = data.images;
-                const resultsGrid = document.querySelector('.results-grid');
-                resultsGrid.innerHTML = STATE.generatedImages.map((imageUrl, index) => `
-                    <div class="result-item">
-                        <img src="${imageUrl}" alt="Generated tattoo ${index + 1}">
-                        <div class="result-actions">
-                            <button class="btn btn-sm btn-outline" onclick="window.open('${imageUrl}', '_blank')">View Full Size</button>
-                        </div>
-                    </div>
-                `).join('');
+                STATE.generatedImages = data.images || [];
+                STATE.imageExpirySeconds = data.image_expiry_seconds || null;
+                renderGeneratedResults();
 
                 resultsSection.style.display = 'block';
                 artistsSection.style.display = 'block';
@@ -1273,7 +1342,7 @@
                     const artistName = STATE.selectedStencil.artist.name;
                     const messageBody = `Hi ${artistName},\n\nI got this stunning AI tattoo from your catalog. Can you share more details about yourself and the tattoo?\n\nThanks!`;
                     const previewsHeader = `\n\nHere are the previews I generated:\n`;
-                    const imageUrlsText = STATE.generatedImages.join('\n\n');
+                    const imageUrlsText = getGeneratedImageUrls().join('\n\n');
                     const fullMessage = messageBody + previewsHeader + imageUrlsText;
 
                     whatsappLink.href = `https://wa.me/${STATE.selectedStencil.artist.whatsapp}?text=${encodeURIComponent(fullMessage)}`;
@@ -1306,7 +1375,8 @@
 
         // Social Share to Instagram
         shareToInstagramBtn?.addEventListener('click', () => {
-            if (!STATE.generatedImages || STATE.generatedImages.length === 0) {
+            const urls = getGeneratedImageUrls();
+            if (!urls.length) {
                 utils.showError('No images generated yet to share.');
                 return;
             }
@@ -1316,12 +1386,13 @@
 
         // Download All button
         document.getElementById('downloadAllBtn')?.addEventListener('click', async () => {
-            if (!STATE.generatedImages || STATE.generatedImages.length === 0) {
+            const urls = getGeneratedImageUrls();
+            if (!urls.length) {
                 utils.showError('No images generated to download.');
                 return;
             }
             utils.showLoading('Preparing images for download...');
-            for (const imageUrl of STATE.generatedImages) {
+            for (const imageUrl of urls) {
                 try {
                     const response = await fetch(imageUrl);
                     const blob = await response.blob();

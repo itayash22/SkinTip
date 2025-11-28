@@ -23,7 +23,8 @@ const STATE = {
     tattooAngle: 0, // NEW: Stores the rotation angle in degrees
     currentImage: null, // Stores the user's uploaded skin photo (File object)
     currentMask: null, // Stores the Base64 of the drawing mask
-    generatedImages: [], // Stores URLs of generated tattoo images from Flux
+    generatedImages: [], // Stores objects for generated tattoo images (url + ttl)
+    imageExpirySeconds: null,
     currentArtists: [], // Stores loaded artist data
     currentSlide: 0 // For artist portfolio carousel
 };

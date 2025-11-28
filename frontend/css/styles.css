@@ -487,6 +487,21 @@ body {
     box-sizing: border-box;
 }
 
+.image-expiry-warning {
+    font-size: 0.85rem;
+    color: #92400e;
+    padding: 0 1rem 1rem;
+    text-align: left;
+}
+
+.image-expiry-warning span {
+    font-weight: 600;
+}
+
+.image-expiry-warning.expired {
+    color: #9f1239;
+}
+
 .results-actions {
     display: flex;
     justify-content: center;

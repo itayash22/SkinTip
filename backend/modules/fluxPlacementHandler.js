@@ -68,6 +68,10 @@ const FLUX_KONTEXT_ENDPOINTS = (process.env.FLUX_KONTEXT_ENDPOINTS || 'https://a
   .map(e => e.trim())
   .filter(Boolean);
 
+const IMAGE_TTL_SECONDS = Number(process.env.IMAGE_TTL_SECONDS || '120');
+const TEMP_IMAGE_TTL_MS = IMAGE_TTL_SECONDS * 1000;
+const deletionTimers = new Map();
+
 // -----------------------------
 // Small helpers
 // -----------------------------
@@ -129,6 +133,35 @@ async function ensureSupabaseBucket() {
   return ensureBucketPromise;
 }
 
+function scheduleImageDeletion(filePath, label = 'image', ttlMs = TEMP_IMAGE_TTL_MS) {
+  if (!filePath || !ttlMs || ttlMs <= 0) return;
+
+  if (deletionTimers.has(filePath)) {
+    clearTimeout(deletionTimers.get(filePath));
+  }
+
+  console.log(`[TTL] Scheduled deletion for ${filePath} in ${Math.round(ttlMs / 1000)} seconds (${label}).`);
+
+  const timer = setTimeout(() => {
+    deletionTimers.delete(filePath);
+    (async () => {
+      try {
+        await ensureSupabaseBucket();
+        const { error } = await supabase.storage.from(SUPABASE_STORAGE_BUCKET).remove([filePath]);
+        if (error) {
+          console.warn(`[TTL] Failed to delete ${filePath}: ${error.message}`);
+        } else {
+          console.log(`[TTL] Deleted ${filePath} after TTL (${label}).`);
+        }
+      } catch (err) {
+        console.warn(`[TTL] Exception while deleting ${filePath}: ${err.message}`);
+      }
+    })();
+  }, ttlMs);
+
+  deletionTimers.set(filePath, timer);
+}
+
 async function uploadDebug(imageBuffer, userId, name, contentType = 'image/png', folder = 'debug') {
   try {
     await ensureSupabaseBucket();
@@ -140,6 +173,7 @@ async function uploadDebug(imageBuffer, userId, name, contentType = 'image/png',
     const { data: pub } = supabase.storage.from(SUPABASE_STORAGE_BUCKET).getPublicUrl(filePath);
     console.log('[UPLOAD] final URL for client:', pub.publicUrl);
     console.log(`[DEBUG_UPLOAD] ${fileName} => ${pub.publicUrl}`);
+    scheduleImageDeletion(filePath, 'debug');
     return pub.publicUrl;
   } catch (e) {
     console.warn('[DEBUG_UPLOAD] failed:', e.message);
@@ -456,81 +490,6 @@ const fluxPlacementHandler = {
     }
   },
 
-  /**
-   * Cleanup function: Delete images older than 5 minutes for a user
-   * Only cleans files in the root user folder (not subfolders like 'debug')
-   */
-  cleanupOldImages: async (userId, maxAgeMinutes = 5) => {
-    try {
-      await ensureSupabaseBucket();
-      const userFolder = `${userId}/`;
-      
-      // List all files in the user's folder
-      const { data: files, error: listError } = await supabase.storage
-        .from(SUPABASE_STORAGE_BUCKET)
-        .list(userFolder, {
-          limit: 1000,
-          offset: 0
-        });
-
-      if (listError) {
-        console.warn('[CLEANUP] Error listing files:', listError.message);
-        return;
-      }
-
-      if (!files || files.length === 0) {
-        return; // No files to clean up
-      }
-
-      const now = new Date();
-      const maxAgeMs = maxAgeMinutes * 60 * 1000;
-      const filesToDelete = [];
-
-      // Check each file's creation time
-      for (const file of files) {
-        // Skip subfolders (folders don't have an 'id' field, only files do)
-        if (!file.id) continue;
-        
-        // Supabase Storage list() returns files with 'created_at' as ISO string
-        // or we can use 'updated_at' as fallback
-        const fileCreatedAt = file.created_at || file.updated_at;
-        if (!fileCreatedAt) {
-          // If no timestamp available, skip this file
-          continue;
-        }
-        
-        const fileDate = new Date(fileCreatedAt);
-        if (isNaN(fileDate.getTime())) {
-          // Invalid date, skip
-          continue;
-        }
-        
-        const ageMs = now - fileDate;
-
-        if (ageMs > maxAgeMs) {
-          const filePath = `${userFolder}${file.name}`;
-          filesToDelete.push(filePath);
-        }
-      }
-
-      // Delete old files
-      if (filesToDelete.length > 0) {
-        const { error: deleteError } = await supabase.storage
-          .from(SUPABASE_STORAGE_BUCKET)
-          .remove(filesToDelete);
-
-        if (deleteError) {
-          console.warn('[CLEANUP] Error deleting old files:', deleteError.message);
-        } else {
-          console.log(`[CLEANUP] Deleted ${filesToDelete.length} old image(s) older than ${maxAgeMinutes} minutes for user ${userId}`);
-        }
-      }
-    } catch (error) {
-      console.warn('[CLEANUP] Cleanup failed:', error.message);
-      // Don't throw - cleanup failures shouldn't break the upload process
-    }
-  },
-
   uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '', contentType = 'image/png') => {
     const filePath = folder ? `${userId}/${folder}/${fileName}` : `${userId}/${fileName}`;
     await ensureSupabaseBucket();
@@ -543,13 +502,13 @@ const fluxPlacementHandler = {
     const { data: pub } = supabase.storage.from(SUPABASE_STORAGE_BUCKET).getPublicUrl(filePath);
     if (!pub?.publicUrl) throw new Error('Failed to get public URL for uploaded image.');
     console.log('Image uploaded to Supabase:', pub.publicUrl);
-    
-    // Cleanup old images after successful upload (non-blocking)
-    fluxPlacementHandler.cleanupOldImages(userId, 5).catch(err => {
-      console.warn('[CLEANUP] Background cleanup error:', err.message);
-    });
-    
-    return pub.publicUrl;
+    scheduleImageDeletion(filePath, 'result');
+    const expiresAt = TEMP_IMAGE_TTL_MS > 0 ? new Date(Date.now() + TEMP_IMAGE_TTL_MS).toISOString() : null;
+    return {
+      url: pub.publicUrl,
+      path: filePath,
+      expires_at: expiresAt
+    };
   },
 
   /**
@@ -876,8 +835,8 @@ const fluxPlacementHandler = {
           const buf = Buffer.from(imgRes.data);
           const watermarked = await fluxPlacementHandler.applyWatermark(buf);
           const fileName = `tattoo-${uuidv4()}.png`;
-          const publicUrl = await fluxPlacementHandler.uploadToSupabaseStorage(watermarked, fileName, userId, '', 'image/png');
-          generatedImageUrls.push(publicUrl);
+          const uploadResult = await fluxPlacementHandler.uploadToSupabaseStorage(watermarked, fileName, userId, '', 'image/png');
+          generatedImageUrls.push(uploadResult);
           done = true;
         } else if (data.status === 'Error' || data.status === 'Content Moderated') {
           console.warn('FLUX polling end:', data.status, data.details || '');
@@ -895,3 +854,4 @@ const fluxPlacementHandler = {
 };
 
 export default fluxPlacementHandler;
+export { IMAGE_TTL_SECONDS };

@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-08-21_SKIN_REALISM_TUNING');
+console.log('FLUX_HANDLER_VERSION: 2025-11-28_FLUX2_MIGRATION');
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -25,9 +25,9 @@ const FLUX_API_KEY = process.env.FLUX_API_KEY;
 // Behavior flags + knobs
 // -----------------------------
 const ADAPTIVE_SCALE_ENABLED  = (process.env.ADAPTIVE_SCALE_ENABLED  ?? 'true').toLowerCase() === 'true';
-const ADAPTIVE_ENGINE_ENABLED = (process.env.ADAPTIVE_ENGINE_ENABLED ?? 'true').toLowerCase() === 'true';
+const ADAPTIVE_ENGINE_ENABLED = (process.env.ADAPTIVE_ENGINE_ENABLED ?? 'false').toLowerCase() === 'true'; // Disabled: kontext is only working engine
 const GLOBAL_SCALE_UP         = Number(process.env.MODEL_SCALE_UP || '1.5');          // applied always
-const FLUX_ENGINE_DEFAULT     = (process.env.FLUX_ENGINE || 'fill').toLowerCase(); // prefer fill for inpainting
+const FLUX_ENGINE_DEFAULT     = (process.env.FLUX_ENGINE || 'kontext').toLowerCase(); // kontext is the only working BFL endpoint as of Nov 2025
 
 // Engine-specific size bias to counter model shrink
 const ENGINE_KONTEXT_SIZE_BIAS = Number(process.env.ENGINE_KONTEXT_SIZE_BIAS || '1.08');
@@ -50,20 +50,34 @@ const BAKE_SOFTLIGHT_OPACITY   = Number(process.env.BAKE_SOFTLIGHT_OPACITY || '0
 const BAKE_MULTIPLY_OPACITY    = Number(process.env.BAKE_MULTIPLY_OPACITY  || '0.12');
 
 // FLUX parameters for tattoo inpainting
-// Moderate fidelity + guidance let Flux reshape the tattoo without destroying the skin.
-const ENGINE_KONTEXT_FIDELITY  = Number(process.env.ENGINE_KONTEXT_FIDELITY  || '0.60');
-const ENGINE_KONTEXT_GUIDANCE  = Number(process.env.ENGINE_KONTEXT_GUIDANCE  || '3.5');
-const ENGINE_FILL_GUIDANCE     = Number(process.env.ENGINE_FILL_GUIDANCE     || '3.0');
+// Higher fidelity (0.75-0.90) preserves more of the original stencil design
+// Lower guidance (2.0-3.5) allows natural skin integration without over-processing
+const ENGINE_KONTEXT_FIDELITY  = Number(process.env.ENGINE_KONTEXT_FIDELITY  || '0.82');
+const ENGINE_KONTEXT_GUIDANCE  = Number(process.env.ENGINE_KONTEXT_GUIDANCE  || '2.8');
+const ENGINE_FILL_GUIDANCE     = Number(process.env.ENGINE_FILL_GUIDANCE     || '2.5'); // Kept for future use
 
 const FLUX_STEPS = Number(process.env.FLUX_STEPS || '50');
 const MASK_FEATHER_SIGMA = Number(process.env.MASK_FEATHER_SIGMA || '0.7');
 const MASK_CORE_THRESHOLD = Number(process.env.MASK_CORE_THRESHOLD || '210');
 
-const FLUX_FILL_ENDPOINTS = (process.env.FLUX_FILL_ENDPOINTS || 'https://api.bfl.ai/v1/flux-fill-pro,https://api.bfl.ai/v1/flux-fill')
+// BFL API Endpoints - as of Nov 2025:
+// - flux-fill-pro and flux-fill return 404 (deprecated or access-restricted)
+// - flux-kontext-pro is the only working endpoint for image editing
+// - FLUX.2 endpoints (flux-pro-1.1-ultra, etc.) may become available later
+const FLUX_KONTEXT_ENDPOINTS = (process.env.FLUX_KONTEXT_ENDPOINTS || 'https://api.bfl.ai/v1/flux-kontext-pro')
   .split(',')
   .map(e => e.trim())
   .filter(Boolean);
-const FLUX_KONTEXT_ENDPOINTS = (process.env.FLUX_KONTEXT_ENDPOINTS || 'https://api.bfl.ai/v1/flux-kontext-pro')
+
+// Future FLUX.2 endpoints - set via env var when BFL enables them for your account
+// Expected: flux-pro-1.1-ultra, flux-pro-1.1, flux-dev-1.1
+const FLUX2_ENDPOINTS = (process.env.FLUX2_ENDPOINTS || '')
+  .split(',')
+  .map(e => e.trim())
+  .filter(Boolean);
+
+// Legacy fill endpoints - kept for reference but disabled by default (return 404)
+const FLUX_FILL_ENDPOINTS = (process.env.FLUX_FILL_ENDPOINTS || '')
   .split(',')
   .map(e => e.trim())
   .filter(Boolean);
@@ -706,15 +720,25 @@ const fluxPlacementHandler = {
     ];
 
     const fluxHeaders = { 'Content-Type': 'application/json', 'x-key': fluxApiKey || FLUX_API_KEY };
+    
+    // Build available endpoints - prioritize FLUX.2 if configured, then kontext, then fill (legacy)
     const engineEndpoints = {
-      fill: FLUX_FILL_ENDPOINTS,
-      kontext: FLUX_KONTEXT_ENDPOINTS
+      flux2: FLUX2_ENDPOINTS,
+      kontext: FLUX_KONTEXT_ENDPOINTS,
+      fill: FLUX_FILL_ENDPOINTS
     };
 
-    const preferredEngine = engine;
-    const engineAttemptOrder = preferredEngine === 'fill'
-      ? ['fill', 'kontext']
-      : [preferredEngine, preferredEngine === 'kontext' ? 'fill' : 'kontext'];
+    // Determine engine attempt order based on what's available
+    const engineAttemptOrder = [];
+    if (FLUX2_ENDPOINTS.length > 0) engineAttemptOrder.push('flux2');
+    if (FLUX_KONTEXT_ENDPOINTS.length > 0) engineAttemptOrder.push('kontext');
+    if (FLUX_FILL_ENDPOINTS.length > 0) engineAttemptOrder.push('fill');
+    
+    if (engineAttemptOrder.length === 0) {
+      throw new Error('No FLUX API endpoints configured. Set FLUX_KONTEXT_ENDPOINTS or FLUX2_ENDPOINTS.');
+    }
+    
+    const preferredEngine = engineAttemptOrder[0]; // Use first available
 
     // Use the baked guide as the driving input
     const inputBase64 = guideComposite.toString('base64');          // RAW b64 (no data URI)
@@ -737,31 +761,35 @@ const fluxPlacementHandler = {
 
       const prompt = `${basePrompt} ${variationDescriptors[i % variationDescriptors.length]}`;
 
-      // Guidance / fidelity bands tuned for realism
-      const fillGuidanceBand = [
-        [1.9, 2.4],
-        [2.2, 2.7],
-        [2.4, 2.9]
-      ][i % 3];
-      const variedFillGuidance = randomInRange(fillGuidanceBand[0], fillGuidanceBand[1]);
-
+      // Guidance / fidelity bands tuned for realistic tattoo rendering
+      // Higher fidelity = more faithful to original stencil
+      // Lower guidance = more natural skin integration, less "AI processed" look
+      
+      // Kontext-optimized bands (primary engine)
       const kontextGuidanceBand = [
-        [2.2, 2.7],
-        [2.5, 3.0],
-        [2.8, 3.3]
+        [2.0, 2.5],   // Variation 1: Most natural, lowest intervention
+        [2.3, 2.8],   // Variation 2: Balanced
+        [2.6, 3.1]    // Variation 3: Slightly more stylized
       ][i % 3];
       const variedKontextGuidance = randomInRange(kontextGuidanceBand[0], kontextGuidanceBand[1]);
       
+      // High fidelity to preserve stencil design
       const fidelityBand = [
-        [0.86, 0.92],
-        [0.89, 0.95],
-        [0.92, 0.97]
+        [0.78, 0.85],  // Variation 1: Some creative freedom
+        [0.82, 0.88],  // Variation 2: Balanced preservation
+        [0.85, 0.92]   // Variation 3: Maximum stencil fidelity
       ][i % 3];
       const variedKontextFidelity = randomInRange(fidelityBand[0], fidelityBand[1]);
       
-      const variedSafetyTolerance = Math.round(clamp(2 + (i % 3) * 0.3 + (Math.random() - 0.5) * 0.2, 1.5, 2.5));
+      // Legacy fill guidance (kept for future use)
+      const variedFillGuidance = randomInRange(2.0, 2.8);
+      
+      // FLUX.2 guidance (when available) - optimized for multi-reference
+      const variedFlux2Guidance = randomInRange(3.0, 4.0);
+      
+      const variedSafetyTolerance = Math.round(clamp(2 + (i % 3) * 0.3 + (Math.random() - 0.5) * 0.2, 2, 3));
 
-      console.log(`[VARIATION ${i + 1}] seed=${seed} fillGuidance=${variedFillGuidance.toFixed(2)} | kontextGuidance=${variedKontextGuidance.toFixed(2)} fidelity=${variedKontextFidelity.toFixed(3)} safety=${variedSafetyTolerance.toFixed(1)}`);
+      console.log(`[VARIATION ${i + 1}] seed=${seed} guidance=${variedKontextGuidance.toFixed(2)} fidelity=${variedKontextFidelity.toFixed(3)} safety=${variedSafetyTolerance}`);
 
       let task = null;
       let engineUsed = null;
@@ -771,6 +799,7 @@ const fluxPlacementHandler = {
         const endpoints = engineEndpoints[engineCandidate] || [];
         if (!endpoints.length) continue;
 
+        // Build payload based on engine type
         const payload = {
           prompt,
           negative_prompt: negativePrompt,
@@ -778,14 +807,21 @@ const fluxPlacementHandler = {
           mask_image: maskB64,
           output_format: 'png',
           n: 1,
-          guidance_scale: engineCandidate === 'fill' ? variedFillGuidance : variedKontextGuidance,
           prompt_upsampling: true,
           safety_tolerance: variedSafetyTolerance,
           seed,
           steps: FLUX_STEPS
         };
+        
+        // Engine-specific parameters
         if (engineCandidate === 'kontext') {
+          payload.guidance_scale = variedKontextGuidance;
           payload.fidelity = variedKontextFidelity;
+        } else if (engineCandidate === 'flux2') {
+          payload.guidance_scale = variedFlux2Guidance;
+          // FLUX.2 may support additional params like reference images - add when documented
+        } else if (engineCandidate === 'fill') {
+          payload.guidance_scale = variedFillGuidance;
         }
 
         let endpointHit = false;
@@ -802,11 +838,11 @@ const fluxPlacementHandler = {
             const status = e.response?.status;
             const detail = e.response?.data?.detail || e.response?.data?.message;
             console.warn(`[FLUX] POST failed via ${endpointUrl}:`, detail || e.message);
-            if (status === 404 && engineCandidate === 'fill') {
-              console.warn('[FLUX] fill endpoint unavailable, trying fallback...');
+            if (status === 404) {
+              console.warn(`[FLUX] ${engineCandidate} endpoint returned 404, trying next...`);
               continue;
             }
-            // Non-404 or non-fill errors should break to try the next engine option.
+            // Non-404 errors should break to try the next engine option.
             break;
           }
         }

@@ -82,7 +82,7 @@ const FLUX_FILL_ENDPOINTS = (process.env.FLUX_FILL_ENDPOINTS || '')
   .map(e => e.trim())
   .filter(Boolean);
 
-const IMAGE_TTL_SECONDS = Number(process.env.IMAGE_TTL_SECONDS || '120');
+const IMAGE_TTL_SECONDS = Number(process.env.IMAGE_TTL_SECONDS || '300'); // 5 minutes default
 const TEMP_IMAGE_TTL_MS = IMAGE_TTL_SECONDS * 1000;
 const deletionTimers = new Map();
 

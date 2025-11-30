@@ -37,6 +37,7 @@
             <div class="nav-menu">
                 <span id="userInfo" class="user-info"></span>
                 <button id="logoutBtn" class="btn btn-outline" style="display:none;">Logout</button>
+                <button id="deleteAccountBtn" class="btn btn-danger" style="display:none; margin-left: 0.5rem;">Delete Account</button>
             </div>
         </div>
     </nav>
@@ -210,6 +211,29 @@
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary" id="skinCancelBtn">Cancel</button>
                     <button type="button" class="btn btn-primary" id="skinConfirmBtn">Continue</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="deleteAccountModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="auth-container">
+                <h2>Delete Account</h2>
+                <p><strong>Warning: This action cannot be undone.</strong></p>
+                <p>Deleting your account will permanently remove:</p>
+                <ul>
+                    <li>Your user account</li>
+                    <li>All uploaded images</li>
+                    <li>All generated tattoo previews</li>
+                    <li>Your token balance and transaction history</li>
+                    <li>All activity logs</li>
+                </ul>
+                <p><strong>Note:</strong> Due to third-party processing (Black Forest Labs), some images may persist in backups or AI training data and cannot be fully deleted.</p>
+                <p>Are you sure you want to delete your account?</p>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="deleteAccountCancelBtn">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="deleteAccountConfirmBtn">Yes, Delete My Account</button>
                 </div>
             </div>
         </div>
@@ -1438,6 +1462,74 @@
             document.getElementById('newDesignBtn')?.addEventListener('click', () => {
                 resetUI();
                 document.getElementById('styleSelectionSection').scrollIntoView({ behavior: 'smooth' });
+            });
+
+            // Delete Account functionality
+            const deleteAccountBtn = document.getElementById('deleteAccountBtn');
+            const deleteAccountModal = document.getElementById('deleteAccountModal');
+            const deleteAccountConfirmBtn = document.getElementById('deleteAccountConfirmBtn');
+            const deleteAccountCancelBtn = document.getElementById('deleteAccountCancelBtn');
+
+            // Show delete account modal
+            deleteAccountBtn?.addEventListener('click', () => {
+                if (deleteAccountModal) {
+                    deleteAccountModal.style.display = 'flex';
+                }
+            });
+
+            // Cancel deletion
+            deleteAccountCancelBtn?.addEventListener('click', () => {
+                if (deleteAccountModal) {
+                    deleteAccountModal.style.display = 'none';
+                }
+            });
+
+            // Close modal when clicking outside
+            deleteAccountModal?.addEventListener('click', (e) => {
+                if (e.target === deleteAccountModal) {
+                    deleteAccountModal.style.display = 'none';
+                }
+            });
+
+            // Confirm account deletion
+            deleteAccountConfirmBtn?.addEventListener('click', async () => {
+                if (!STATE.token) {
+                    utils.showError('You must be logged in to delete your account.');
+                    return;
+                }
+
+                try {
+                    utils.showLoading('Deleting your account...');
+                    const response = await fetch(`${CONFIG.API_URL}/account/delete`, {
+                        method: 'DELETE',
+                        headers: {
+                            'Authorization': `Bearer ${STATE.token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    const data = await response.json();
+                    utils.hideLoading();
+
+                    if (!response.ok) {
+                        throw new Error(data.error || 'Failed to delete account');
+                    }
+
+                    // Success - clear everything and redirect
+                    localStorage.removeItem('jwt_token');
+                    localStorage.removeItem('user_info');
+                    STATE.user = null;
+                    STATE.token = null;
+                    
+                    utils.showSuccess('Your account has been successfully deleted.');
+                    setTimeout(() => {
+                        window.location.href = 'welcome.html';
+                    }, 2000);
+                } catch (error) {
+                    utils.hideLoading();
+                    console.error('Delete account error:', error);
+                    utils.showError(error.message || 'Failed to delete account. Please try again.');
+                }
             });
 
             resetUI();

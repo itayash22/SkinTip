@@ -41,6 +41,7 @@ const auth = {
         
         // These elements are in index.html, but auth.js needs to manage them globally
         auth.logoutBtn = document.getElementById('logoutBtn');
+        auth.deleteAccountBtn = document.getElementById('deleteAccountBtn');
         auth.userInfoSpan = document.getElementById('userInfo'); // Make sure this reference is solid
 
         // Initial UI update for the top-right area (based on loaded state)
@@ -50,6 +51,9 @@ const auth = {
         }
         if (auth.logoutBtn) {
             auth.logoutBtn.style.display = STATE.token ? 'block' : 'none'; // Show/hide based on token presence
+        }
+        if (auth.deleteAccountBtn) {
+            auth.deleteAccountBtn.style.display = STATE.token ? 'block' : 'none'; // Show/hide based on token presence
         }
 
         console.log('Auth init function started.');
@@ -156,6 +160,9 @@ const auth = {
         }
         if (auth.logoutBtn) { // Use auth property
             auth.logoutBtn.style.display = 'none';
+        }
+        if (auth.deleteAccountBtn) {
+            auth.deleteAccountBtn.style.display = 'none';
         }
         // Display login modal with a clear message (assuming showModal works for this)
         this.showModal(); // 'this' refers to the auth object
@@ -276,6 +283,7 @@ const auth = {
         // Use the already referenced elements (auth.userInfoSpan, auth.logoutBtn)
         const userInfoSpan = auth.userInfoSpan;
         const logoutBtn = auth.logoutBtn;
+        const deleteAccountBtn = auth.deleteAccountBtn;
         // These elements are on welcome.html, so still get them here
         const loginBtn = document.getElementById('loginBtn'); 
         const registerBtn = document.getElementById('registerBtn');
@@ -288,6 +296,9 @@ const auth = {
             }
             if (logoutBtn) {
                 logoutBtn.style.display = 'block'; // Show logout button
+            }
+            if (deleteAccountBtn) {
+                deleteAccountBtn.style.display = 'block'; // Show delete account button
             }
             // Hide welcome page buttons if on welcome.html and logged in
             const currentPage = window.location.pathname.split('/').pop();
@@ -303,6 +314,9 @@ const auth = {
             }
             if (logoutBtn) {
                 logoutBtn.style.display = 'none'; // Hide logout button
+            }
+            if (deleteAccountBtn) {
+                deleteAccountBtn.style.display = 'none'; // Hide delete account button
             }
             // Show welcome page buttons if on welcome.html and logged out
             const currentPage = window.location.pathname.split('/').pop();

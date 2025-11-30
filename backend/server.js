@@ -540,6 +540,130 @@ app.post('/api/log-event', authenticateToken, async (req, res) => {
     }
 });
 
+app.delete('/api/account/delete', authenticateToken, async (req, res) => {
+    const userId = req.user.id;
+    const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generated-tattoos';
+
+    try {
+        console.log(`[DELETE ACCOUNT] Starting deletion for user ${userId}`);
+
+        // 1. Delete all user's images from Storage
+        try {
+            const { data: files, error: listError } = await supabase.storage
+                .from(SUPABASE_STORAGE_BUCKET)
+                .list(userId, { limit: 1000, offset: 0, sortBy: { column: 'name', order: 'asc' } });
+
+            if (!listError && files && files.length > 0) {
+                // Get all file paths (including subfolders)
+                const filePaths = [];
+                const processFiles = (folder, prefix = '') => {
+                    folder.forEach(file => {
+                        if (file.id) {
+                            // It's a file
+                            filePaths.push(prefix ? `${prefix}/${file.name}` : file.name);
+                        }
+                    });
+                };
+
+                // Process root files
+                processFiles(files.filter(f => f.id), '');
+
+                // Process subfolders (debug folder, etc.)
+                for (const item of files) {
+                    if (!item.id) {
+                        // It's a folder
+                        const { data: subFiles } = await supabase.storage
+                            .from(SUPABASE_STORAGE_BUCKET)
+                            .list(`${userId}/${item.name}`, { limit: 1000 });
+                        if (subFiles) {
+                            processFiles(subFiles, item.name);
+                        }
+                    }
+                }
+
+                if (filePaths.length > 0) {
+                    const pathsToDelete = filePaths.map(path => `${userId}/${path}`).concat([userId]); // Also delete folder
+                    const { error: deleteError } = await supabase.storage
+                        .from(SUPABASE_STORAGE_BUCKET)
+                        .remove(pathsToDelete);
+                    
+                    if (deleteError) {
+                        console.warn(`[DELETE ACCOUNT] Storage deletion warning: ${deleteError.message}`);
+                    } else {
+                        console.log(`[DELETE ACCOUNT] Deleted ${filePaths.length} files from Storage`);
+                    }
+                }
+            } else if (listError) {
+                console.warn(`[DELETE ACCOUNT] Storage list warning: ${listError.message}`);
+            }
+        } catch (storageErr) {
+            console.warn(`[DELETE ACCOUNT] Storage deletion exception: ${storageErr.message}`);
+        }
+
+        // 2. Delete image_metadata records
+        try {
+            const { error: metadataError } = await supabase
+                .from('image_metadata')
+                .delete()
+                .eq('user_id', userId);
+            if (metadataError) {
+                console.warn(`[DELETE ACCOUNT] image_metadata deletion warning: ${metadataError.message}`);
+            } else {
+                console.log(`[DELETE ACCOUNT] Deleted image_metadata records`);
+            }
+        } catch (metadataErr) {
+            console.warn(`[DELETE ACCOUNT] image_metadata deletion exception: ${metadataErr.message}`);
+        }
+
+        // 3. Delete user_events
+        try {
+            const { error: eventsError } = await supabase
+                .from('user_events')
+                .delete()
+                .eq('user_id', userId);
+            if (eventsError) {
+                console.warn(`[DELETE ACCOUNT] user_events deletion warning: ${eventsError.message}`);
+            } else {
+                console.log(`[DELETE ACCOUNT] Deleted user_events records`);
+            }
+        } catch (eventsErr) {
+            console.warn(`[DELETE ACCOUNT] user_events deletion exception: ${eventsErr.message}`);
+        }
+
+        // 4. Delete transactions
+        try {
+            const { error: transactionsError } = await supabase
+                .from('transactions')
+                .delete()
+                .eq('user_id', userId);
+            if (transactionsError) {
+                console.warn(`[DELETE ACCOUNT] transactions deletion warning: ${transactionsError.message}`);
+            } else {
+                console.log(`[DELETE ACCOUNT] Deleted transactions records`);
+            }
+        } catch (transactionsErr) {
+            console.warn(`[DELETE ACCOUNT] transactions deletion exception: ${transactionsErr.message}`);
+        }
+
+        // 5. Delete user account
+        const { error: userError } = await supabase
+            .from('users')
+            .delete()
+            .eq('id', userId);
+
+        if (userError) {
+            console.error(`[DELETE ACCOUNT] User deletion error: ${userError.message}`);
+            return res.status(500).json({ error: 'Failed to delete user account.' });
+        }
+
+        console.log(`[DELETE ACCOUNT] Successfully deleted account for user ${userId}`);
+        res.json({ success: true, message: 'Account and all associated data have been deleted.' });
+    } catch (error) {
+        console.error(`[DELETE ACCOUNT] Exception: ${error.message}`, error);
+        res.status(500).json({ error: 'An error occurred while deleting your account.' });
+    }
+});
+
 // Error handling middleware (catches errors from previous middleware/routes)
 app.use((error, req, res, next) => {
     if (error instanceof multer.MulterError) {

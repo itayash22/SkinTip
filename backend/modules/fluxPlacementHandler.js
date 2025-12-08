@@ -838,8 +838,8 @@ const fluxPlacementHandler = {
       
       const variationStyles = [
         { guidance: [1.8, 2.2], fidelity: [0.88, 0.94], name: 'Fresh ink (closest to stencil)' },
-        { guidance: [2.5, 3.0], fidelity: [0.75, 0.82], name: 'Healed realistic' },
-        { guidance: [3.2, 3.8], fidelity: [0.62, 0.72], name: 'Artistic interpretation' }
+        { guidance: [2.5, 3.0], fidelity: [0.82, 0.88], name: 'Healed realistic' },
+        { guidance: [3.2, 3.8], fidelity: [0.75, 0.82], name: 'Artistic interpretation' }
       ];
       
       const style = variationStyles[i % 3];
@@ -872,7 +872,7 @@ const fluxPlacementHandler = {
           mask_image: maskB64,
           output_format: 'png',
           n: 1,
-          prompt_upsampling: true,
+          prompt_upsampling: false,
           safety_tolerance: variedSafetyTolerance,
           seed,
           steps: FLUX_STEPS

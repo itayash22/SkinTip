@@ -602,7 +602,8 @@ const fluxPlacementHandler = {
     numVariations,
     fluxApiKey,
     tattooAngle = 0,
-    tattooScale = 1.0
+    tattooScale = 1.0,
+    isMobile = false
   ) => {
     // --- Inputs ---
     const tattooDesignOriginalBuffer = Buffer.from(tattooDesignImageBase64, 'base64');
@@ -672,7 +673,8 @@ const fluxPlacementHandler = {
     console.log(`[MASK] bbox=${maskBBox.width}x${maskBBox.height} origin=(${maskBBox.minX},${maskBBox.minY})`);
 
     // Grow (dilate) the mask for the model so it doesn’t shrink the tattoo
-    const growPx = clamp(
+    // ON MOBILE: Disable growth to prevent leakage on smaller screens/different aspect ratios
+    const growPx = isMobile ? 0 : clamp(
       Math.round(MODEL_MASK_GROW_PCT * Math.max(maskBBox.width, maskBBox.height)),
       MODEL_MASK_GROW_MIN,
       MODEL_MASK_GROW_MAX

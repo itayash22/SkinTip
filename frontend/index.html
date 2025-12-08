@@ -1304,6 +1304,10 @@
                 // Size is already encoded by your mask. Tell backend "do not rescale".
                 formData.append('tattooScale', '1.0');
 
+                // Detect mobile device to adjust mask growth logic on backend
+                const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (window.innerWidth <= 768);
+                formData.append('isMobile', isMobile.toString());
+
                 const response = await fetch(`${CONFIG.API_URL}/generate-final-tattoo`, {
                     method: 'POST',
                     headers: {

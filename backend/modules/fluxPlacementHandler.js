@@ -636,8 +636,10 @@ const fluxPlacementHandler = {
     const ENGINE_SIZE_BIAS = engine === 'kontext' ? ENGINE_KONTEXT_SIZE_BIAS : ENGINE_FILL_SIZE_BIAS;
 
     // final scale factor used when sizing to mask region
-    const EFFECTIVE_SCALE = tattooScale * GLOBAL_SCALE_UP * adaptScale * ENGINE_SIZE_BIAS;
-    console.log(`[ENGINE] chosen=${engine} | GLOBAL_SCALE_UP=${GLOBAL_SCALE_UP} | adaptiveScale=${adaptScale.toFixed(3)} | engineBias=${ENGINE_SIZE_BIAS} | effective=${EFFECTIVE_SCALE.toFixed(3)} | thinLine=${isThinLine} halo=${hasHaloSplash}`);
+    // ON MOBILE: Reduce size by 20% (scale 0.8) as requested
+    const MOBILE_SCALE_FACTOR = isMobile ? 0.8 : 1.0;
+    const EFFECTIVE_SCALE = tattooScale * GLOBAL_SCALE_UP * adaptScale * ENGINE_SIZE_BIAS * MOBILE_SCALE_FACTOR;
+    console.log(`[ENGINE] chosen=${engine} | GLOBAL_SCALE_UP=${GLOBAL_SCALE_UP} | adaptiveScale=${adaptScale.toFixed(3)} | engineBias=${ENGINE_SIZE_BIAS} | mobileFactor=${MOBILE_SCALE_FACTOR} | effective=${EFFECTIVE_SCALE.toFixed(3)} | thinLine=${isThinLine} halo=${hasHaloSplash}`);
 
     // --- Prepare mask ---
     const originalMaskBuffer = Buffer.from(maskBase64, 'base64');

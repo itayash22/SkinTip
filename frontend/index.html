@@ -47,14 +47,26 @@
             <section id="styleSelectionSection" class="section">
                 <div class="section-header">
                     <h2>Slate.Tattoo – Try Before You Dye</h2>
-                    <p>Explore curated tattoo stencils from top artists. Choose a style to begin.</p>
+                    <p>Explore curated tattoo stencils. Click a category to expand.</p>
                 </div>
-                <div class="style-chips">
-                    <!-- This will be populated by JavaScript -->
+
+                <!-- Featured Sketches Horizontal Scroll -->
+                <div class="featured-sketches-container">
+                    <h3 style="margin-bottom: 1rem; color: #475569; font-size: 1.1rem;">Featured Designs</h3>
+                    <div id="featuredSketchesScroll" class="featured-scroll-area">
+                        <!-- Random sketches will be populated here -->
+                    </div>
                 </div>
-                <div class="upload-link-container">
+                
+                <!-- New Container for Vertical List of Categories -->
+                <div id="stylesListContainer" class="styles-list-container">
+                    <!-- Categories will be populated here -->
+                </div>
+
+                <div class="upload-link-container" style="margin-top: 3rem; padding-top: 2rem; border-top: 1px solid #e5e7eb;">
+                    <p>Don't see what you like?</p>
                     <input type="file" id="stencilFileInput" accept="image/jpeg,image/png,image/webp" hidden>
-                    <a href="#" id="uploadStencilLink">Or, upload your own stencil</a>
+                    <a href="#" id="uploadStencilLink" class="btn btn-outline">Upload your own stencil</a>
                 </div>
             </section>
             
@@ -284,13 +296,13 @@
         </div>
     </footer>
     <script>console.log('Loading config.js...');</script>
-    <script src="js/config.js"></script>
+    <script src="js/config.js?v=20251228a"></script>
     <script>console.log('Loading auth.js...');</script>
-    <script src="js/auth.js"></script>
+    <script src="js/auth.js?v=20251228a"></script>
     <script>console.log('Loading drawing.js...');</script>
-    <script type="module" src="js/drawing.js"></script>
+    <script type="module" src="js/drawing.js?v=20251228a"></script>
     <script type="module">
-        console.log('Main inline script starting...');
+        console.log('=== SKINTIP v20251228a - FILE UPDATED ===');
 
         const CLEAN_STENCIL_ENABLED = false;
 
@@ -532,6 +544,95 @@
             window.displayArtists(allArtists);
         };
 
+        function showArtistsSection() {
+            const artistsSection = document.getElementById('artistsSection');
+            if (artistsSection) {
+                artistsSection.style.display = 'block';
+            }
+        }
+
+        window.loadArtistsFromApi = async function(options = {}) {
+            const { showSection = true, fallbackToDemo = true } = options;
+            const artistsGrid = document.getElementById('artistsGrid');
+            if (!artistsGrid) return;
+
+            try {
+                console.log('[artists] fetching from API...');
+                const response = await fetch(`${CONFIG.API_URL}/artists`);
+                if (!response.ok) {
+                    throw new Error(`Status ${response.status}`);
+                }
+                const apiArtists = await response.json();
+                console.log('[artists] api response count', Array.isArray(apiArtists) ? apiArtists.length : 'n/a');
+
+                const stylesByArtist = {};
+                const portfolioByArtist = {};
+                Object.entries(stencilData || {}).forEach(([styleName, stencils]) => {
+                    stencils?.forEach((stencil) => {
+                        const artistId = stencil?.artist?.id || stencil?.artist?.name;
+                        if (!artistId) return;
+                        if (!stylesByArtist[artistId]) stylesByArtist[artistId] = new Set();
+                        stylesByArtist[artistId].add(styleName);
+                        if (!portfolioByArtist[artistId]) portfolioByArtist[artistId] = [];
+                        if (stencil.isArtistSketch && stencil.imageUrl) {
+                            portfolioByArtist[artistId].push(stencil.imageUrl);
+                        }
+                    });
+                });
+
+                allArtists = (apiArtists || []).map((artist) => {
+                    const mergedPortfolio = [
+                        ...(portfolioByArtist[artist.id] || []),
+                        ...(Array.isArray(artist.portfolio_urls) ? artist.portfolio_urls : [])
+                    ].filter(Boolean);
+                    return {
+                        name: artist.name || 'Unknown Artist',
+                        location: artist.location || '',
+                        styles: Array.from(stylesByArtist[artist.id] || []),
+                        bio: artist.bio || '',
+                        likes: artist.likes || '',
+                        whatsapp: artist.whatsapp_number || artist.whatsapp || '',
+                        portfolio: mergedPortfolio.slice(0, 6)
+                    };
+                }).filter(a => a.name || a.whatsapp || (a.portfolio && a.portfolio.length));
+
+                if (!allArtists.length) {
+                    throw new Error('No artists returned');
+                }
+
+                window.displayArtists(allArtists);
+                if (showSection) {
+                    showArtistsSection();
+                }
+                console.log('[artists] render complete, artists:', allArtists.length);
+            } catch (err) {
+                console.warn('Failed to load artists from API, falling back to demo:', err);
+                if (fallbackToDemo) {
+                    console.log('[artists] loading demo artists');
+                    window.loadDemoArtistsWithFilter();
+                    if (showSection) {
+                        showArtistsSection();
+                    }
+                    console.log('[artists] demo render complete, artists:', allArtists.length);
+                }
+            }
+        };
+
+        function ensureArtistsVisibleFallback() {
+            const artistsSection = document.getElementById('artistsSection');
+            const artistsGrid = document.getElementById('artistsGrid');
+            const hasContent = artistsGrid && artistsGrid.children.length > 0;
+            if (!hasContent) {
+                console.warn('[artists] grid empty after initial load; showing demo fallback');
+                window.loadDemoArtistsWithFilter();
+            }
+            if (artistsSection) artistsSection.style.display = 'block';
+        }
+        // Immediately show demo artists so the section is never empty while API loads
+        console.log('[artists] bootstrapping demo artists immediately');
+        window.loadDemoArtistsWithFilter();
+        showArtistsSection();
+
         window.displayArtists = function(artists) {
             const artistsGrid = document.getElementById('artistsGrid');
             if (artists.length === 0) {
@@ -549,7 +650,8 @@
                 } else {
                     portfolioImages = `<img src="${artist.portfolio}" alt="${artist.name}" class="portfolio-image active" style="display: block">`;
                 }
-                const stylesHTML = artist.styles.map(style =>
+                const stylesArray = Array.isArray(artist.styles) ? artist.styles : [];
+                const stylesHTML = stylesArray.map(style =>
                     `<span class="style-tag">${style}</span>`
                 ).join('');
                 return `
@@ -586,7 +688,8 @@
 
             const filtered = allArtists.filter(artist => {
                 const matchesLocation = !selectedLocation || artist.location === selectedLocation;
-                const matchesStyle = !selectedStyle || artist.styles.includes(selectedStyle);
+                const styleList = Array.isArray(artist.styles) ? artist.styles : [];
+                const matchesStyle = !selectedStyle || styleList.includes(selectedStyle);
                 return matchesLocation && matchesStyle;
             });
             window.displayArtists(filtered);
@@ -609,6 +712,15 @@
                         throw new Error('Failed to fetch stencil data');
                     }
                     stencilData = await response.json();
+
+                    // Debug logging to surface artist payload
+                    console.log('[styles-with-stencils] raw keys', Object.keys(stencilData || {}));
+                    const firstStyleKey = Object.keys(stencilData || {})[0];
+                    const firstItem = firstStyleKey && stencilData[firstStyleKey] ? stencilData[firstStyleKey][0] : null;
+                    if (firstItem) {
+                        console.log('[styles-with-stencils] first item raw', firstItem);
+                        console.log('[styles-with-stencils] first item normalized', normalizeArtist(firstItem.artist));
+                    }
 
                     // --- NEW: Handle case where no styles are returned ---
                     if (!stencilData || Object.keys(stencilData).length === 0) {
@@ -639,172 +751,211 @@
                 }
             }
 
-            // --- New User Flow Logic ---
-            const styleChipsContainer = document.querySelector('.style-chips');
+            // --- New User Flow Logic (Vertical Scroll Catalog) ---
+            const stylesListContainer = document.getElementById('stylesListContainer');
+            const featuredSketchesScroll = document.getElementById('featuredSketchesScroll');
+
+            function normalizeArtist(artist) {
+                if (!artist) return {};
+                const ig = artist.instagram || (Array.isArray(artist.portfolio_urls) && artist.portfolio_urls.length > 0 ? artist.portfolio_urls[0] : '');
+                const wa = artist.whatsapp || artist.whatsapp_number || '';
+                return {
+                    ...artist,
+                    instagram: ig,
+                    whatsapp: wa
+                };
+            }
+
+            function shuffleArray(array) {
+                for (let i = array.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [array[i], array[j]] = [array[j], array[i]];
+                }
+                return array;
+            }
 
             function populateStyleChips() {
+                stylesListContainer.innerHTML = '';
+                featuredSketchesScroll.innerHTML = '';
+
+                let allSketches = [];
+
+                // Iterate through each style category
                 for (const style in stencilData) {
-                    const styleChipContainer = document.createElement('div');
-                    styleChipContainer.className = 'style-chip-container';
+                    const stencils = stencilData[style];
+                    if (!stencils || stencils.length === 0) continue;
 
-                    const button = document.createElement('button');
-                    button.className = 'btn btn-primary style-chip';
-                    button.dataset.style = style;
-                    button.textContent = style;
-                    if (style === 'Freestyle') {
-                        button.classList.remove('btn-primary');
-                        button.classList.add('btn-secondary');
-                    }
+                    // Collect for Featured Section
+                    allSketches = allSketches.concat(stencils);
 
-                    const tattooOfTheDay = document.createElement('div');
-                    tattooOfTheDay.className = 'tattoo-of-the-day clickable';
-                    const tattooOfTheDayTitle = document.createElement('div');
-                    tattooOfTheDayTitle.className = 'tattoo-of-the-day-title';
+                    // Create Category Container
+                    const categoryContainer = document.createElement('div');
+                    categoryContainer.className = 'style-category-container';
+                    
+                    // Create Header (Clickable)
+                    const header = document.createElement('div');
+                    header.className = 'style-category-header';
+                    
+                    // Generate Preview Thumbnails (Max 3)
+                    // We shuffle a copy to show random preview, or just take first 3. 
+                    // Let's take first 3 for consistency or random for fun? Let's do random.
+                    const previewStencils = [...stencils].sort(() => 0.5 - Math.random()).slice(0, 3);
+                    const thumbsHTML = previewStencils.map(s => 
+                        `<img src="${s.imageUrl}" alt="preview">`
+                    ).join('');
 
-                    const firstStencil = stencilData[style][0];
-                    if (firstStencil) {
-                        tattooOfTheDay.dataset.stencilId = firstStencil.id;
-                        tattooOfTheDay.innerHTML = `<img src="${firstStencil.imageUrl}" alt="Tattoo of the day for ${style}">`;
-                        tattooOfTheDayTitle.innerHTML = `
-                            <p><strong>Tattoo of the day:</strong></p>
-                            <p>${firstStencil.name}</p>
-                            <p>By: ${firstStencil.artist.name}</p>
-                        `;
-                    }
+                    header.innerHTML = `
+                        <h3 class="style-category-title">${style} <span style="font-size: 0.9rem; color: #94a3b8; font-weight: normal;">(${stencils.length})</span></h3>
+                        <div class="style-category-thumbs">
+                            ${thumbsHTML}
+                        </div>
+                        <span class="style-category-toggle">▼</span>
+                    `;
 
-                    styleChipContainer.appendChild(button);
-                    styleChipContainer.appendChild(tattooOfTheDay);
-                    styleChipContainer.appendChild(tattooOfTheDayTitle);
-                    styleChipsContainer.appendChild(styleChipContainer);
-                }
-                // Re-select the style chips after they are populated
-                const styleChips = document.querySelectorAll('.style-chip');
-                styleChips.forEach(chip => {
-                    chip.addEventListener('click', () => {
-                        const style = chip.dataset.style;
-                        stencilModalTitle.textContent = style;
-                        populateStencilGrid(style);
-                        stencilModal.style.display = 'flex';
+                    // Create Content Area (Hidden by default)
+                    const content = document.createElement('div');
+                    content.className = 'style-category-content';
+                    
+                    const grid = document.createElement('div');
+                    grid.className = 'sketch-scroll';
+
+                    // Populate Grid with Sketches
+                    stencils.forEach(stencil => {
+                        const card = createSketchCard({
+                            ...stencil,
+                            artist: normalizeArtist(stencil.artist)
+                        });
+                        grid.appendChild(card);
                     });
+
+                    content.appendChild(grid);
+                    categoryContainer.appendChild(header);
+                    categoryContainer.appendChild(content);
+                    stylesListContainer.appendChild(categoryContainer);
+
+                    // Toggle Logic
+                    header.addEventListener('click', () => {
+                        categoryContainer.classList.toggle('active');
+                    });
+                }
+
+                // Populate Featured Section (Randomized)
+                shuffleArray(allSketches);
+                allSketches.forEach(stencil => {
+                    const card = createSketchCard({
+                        ...stencil,
+                        artist: normalizeArtist(stencil.artist)
+                    });
+                    featuredSketchesScroll.appendChild(card);
                 });
+
+                // Debug: log a sample artist per style to verify presence
+                Object.keys(stencilData).forEach(style => {
+                    const first = stencilData[style]?.[0];
+                    if (first) {
+                        const a = normalizeArtist(first.artist);
+                        console.log('[styles-with-stencils] sample', style, {
+                            artist: a,
+                            hasArtist: !!(a.name || a.location || a.instagram || a.whatsapp)
+                        });
+                    }
+                });
+
+                // Debug summary across all sketches
+                const flat = Object.values(stencilData || {}).flat().map(s => ({ ...s, artist: normalizeArtist(s.artist) }));
+                const withArtist = flat.filter(s => s.artist && (s.artist.name || s.artist.location || s.artist.instagram || s.artist.whatsapp));
+                const artistSketches = flat.filter(s => s.isArtistSketch);
+                const artistSketchWithArtist = artistSketches.find(s => s.artist && (s.artist.name || s.artist.location || s.artist.instagram || s.artist.whatsapp));
+                console.log('[styles-with-stencils] counts', {
+                    total: flat.length,
+                    withArtist: withArtist.length,
+                    artistSketches: artistSketches.length,
+                    artistSketchesWithArtist: artistSketchWithArtist ? 1 : 0
+                });
+                if (artistSketchWithArtist) {
+                    console.log('[styles-with-stencils] sample artist sketch', artistSketchWithArtist);
+                } else if (artistSketches[0]) {
+                    console.log('[styles-with-stencils] first artist sketch missing artist', artistSketches[0]);
+                }
             }
+
+            function createSketchCard(stencil) {
+                const card = document.createElement('div');
+                card.className = 'sketch-card';
+                card.dataset.stencilId = stencil.id;
+                const artistName = stencil.artist?.name || stencil.artist?.id || '';
+                const artistLoc = stencil.artist?.location || '';
+                const artistIg = stencil.artist?.instagram || '';
+                const artistWa = stencil.artist?.whatsapp || '';
+                const hasArtistInfo = artistName || artistLoc || artistIg || artistWa;
+                const artistBlock = hasArtistInfo ? `
+                    <p>By ${artistName || 'Artist'}${artistLoc ? ` · ${artistLoc}` : ''}</p>
+                    ${artistIg ? `<p><a href="${artistIg}" target="_blank" rel="noopener noreferrer">Instagram</a></p>` : ''}
+                    ${artistWa ? `<p><a href="https://wa.me/${artistWa}" target="_blank" rel="noopener noreferrer">WhatsApp</a></p>` : ''}
+                ` : '';
+
+                card.innerHTML = `
+                    <img src="${stencil.imageUrl}" alt="${stencil.name}" loading="lazy">
+                    <div class="sketch-card-info">
+                        <h4>${stencil.name}</h4>
+                        ${artistBlock}
+                    </div>
+                `;
+                card.addEventListener('click', () => handleSketchSelection(stencil));
+                return card;
+            }
+
+            // Extracted selection logic to reuse
+            async function handleSketchSelection(selectedStencil) {
+                if (!selectedStencil) return;
+
+                logUserEvent('SKETCH_CLICK', selectedStencil.artist.id, selectedStencil.id);
+                STATE.selectedStencil = selectedStencil;
+
+                try {
+                    utils.showLoading('Cleaning stencil...');
+                    STATE.selectedStencil.cleanedUrl = await cleanStencilWhiteBg(selectedStencil.imageUrl);
+                    utils.hideLoading();
+                } catch (err) {
+                    utils.hideLoading();
+                    console.warn('BG clean failed; using original:', err);
+                    STATE.selectedStencil.cleanedUrl = selectedStencil.imageUrl;
+                }
+
+                // Show selected stencil preview
+                const selectedStencilPreview = document.getElementById('selectedStencilPreview');
+                const selectedStencilPreviewImg = document.getElementById('selectedStencilPreviewImg');
+                selectedStencilPreviewImg.src = STATE.selectedStencil.cleanedUrl;
+                selectedStencilPreview.style.display = 'block';
+
+                document.getElementById('styleSelectionSection').style.display = 'none';
+                const skinSection = document.getElementById('skinPhotoUploadSection');
+                skinSection.style.display = 'block';
+
+                // On mobile, scroll the user to the upload/CTA area instead of jumping to bottom
+                if (window.innerWidth <= 768) {
+                    setTimeout(() => {
+                        skinSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }, 50);
+                }
+            }
+
+            // Remove old event listeners that are no longer needed since we generate cards dynamically with listeners
+            // (The old 'styleChipsContainer' logic is replaced by 'populateStyleChips' above)
 
             await fetchStencilData();
-
-            const stencilModal = document.getElementById('stencilModal');
-            const stencilModalTitle = document.getElementById('stencilModalTitle');
-            const stencilGrid = document.getElementById('stencilGrid');
-            const closeStencilModalBtn = document.getElementById('closeStencilModalBtn');
-
-            styleChipsContainer.addEventListener('click', async (e) => {
-                const tattooOfTheDay = e.target.closest('.tattoo-of-the-day');
-                if (!tattooOfTheDay) return;
-
-                const stencilId = tattooOfTheDay.dataset.stencilId;
-                if (stencilId) {
-                    // Find the stencil in the data
-                    let selectedStencil = null;
-                    for (const style in stencilData) {
-                        const found = stencilData[style].find(s => s.id == stencilId);
-                        if (found) {
-                            selectedStencil = found;
-                            break;
-                        }
-                    }
-
-                    if (selectedStencil) {
-                        logUserEvent('SKETCH_CLICK', selectedStencil.artist.id, selectedStencil.id);
-                        STATE.selectedStencil = selectedStencil;
-
-                        // Clean white background now and store it
-                        try {
-                            utils.showLoading('Cleaning stencil...');
-                            STATE.selectedStencil.cleanedUrl = await cleanStencilWhiteBg(selectedStencil.imageUrl);
-                            utils.hideLoading();
-                        } catch (err) {
-                            utils.hideLoading();
-                            console.warn('BG clean failed; using original:', err);
-                            STATE.selectedStencil.cleanedUrl = selectedStencil.imageUrl;
-                        }
-
-                        // --- Show selected stencil preview ---
-                        const selectedStencilPreview = document.getElementById('selectedStencilPreview');
-                        const selectedStencilPreviewImg = document.getElementById('selectedStencilPreviewImg');
-                        selectedStencilPreviewImg.src = STATE.selectedStencil.cleanedUrl;
-                        selectedStencilPreview.style.display = 'block';
-                        // ---
-
-                        document.getElementById('styleSelectionSection').style.display = 'none';
-                        document.getElementById('skinPhotoUploadSection').style.display = 'block';
-                    }
-                }
-            });
-
-            function populateStencilGrid(style) {
-                stencilGrid.innerHTML = '';
-                const stencils = stencilData[style] || [];
-
-                stencils.forEach(stencil => {
-                    const sketchCard = document.createElement('div');
-                    sketchCard.className = 'sketch-card';
-                    sketchCard.dataset.stencilId = stencil.id;
-                    sketchCard.innerHTML = `
-                        <img src="${stencil.imageUrl}" alt="${stencil.name}">
-                        <div class="sketch-card-info">
-                            <h4>${stencil.name}</h4>
-                            <p>By ${stencil.artist.name}</p>
-                        </div>
-                    `;
-                    stencilGrid.appendChild(sketchCard);
-                });
+            console.log('[artists] kicking off load after stencil data');
+            if (window.loadArtistsFromApi) {
+                await window.loadArtistsFromApi({ showSection: true });
+            } else {
+                window.loadDemoArtistsWithFilter();
+                showArtistsSection();
             }
+            setTimeout(ensureArtistsVisibleFallback, 800);
 
-            stencilGrid.addEventListener('click', async (e) => {
-                const sketchCard = e.target.closest('.sketch-card');
-                if (!sketchCard) return;
-
-                const stencilId = sketchCard.dataset.stencilId;
-
-                // Find the stencil in the data
-                let selectedStencil = null;
-                for (const style in stencilData) {
-                    const found = stencilData[style].find(s => s.id === stencilId);
-                    if (found) {
-                        selectedStencil = found;
-                        break;
-                    }
-                }
-
-                if (selectedStencil) {
-                    logUserEvent('SKETCH_CLICK', selectedStencil.artist.id, selectedStencil.id);
-                    STATE.selectedStencil = selectedStencil;
-
-                    try {
-                        utils.showLoading('Cleaning stencil...');
-                        STATE.selectedStencil.cleanedUrl = await cleanStencilWhiteBg(selectedStencil.imageUrl);
-                        utils.hideLoading();
-                    } catch (err) {
-                        utils.hideLoading();
-                        console.warn('BG clean failed; using original:', err);
-                        STATE.selectedStencil.cleanedUrl = selectedStencil.imageUrl;
-                    }
-
-                    // --- Show selected stencil preview ---
-                    const selectedStencilPreview = document.getElementById('selectedStencilPreview');
-                    const selectedStencilPreviewImg = document.getElementById('selectedStencilPreviewImg');
-                    selectedStencilPreviewImg.src = STATE.selectedStencil.cleanedUrl;
-                    selectedStencilPreview.style.display = 'block';
-                    // ---
-
-                    stencilModal.style.display = 'none';
-                    document.getElementById('styleSelectionSection').style.display = 'none';
-                    document.getElementById('skinPhotoUploadSection').style.display = 'block';
-                }
-            });
-
-            closeStencilModalBtn.addEventListener('click', () => {
-                stencilModal.style.display = 'none';
-            });
+            // Clean up unused modal elements if any (optional, but good for cleanliness)
+            const oldModal = document.getElementById('stencilModal');
+            if(oldModal) oldModal.remove();
 
             // --- Upload Stencil Logic ---
             const uploadStencilLink = document.getElementById('uploadStencilLink');
@@ -1003,7 +1154,7 @@
                 if (drawingSection) drawingSection.style.display = 'none';
                 if (designSection) designSection.style.display = 'none';
                 if (resultsSection) resultsSection.style.display = 'none';
-                if (artistsSection) artistsSection.style.display = 'none';
+                if (artistsSection) artistsSection.style.display = allArtists.length ? 'block' : 'none';
                 if (socialShareDiv) socialShareDiv.style.display = 'none';
                 setPanModeUI(false);
                 if (fileInput) fileInput.value = '';
@@ -1245,7 +1396,12 @@
             const artistSketchesGrid = document.getElementById('artistSketchesGrid');
             const artistWhatsappLink = document.getElementById('artistWhatsappLink');
 
-            if (STATE.selectedStencil && STATE.selectedStencil.artist) {
+            // Only show artist info if it exists AND the sketch is flagged as an artist sketch (or if we assume existing ones with artist data are)
+            // Ideally we check a specific flag, but for now checking if artist name is not "Unknown Artist" is a good proxy if we don't have the flag yet.
+            // But user requested a specific flag behavior.
+            // Let's assume the backend will return 'is_artist_sketch' on the stencil object.
+            
+            if (STATE.selectedStencil && STATE.selectedStencil.artist && STATE.selectedStencil.isArtistSketch) {
                 artistName.textContent = STATE.selectedStencil.artist.name;
 
                 // Find other sketches by the same artist
@@ -1263,10 +1419,13 @@
                     artistSketchesGrid.innerHTML += `<img src="${artistSketches[i].imageUrl}" alt="${artistSketches[i].name}">`;
                 }
 
-                if (STATE.selectedStencil && STATE.selectedStencil.artist && STATE.selectedStencil.imageUrl) {
+                if (STATE.selectedStencil.artist.whatsapp) {
                     const earlyContactMessage = `Hi ${STATE.selectedStencil.artist.name}.\n\nI'm interested in this tattoo design: ${STATE.selectedStencil.imageUrl}\n\nCould you tell me more about it?\n\nThanks!`;
                     artistWhatsappLink.href = `https://wa.me/${STATE.selectedStencil.artist.whatsapp}?text=${encodeURIComponent(earlyContactMessage)}`;
                     artistWhatsappLink.onclick = () => logUserEvent('WHATSAPP_CONTACT', STATE.selectedStencil.artist.id, STATE.selectedStencil.id);
+                    artistWhatsappLink.style.display = 'inline-block';
+                } else {
+                    artistWhatsappLink.style.display = 'none';
                 }
                 artistInfo.style.display = 'block';
             } else {
@@ -1376,11 +1535,16 @@
                 artistsSection.style.display = 'block';
                 resultsSection.scrollIntoView({behavior: 'smooth'}); // Scroll to results section
                 socialShareDiv.style.display = 'block';
-                window.loadDemoArtistsWithFilter(); // Call global loadDemoArtistsWithFilter
+                if (window.loadArtistsFromApi) {
+                    window.loadArtistsFromApi({ showSection: true });
+                } else {
+                    window.loadDemoArtistsWithFilter();
+                    showArtistsSection();
+                }
 
                 // Show and configure artist contact link if a stencil was used
                 const artistContactSection = document.getElementById('artistContactSection');
-                if (STATE.selectedStencil && STATE.selectedStencil.artist && artistContactSection) {
+                if (STATE.selectedStencil && STATE.selectedStencil.artist && STATE.selectedStencil.isArtistSketch && artistContactSection) {
                     const whatsappLink = document.getElementById('whatsappLink');
                     const artistName = STATE.selectedStencil.artist.name;
                     const messageBody = `Hi ${artistName},\n\nI got this stunning AI tattoo from your catalog. Can you share more details about yourself and the tattoo?\n\nThanks!`;
@@ -1388,9 +1552,13 @@
                     const imageUrlsText = getGeneratedImageUrls().join('\n\n');
                     const fullMessage = messageBody + previewsHeader + imageUrlsText;
 
-                    whatsappLink.href = `https://wa.me/${STATE.selectedStencil.artist.whatsapp}?text=${encodeURIComponent(fullMessage)}`;
-                    whatsappLink.onclick = () => logUserEvent('WHATSAPP_CONTACT', STATE.selectedStencil.artist.id, STATE.selectedStencil.id);
-                    artistContactSection.style.display = 'block';
+                    if (STATE.selectedStencil.artist.whatsapp) {
+                        whatsappLink.href = `https://wa.me/${STATE.selectedStencil.artist.whatsapp}?text=${encodeURIComponent(fullMessage)}`;
+                        whatsappLink.onclick = () => logUserEvent('WHATSAPP_CONTACT', STATE.selectedStencil.artist.id, STATE.selectedStencil.id);
+                        artistContactSection.style.display = 'block';
+                    } else {
+                        artistContactSection.style.display = 'none';
+                    }
                 } else if (artistContactSection) {
                     artistContactSection.style.display = 'none';
                 }

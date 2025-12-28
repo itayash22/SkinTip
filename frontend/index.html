@@ -1,155 +1,1723 @@
-// frontend/js/auth.js
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Slate.Tattoo - AI Tattoo Visualization</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <!-- Import map for Three.js -->
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.165.0/build/three.module.js",
+        "three/": "https://unpkg.com/three@0.165.0/"
+      }
+    }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/jwt-decode/build/jwt-decode.js"></script> 
+<style>
+  .drawing-container { position: relative; }
+  #drawingCanvas {
+    touch-action: none;   /* allow custom pan/zoom on mobile */
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+  .btn.active { outline: 2px solid #444; }
+</style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <div class="nav-brand">
+                <h1>Slate.Tattoo</h1>
+                <span class="tagline">AI Tattoo Platform</span> </div>
+            <div class="nav-menu">
+                <span id="userInfo" class="user-info"></span>
+                <button id="logoutBtn" class="btn btn-outline" style="display:none;">Logout</button>
+                <button id="deleteAccountBtn" class="btn btn-danger" style="display:none; margin-left: 0.5rem;">Delete Account</button>
+            </div>
+        </div>
+    </nav>
 
-// Ensure API_BASE_URL is defined from config.js
-if (typeof API_BASE_URL === 'undefined') {
-    console.error("API_BASE_URL is not defined. Make sure config.js is loaded before auth.js and defines window.API_BASE_URL.");
-}
+    <main class="main-content">
+        <div class="container">
+            <section id="styleSelectionSection" class="section">
+                <div class="section-header">
+                    <h2>Slate.Tattoo – Try Before You Dye</h2>
+                    <p>Explore curated tattoo stencils. Click a category to expand.</p>
+                </div>
 
-// Function to update the user info display in the navbar
-window.updateUserTokensDisplay = (tokens) => {
-    const userInfoSpan = document.getElementById('userInfo');
-    const userName = localStorage.getItem('userName') || localStorage.getItem('userEmail');
-    if (userName && tokens !== undefined) {
-        userInfoSpan.textContent = `Welcome, ${userName}! Tokens: ${tokens}`;
-        userInfoSpan.style.display = 'inline';
-    } else if (userName) {
-        userInfoSpan.textContent = `Welcome, ${userName}!`;
-        userInfoSpan.style.display = 'inline';
+                <!-- Featured Sketches Horizontal Scroll -->
+                <div class="featured-sketches-container">
+                    <h3 style="margin-bottom: 1rem; color: #475569; font-size: 1.1rem;">Featured Designs</h3>
+                    <div id="featuredSketchesScroll" class="featured-scroll-area">
+                        <!-- Random sketches will be populated here -->
+                    </div>
+                </div>
+                
+                <!-- New Container for Vertical List of Categories -->
+                <div id="stylesListContainer" class="styles-list-container">
+                    <!-- Categories will be populated here -->
+                </div>
+
+                <div class="upload-link-container" style="margin-top: 3rem; padding-top: 2rem; border-top: 1px solid #e5e7eb;">
+                    <p>Don't see what you like?</p>
+                    <input type="file" id="stencilFileInput" accept="image/jpeg,image/png,image/webp" hidden>
+                    <a href="#" id="uploadStencilLink" class="btn btn-outline">Upload your own stencil</a>
+                </div>
+            </section>
+            
+            <section id="skinPhotoUploadSection" class="section" style="display: none;">
+                <div class="section-header">
+                    <h2>Upload Your Photo</h2>
+                    <p>Choose a photo where you want the tattoo</p>
+                </div>
+
+                <div id="selectedStencilPreview" class="image-preview" style="display: none; margin-bottom: 2rem;">
+                    <h4>Your Chosen Stencil:</h4>
+                    <img id="selectedStencilPreviewImg" src="" alt="Selected Stencil Preview" style="max-width: 200px;">
+                </div>
+                
+                <div class="upload-area" id="skinUploadArea">
+                    <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp" hidden>
+                    <div class="upload-placeholder">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <p>Click to upload or drag and drop</p>
+                        <span>PNG, JPG or WebP (max. 5MB)</span>
+                    </div>
+                </div>
+
+            </section>
+
+            <section id="drawingSection" class="section" style="display: none;">
+                <div class="section-header">
+                    <h2>Position Your Tattoo</h2>
+                    <p>Drag, resize, and rotate the tattoo to place it on the skin.</p>
+                </div>
+                
+                <div class="drawing-container">
+                    <canvas id="drawingCanvas"></canvas>
+                </div>
+
+                <div class="drawing-tools">
+                    <button id="changeSkinPhotoBtn" class="btn btn-outline btn-sm">Change Skin Photo</button>
+
+                    <!-- NEW: toggle pan mode -->
+                    <button id="togglePanBtn" class="btn btn-outline btn-sm">Move Skin</button>
+
+                    <div class="rotation-control">
+                        <label for="rotationSlider">Rotate Tattoo: <span id="rotationValue">0°</span></label>
+                        <input type="range" id="rotationSlider" min="-180" max="180" value="0">
+                    </div>
+                    <div class="size-control" style="margin-left: 1rem;">
+                        <label for="sizeSlider">Resize Tattoo: <span id="sizeValue">100%</span></label>
+                        <input type="range" id="sizeSlider" min="20" max="200" value="100">
+                    </div>
+                </div>
+
+                <button id="continueBtn" class="btn btn-primary" style="margin-top: 2rem; display: block; margin-left: auto; margin-right: auto;">Generate Tattoo on Skin</button>
+            </section>
+            
+            <section id="designSection" class="section" style="display: none;">
+                <div class="section-header">
+                    <h2>Refine & Generate</h2>
+                    <p>Final adjustments for placement</p>
+                </div>
+
+                <div class="credits-info">
+                    <span id="creditsRemaining"></span>
+                </div>
+
+                <div id="socialShare" style="margin-top: 1rem; display: none;">
+                    <button id="shareToInstagramBtn" class="btn btn-secondary">Share to Instagram</button>
+                </div>
+            </section>
+
+            <section id="resultsSection" class="section" style="display: none;">
+                <div class="section-header">
+                    <h2>Your Tattoo Designs</h2>
+                    <p>Here are your AI-generated tattoo previews</p>
+                </div>
+
+                <div class="results-grid">
+                </div>
+
+                <div id="artistContactSection" class="artist-contact-section" style="display: none; text-align: center; margin-top: 2rem;">
+                    <a id="whatsappLink" href="#" target="_blank" class="btn btn-primary btn-lg">Contact Artist on WhatsApp</a>
+                </div>
+
+                <div class="results-actions">
+                    <button id="downloadAllBtn" class="btn btn-primary">Download All</button>
+                    <button id="newDesignBtn" class="btn btn-outline">Start New Design</button>
+                </div>
+            </section>
+            
+            <section id="artistsSection" class="section" style="display: none;">
+                <div class="section-header">
+                    <h2>Find Your Artist</h2>
+                    <p>Connect with talented tattoo artists who can bring your design to life</p>
+                </div>
+
+                <div class="filters">
+                    <select id="locationFilter" class="filter-select">
+                        <option value="">All Locations</option>
+                        <option value="Los Angeles, CA">Los Angeles, CA</option>
+                        <option value="New York, NY">New York, NY</option>
+                        <option value="Austin, TX">Austin, TX</option>
+                        <option value="Miami, FL">Miami, FL</option>
+                        <option value="Seattle, WA">Seattle, WA</option>
+                        <option value="Denver, CO">Denver, CO</option>
+                        <option value="Portland, OR">Portland, OR</option>
+                        <option value="Chicago, IL">Chicago, IL</option>
+                    </select>
+                    <select id="styleFilter" class="filter-select">
+                        <option value="">All Styles</option>
+                        <option value="Traditional">Traditional</option>
+                        <option value="Neo-Traditional">Neo-Traditional</option>
+                        <option value="Realism">Realism</option>
+                        <option value="Blackwork">Blackwork</option>
+                        <option value="Watercolor">Watercolor</option>
+                        <option value="Japanese">Japanese</option>
+                        <option value="Minimalist">Minimalist</option>
+                        <option value="Geometric">Geometric</option>
+                        <option value="Fine Line">Fine Line</option>
+                        <option value="Tribal">Tribal</option>
+                    </select>
+                </div>
+
+                <div id="artistsGrid" class="artists-grid">
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <div id="stencilModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h2 id="stencilModalTitle"></h2>
+            <div id="stencilGrid" class="sketch-grid">
+                <!-- Stencils will be dynamically loaded here -->
+            </div>
+            <button id="closeStencilModalBtn" class="btn btn-outline" style="margin-top: 1rem;">Close</button>
+        </div>
+    </div>
+    <div id="skinConfirmModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="auth-container">
+                <h2>Before You Upload</h2>
+                <p>Please confirm the following before uploading your skin photo:</p>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="skinCheckboxNoIntimate">
+                    <span>I confirm the photo does NOT contain nudity or intimate/private body parts.</span>
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="skinCheckboxThirdParty">
+                    <span>I agree my photo will be stored and processed by <a href="https://bfl.ai/legal/terms-of-service" target="_blank" rel="noopener noreferrer">Black Forest Labs (Flux AI)</a> and may not be fully deletable.</span>
+                </label>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="skinCancelBtn">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="skinConfirmBtn">Continue</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="deleteAccountModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="auth-container">
+                <h2>Delete Account</h2>
+                <p><strong>Warning: This action cannot be undone.</strong></p>
+                <p>Deleting your account will permanently remove:</p>
+                <ul>
+                    <li>Your user account</li>
+                    <li>All uploaded images</li>
+                    <li>All generated tattoo previews</li>
+                    <li>Your token balance and transaction history</li>
+                    <li>All activity logs</li>
+                </ul>
+                <p><strong>Note:</strong> Due to third-party processing (Black Forest Labs), some images may persist in backups or AI training data and cannot be fully deleted.</p>
+                <p>Are you sure you want to delete your account?</p>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="deleteAccountCancelBtn">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="deleteAccountConfirmBtn">Yes, Delete My Account</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <p id="loadingText">Generating your tattoo designs...</p>
+            <div id="artistInfo" class="artist-info-loading" style="display: none;">
+                <h4>While you wait, meet the artist:</h4>
+                <p id="artistName"></p>
+                <div id="artistSketchesGrid" class="artist-sketches-grid"></div>
+                <a id="artistWhatsappLink" href="#" target="_blank" class="btn btn-primary btn-sm" style="margin-top: 1rem;">Contact Artist on WhatsApp</a>
+            </div>
+        </div>
+    </div>
+    
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h3>Slate.Tattoo</h3>
+                    <p>AI-powered tattoo visualization platform</p>
+                </div>
+                <div class="footer-section">
+                    <h4>Features</h4>
+                    <ul>
+                        <li>AI Tattoo Generation</li>
+                        <li>20+ Tattoo Styles</li>
+                        <li>Artist Discovery</li>
+                        <li>Direct WhatsApp Contact</li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>Coming Soon</h4>
+                    <ul>
+                        <li>Real AI Generation</li>
+                        <li>Payment Integration</li>
+                        <li>Artist Profiles</li>
+                        <li>Mobile App</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2024 Slate.Tattoo. Made with ❤️ by itayash@gmail.com</p>
+            </div>
+        </div>
+    </footer>
+    <script>console.log('Loading config.js...');</script>
+    <script src="js/config.js?v=20251228a"></script>
+    <script>console.log('Loading auth.js...');</script>
+    <script src="js/auth.js?v=20251228a"></script>
+    <script>console.log('Loading drawing.js...');</script>
+    <script type="module" src="js/drawing.js?v=20251228a"></script>
+    <script type="module">
+        console.log('=== SKINTIP v20251228a - FILE UPDATED ===');
+
+        const CLEAN_STENCIL_ENABLED = false;
+
+        // ---- White/near-white → alpha (no libs) ----
+        async function cleanStencilWhiteBg(urlOrDataUrl, { soft = 235, hard = 252 } = {}) {
+          if (!CLEAN_STENCIL_ENABLED) {
+            return urlOrDataUrl;
+          }
+          // 1) Fetch as blob so we avoid tainted canvas (works for cross-origin URLs)
+          const resp = await fetch(urlOrDataUrl, { mode: 'cors' });
+          const srcBlob = await resp.blob();
+
+          // 2) Decode with EXIF orientation if possible
+          let bmpOrImg;
+          if ('createImageBitmap' in window) {
+            bmpOrImg = await createImageBitmap(srcBlob, { imageOrientation: 'from-image' });
+          } else {
+            bmpOrImg = await new Promise((resolve) => {
+              const im = new Image();
+              im.onload = () => resolve(im);
+              im.src = URL.createObjectURL(srcBlob);
+            });
+          }
+
+          const w = bmpOrImg.width || bmpOrImg.naturalWidth;
+          const h = bmpOrImg.height || bmpOrImg.naturalHeight;
+
+          // 3) Draw and read pixels
+          const c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          const x = c.getContext('2d', { willReadFrequently: true });
+          x.clearRect(0, 0, w, h);
+          x.drawImage(bmpOrImg, 0, 0, w, h);
+
+          const imgData = x.getImageData(0, 0, w, h);
+          const d = imgData.data;
+
+          // Gentle white→alpha like your backend's colorToAlphaWhite()
+          const ramp = Math.max(1, hard - soft); // softness of the transition
+          for (let i = 0; i < d.length; i += 4) {
+            const R = d[i], G = d[i + 1], B = d[i + 2];
+            const A = d[i + 3];
+
+            const wmax = Math.max(R, G, B);
+            let alpha = A;
+
+            if (wmax >= soft) {
+              const cut = Math.max(0, Math.min(1, (wmax - soft) / ramp)); // 0..1
+              alpha = Math.round(A * (1 - cut));
+              if (wmax >= hard) alpha = 0;
+            }
+
+            // Decontaminate fringing: un-premultiply white from RGB where 0<alpha<255
+            if (alpha > 0 && alpha < 255) {
+              const a = alpha / 255;
+              d[i]     = Math.max(0, Math.min(255, Math.round((R - (1 - a) * 255) / a)));
+              d[i + 1] = Math.max(0, Math.min(255, Math.round((G - (1 - a) * 255) / a)));
+              d[i + 2] = Math.max(0, Math.min(255, Math.round((B - (1 - a) * 255) / a)));
+            }
+
+            d[i + 3] = alpha;
+          }
+
+          x.putImageData(imgData, 0, 0);
+
+          // 4) Return a safe, same-origin blob URL (PNG keeps transparency)
+          const blob = await new Promise(res => c.toBlob(res, 'image/png'));
+          return URL.createObjectURL(blob);
+        }
+
+        async function logUserEvent(eventType, artistId, stencilId, extraDetails) {
+            if (!STATE.token) return false; // Don't log events for anonymous users
+
+            const payload = {
+                event_type: eventType,
+                artist_id: artistId,
+                stencil_id: stencilId
+            };
+
+            if (extraDetails && typeof extraDetails === 'object') {
+                payload.details = extraDetails;
+            }
+
+            try {
+                const response = await fetch(`${CONFIG.API_URL}/log-event`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${STATE.token}`
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    console.warn('Failed to log user event: Non-200 response', response.status);
+                    return false;
+                }
+
+                return true;
+            } catch (error) {
+                console.warn('Failed to log user event:', error);
+                return false;
+            }
+        }
+
+  async function resizeImage(dataURL, originalMimeType, maxWidth, maxHeight, quality = 0.9) {
+    // Turn dataURL into a Blob
+    const blob = await (await fetch(dataURL)).blob();
+
+    // Prefer createImageBitmap (applies EXIF orientation with the option below)
+    let sourceW, sourceH, draw;
+    if ('createImageBitmap' in window) {
+      const bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+      sourceW = bitmap.width;
+      sourceH = bitmap.height;
+      draw = (ctx, w, h) => ctx.drawImage(bitmap, 0, 0, w, h);
     } else {
-        userInfoSpan.textContent = '';
-        userInfoSpan.style.display = 'none';
+      // Fallback path
+      const img = await new Promise((resolve) => {
+        const im = new Image();
+        im.onload = () => resolve(im);
+        im.src = URL.createObjectURL(blob);
+      });
+      sourceW = img.width;
+      sourceH = img.height;
+      draw = (ctx, w, h) => ctx.drawImage(img, 0, 0, w, h);
     }
-};
 
-// Function to handle user login
-window.loginUser = async (email, password) => {
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ email, password })
-        });
+    // Contain-fit into the target box (no cropping)
+    const srcAR = sourceW / sourceH;
+    const boxAR = maxWidth / maxHeight;
+    let targetW, targetH;
+    if (srcAR > boxAR) {
+      targetW = maxWidth;
+      targetH = Math.round(maxWidth / srcAR);
+    } else {
+      targetH = maxHeight;
+      targetW = Math.round(maxHeight * srcAR);
+    }
 
-        const data = await response.json();
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d', { alpha: true });
 
-        if (response.ok) {
-            console.log('Login successful:', data);
-            // This function is now defined in index.html and needs to be called
-            if (window.handleAuthSuccess) {
-                window.handleAuthSuccess(data.user, data.token);
+    ctx.clearRect(0, 0, targetW, targetH);
+    draw(ctx, targetW, targetH);
+
+    const outputMimeType = 'image/png';
+    const outputQuality = undefined; // Quality is only for JPEG
+
+    return canvas.toDataURL(outputMimeType, outputQuality);
+  }
+
+
+        // --- Artist Loading and Filtering Functions (MOVED TO GLOBAL SCOPE) ---
+        let allArtists = []; // Declare in a scope accessible by filterArtists and displayArtists
+
+        // Function definitions for contactArtist, changePortfolioImage, loadDemoArtistsWithFilter,
+        // displayArtists, and filterArtists are assigned to window for global accessibility
+        window.contactArtist = function(whatsapp, name) {
+            const message = `Hi ${name}, I'm interested in getting a tattoo! Can you help me visualize this? (from SkinTip.AI)`;
+            window.open(`https://wa.me/${whatsapp}?text=${encodeURIComponent(message)}`, '_blank');
+        };
+
+        window.changePortfolioImage = function(button, direction) {
+            const gallery = button.closest('.portfolio-gallery');
+            const images = Array.from(gallery.querySelectorAll('.portfolio-image'));
+            let currentIndex = images.findIndex(img => img.classList.contains('active'));
+
+            images[currentIndex].style.display = 'none';
+            images[currentIndex].classList.remove('active');
+
+            currentIndex = (currentIndex + direction + images.length) % images.length;
+
+            images[currentIndex].style.display = 'block';
+            images[currentIndex].classList.add('active');
+        };
+
+        window.loadDemoArtistsWithFilter = function() {
+            allArtists = [
+                {
+                    name: 'Sarah Martinez',
+                    location: 'Los Angeles, CA',
+                    styles: ['Fine Line', 'Minimalist', 'Geometric'],
+                    bio: 'Specializing in delicate designs with 10+ years experience',
+                    likes: 234,
+                    whatsapp: '+1234567890',
+                    portfolio: [
+                        'https://images.unsplash.com/photo-1611501275019-9b5cda994e8d',
+                        'https://images.unsplash.com/photo-1598371839696-5c5bb00bdc28',
+                        'https://images.unsplash.com/photo-1567406889330-43e4639e8d4f',
+                        'https://images.unsplash.com/photo-1475695752828-6d2b0a83cf8a'
+                    ]
+                },
+                {
+                    name: 'Mike Chen',
+                    location: 'New York, NY',
+                    styles: ['Japanese', 'Neo-Traditional'],
+                    bio: 'Award-winning traditional Japanese artist',
+                    likes: 189,
+                    whatsapp: '+0987654321',
+                    portfolio: [
+                        'https://images.unsplash.com/photo-1565058379802-bbe93b2f703a',
+                        'https://images.unsplash.com/photo-1540202403-b7abd6747a18',
+                        'https://images.unsplash.com/photo-1582736317441-e6937f84b6b3',
+                        'https://images.unsplash.com/photo-1552627019-947c3789ffb5'
+                    ]
+                },
+                {
+                    name: 'Emma Thompson',
+                    location: 'Austin, TX',
+                    styles: ['Watercolor', 'Abstract'],
+                    bio: 'Creating unique watercolor tattoos since 2015',
+                    likes: 156,
+                    whatsapp: '+1122334455',
+                    portfolio: [
+                        'https://images.unsplash.com/photo-1598371839696-5c5bb00bdc28',
+                        'https://images.unsplash.com/photo-1604881991720-f91add269bed',
+                        'https://images.unsplash.com/photo-1590736969955-71cc94901144',
+                        'https://images.unsplash.com/photo-1611501275019-9b5cda994e8d'
+                    ]
+                },
+                {
+                    name: 'Carlos Rodriguez',
+                    location: 'Miami, FL',
+                    styles: ['Blackwork', 'Geometric', 'Tribal'],
+                    bio: 'Bold designs with precision and passion',
+                    likes: 298,
+                    whatsapp: '+9988776655',
+                    portfolio: [
+                        'https://images.unsplash.com/photo-1590736969955-71cc94901144',
+                        'https://images.unsplash.com/photo-1568515045052-f9a854d70bfd',
+                        'https://images.unsplash.com/photo-1582731478949-884de7283343',
+                        'https://images.unsplash.com/photo-1604881991720-f91add269bed'
+                ]
+                }
+            ]; // Correctly closing allArtists array
+            window.displayArtists(allArtists);
+        };
+
+        function showArtistsSection() {
+            const artistsSection = document.getElementById('artistsSection');
+            if (artistsSection) {
+                artistsSection.style.display = 'block';
+            }
+        }
+
+        window.loadArtistsFromApi = async function(options = {}) {
+            const { showSection = true, fallbackToDemo = true } = options;
+            const artistsGrid = document.getElementById('artistsGrid');
+            if (!artistsGrid) return;
+
+            try {
+                console.log('[artists] fetching from API...');
+                const response = await fetch(`${CONFIG.API_URL}/artists`);
+                if (!response.ok) {
+                    throw new Error(`Status ${response.status}`);
+                }
+                const apiArtists = await response.json();
+                console.log('[artists] api response count', Array.isArray(apiArtists) ? apiArtists.length : 'n/a');
+
+                const stylesByArtist = {};
+                const portfolioByArtist = {};
+                Object.entries(stencilData || {}).forEach(([styleName, stencils]) => {
+                    stencils?.forEach((stencil) => {
+                        const artistId = stencil?.artist?.id || stencil?.artist?.name;
+                        if (!artistId) return;
+                        if (!stylesByArtist[artistId]) stylesByArtist[artistId] = new Set();
+                        stylesByArtist[artistId].add(styleName);
+                        if (!portfolioByArtist[artistId]) portfolioByArtist[artistId] = [];
+                        if (stencil.isArtistSketch && stencil.imageUrl) {
+                            portfolioByArtist[artistId].push(stencil.imageUrl);
+                        }
+                    });
+                });
+
+                allArtists = (apiArtists || []).map((artist) => {
+                    const mergedPortfolio = [
+                        ...(portfolioByArtist[artist.id] || []),
+                        ...(Array.isArray(artist.portfolio_urls) ? artist.portfolio_urls : [])
+                    ].filter(Boolean);
+                    return {
+                        name: artist.name || 'Unknown Artist',
+                        location: artist.location || '',
+                        styles: Array.from(stylesByArtist[artist.id] || []),
+                        bio: artist.bio || '',
+                        likes: artist.likes || '',
+                        whatsapp: artist.whatsapp_number || artist.whatsapp || '',
+                        portfolio: mergedPortfolio.slice(0, 6)
+                    };
+                }).filter(a => a.name || a.whatsapp || (a.portfolio && a.portfolio.length));
+
+                if (!allArtists.length) {
+                    throw new Error('No artists returned');
+                }
+
+                window.displayArtists(allArtists);
+                if (showSection) {
+                    showArtistsSection();
+                }
+                console.log('[artists] render complete, artists:', allArtists.length);
+            } catch (err) {
+                console.warn('Failed to load artists from API, falling back to demo:', err);
+                if (fallbackToDemo) {
+                    console.log('[artists] loading demo artists');
+                    window.loadDemoArtistsWithFilter();
+                    if (showSection) {
+                        showArtistsSection();
+                    }
+                    console.log('[artists] demo render complete, artists:', allArtists.length);
+                }
+            }
+        };
+
+        function ensureArtistsVisibleFallback() {
+            const artistsSection = document.getElementById('artistsSection');
+            const artistsGrid = document.getElementById('artistsGrid');
+            const hasContent = artistsGrid && artistsGrid.children.length > 0;
+            if (!hasContent) {
+                console.warn('[artists] grid empty after initial load; showing demo fallback');
+                window.loadDemoArtistsWithFilter();
+            }
+            if (artistsSection) artistsSection.style.display = 'block';
+        }
+        // Immediately show demo artists so the section is never empty while API loads
+        console.log('[artists] bootstrapping demo artists immediately');
+        window.loadDemoArtistsWithFilter();
+        showArtistsSection();
+
+        window.displayArtists = function(artists) {
+            const artistsGrid = document.getElementById('artistsGrid');
+            if (artists.length === 0) {
+                artistsGrid.innerHTML = '<div class="empty-state"><p>No artists found matching your criteria</p></div>';
+                return;
+            }
+            artistsGrid.innerHTML = artists.map(artist => {
+                let portfolioImages = '';
+                if (Array.isArray(artist.portfolio)) {
+                    portfolioImages = artist.portfolio.map((img, index) =>
+                        `<img src="${img}" alt="${artist.name} work ${index + 1}"
+                             class="portfolio-image ${index === 0 ? 'active' : ''}"
+                             style="display: ${index === 0 ? 'block' : 'none'}">`
+                    ).join('');
+                } else {
+                    portfolioImages = `<img src="${artist.portfolio}" alt="${artist.name}" class="portfolio-image active" style="display: block">`;
+                }
+                const stylesArray = Array.isArray(artist.styles) ? artist.styles : [];
+                const stylesHTML = stylesArray.map(style =>
+                    `<span class="style-tag">${style}</span>`
+                ).join('');
+                return `
+                    <div class="artist-card">
+                        <div class="portfolio-gallery">
+                            ${portfolioImages}
+                            <button class="gallery-prev" onclick="changePortfolioImage(this, -1)">‹</button>
+                            <button class="gallery-next" onclick="changePortfolioImage(this, 1)">›</button>
+                        </div>
+                        <div class="artist-info">
+                            <h3>${artist.name}</h3>
+                            <p class="artist-location">📍 ${artist.location}</p>
+                            <p class="artist-bio">${artist.bio}</p>
+                            <div class="artist-styles">
+                                ${stylesHTML}
+                            </div>
+                            <div class="artist-footer">
+                                <span class="artist-likes">❤️ ${artist.likes}</span>
+                                <button class="btn btn-primary btn-sm" onclick="contactArtist('${artist.whatsapp}', '${artist.name}')">
+                                    Contact via WhatsApp
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        };
+
+        window.filterArtists = function() {
+            const locationFilter = document.getElementById('locationFilter');
+            const styleFilter = document.getElementById('styleFilter');
+            const selectedLocation = locationFilter ? locationFilter.value : '';
+            const selectedStyle = styleFilter ? styleFilter.value : '';
+
+            const filtered = allArtists.filter(artist => {
+                const matchesLocation = !selectedLocation || artist.location === selectedLocation;
+                const styleList = Array.isArray(artist.styles) ? artist.styles : [];
+                const matchesStyle = !selectedStyle || styleList.includes(selectedStyle);
+                return matchesLocation && matchesStyle;
+            });
+            window.displayArtists(filtered);
+        };
+        // --- END ARTIST FUNCTIONS GLOBAL SCOPE ---
+
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            console.log('🎨 SkinTip initializing (DOMContentLoaded)!');
+
+            let stencilData = {};
+
+            async function fetchStencilData() {
+                if (window.utils && utils.showLoading) {
+                    utils.showLoading('Loading latest styles...');
+                }
+                try {
+                    const response = await fetch(`${CONFIG.API_URL}/styles-with-stencils`);
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch stencil data');
+                    }
+                    stencilData = await response.json();
+
+                    // Debug logging to surface artist payload
+                    console.log('[styles-with-stencils] raw keys', Object.keys(stencilData || {}));
+                    const firstStyleKey = Object.keys(stencilData || {})[0];
+                    const firstItem = firstStyleKey && stencilData[firstStyleKey] ? stencilData[firstStyleKey][0] : null;
+                    if (firstItem) {
+                        console.log('[styles-with-stencils] first item raw', firstItem);
+                        console.log('[styles-with-stencils] first item normalized', normalizeArtist(firstItem.artist));
+                    }
+
+                    // --- NEW: Handle case where no styles are returned ---
+                    if (!stencilData || Object.keys(stencilData).length === 0) {
+                        console.warn('Backend returned no stencil data. Displaying message to user.');
+                        const styleSelectionSection = document.getElementById('styleSelectionSection');
+                        if (styleSelectionSection) {
+                            styleSelectionSection.innerHTML = `
+                                <div class="section-header">
+                                    <h2>Styles Unavailable</h2>
+                                    <p>We couldn't load any tattoo styles at the moment. This could be a temporary issue. Please try refreshing the page in a little while.</p>
+                                </div>
+                            `;
+                        }
+                        return; // Stop execution to prevent errors
+                    }
+                    // --- END NEW ---
+
+                    populateStyleChips();
+                } catch (error) {
+                    console.error('Error fetching stencil data:', error);
+                    if (window.utils && utils.showError) {
+                        utils.showError('Could not load tattoo styles. Please try again later.');
+                    }
+                } finally {
+                    if (window.utils && utils.hideLoading) {
+                        utils.hideLoading();
+                    }
+                }
+            }
+
+            // --- New User Flow Logic (Vertical Scroll Catalog) ---
+            const stylesListContainer = document.getElementById('stylesListContainer');
+            const featuredSketchesScroll = document.getElementById('featuredSketchesScroll');
+
+            function normalizeArtist(artist) {
+                if (!artist) return {};
+                const ig = artist.instagram || (Array.isArray(artist.portfolio_urls) && artist.portfolio_urls.length > 0 ? artist.portfolio_urls[0] : '');
+                const wa = artist.whatsapp || artist.whatsapp_number || '';
+                return {
+                    ...artist,
+                    instagram: ig,
+                    whatsapp: wa
+                };
+            }
+
+            function shuffleArray(array) {
+                for (let i = array.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [array[i], array[j]] = [array[j], array[i]];
+                }
+                return array;
+            }
+
+            function populateStyleChips() {
+                stylesListContainer.innerHTML = '';
+                featuredSketchesScroll.innerHTML = '';
+
+                let allSketches = [];
+
+                // Iterate through each style category
+                for (const style in stencilData) {
+                    const stencils = stencilData[style];
+                    if (!stencils || stencils.length === 0) continue;
+
+                    // Collect for Featured Section
+                    allSketches = allSketches.concat(stencils);
+
+                    // Create Category Container
+                    const categoryContainer = document.createElement('div');
+                    categoryContainer.className = 'style-category-container';
+                    
+                    // Create Header (Clickable)
+                    const header = document.createElement('div');
+                    header.className = 'style-category-header';
+                    
+                    // Generate Preview Thumbnails (Max 3)
+                    // We shuffle a copy to show random preview, or just take first 3. 
+                    // Let's take first 3 for consistency or random for fun? Let's do random.
+                    const previewStencils = [...stencils].sort(() => 0.5 - Math.random()).slice(0, 3);
+                    const thumbsHTML = previewStencils.map(s => 
+                        `<img src="${s.imageUrl}" alt="preview">`
+                    ).join('');
+
+                    header.innerHTML = `
+                        <h3 class="style-category-title">${style} <span style="font-size: 0.9rem; color: #94a3b8; font-weight: normal;">(${stencils.length})</span></h3>
+                        <div class="style-category-thumbs">
+                            ${thumbsHTML}
+                        </div>
+                        <span class="style-category-toggle">▼</span>
+                    `;
+
+                    // Create Content Area (Hidden by default)
+                    const content = document.createElement('div');
+                    content.className = 'style-category-content';
+                    
+                    const grid = document.createElement('div');
+                    grid.className = 'sketch-scroll';
+
+                    // Populate Grid with Sketches
+                    stencils.forEach(stencil => {
+                        const card = createSketchCard({
+                            ...stencil,
+                            artist: normalizeArtist(stencil.artist)
+                        });
+                        grid.appendChild(card);
+                    });
+
+                    content.appendChild(grid);
+                    categoryContainer.appendChild(header);
+                    categoryContainer.appendChild(content);
+                    stylesListContainer.appendChild(categoryContainer);
+
+                    // Toggle Logic
+                    header.addEventListener('click', () => {
+                        categoryContainer.classList.toggle('active');
+                    });
+                }
+
+                // Populate Featured Section (Randomized)
+                shuffleArray(allSketches);
+                allSketches.forEach(stencil => {
+                    const card = createSketchCard({
+                        ...stencil,
+                        artist: normalizeArtist(stencil.artist)
+                    });
+                    featuredSketchesScroll.appendChild(card);
+                });
+
+                // Debug: log a sample artist per style to verify presence
+                Object.keys(stencilData).forEach(style => {
+                    const first = stencilData[style]?.[0];
+                    if (first) {
+                        const a = normalizeArtist(first.artist);
+                        console.log('[styles-with-stencils] sample', style, {
+                            artist: a,
+                            hasArtist: !!(a.name || a.location || a.instagram || a.whatsapp)
+                        });
+                    }
+                });
+
+                // Debug summary across all sketches
+                const flat = Object.values(stencilData || {}).flat().map(s => ({ ...s, artist: normalizeArtist(s.artist) }));
+                const withArtist = flat.filter(s => s.artist && (s.artist.name || s.artist.location || s.artist.instagram || s.artist.whatsapp));
+                const artistSketches = flat.filter(s => s.isArtistSketch);
+                const artistSketchWithArtist = artistSketches.find(s => s.artist && (s.artist.name || s.artist.location || s.artist.instagram || s.artist.whatsapp));
+                console.log('[styles-with-stencils] counts', {
+                    total: flat.length,
+                    withArtist: withArtist.length,
+                    artistSketches: artistSketches.length,
+                    artistSketchesWithArtist: artistSketchWithArtist ? 1 : 0
+                });
+                if (artistSketchWithArtist) {
+                    console.log('[styles-with-stencils] sample artist sketch', artistSketchWithArtist);
+                } else if (artistSketches[0]) {
+                    console.log('[styles-with-stencils] first artist sketch missing artist', artistSketches[0]);
+                }
+            }
+
+            function createSketchCard(stencil) {
+                const card = document.createElement('div');
+                card.className = 'sketch-card';
+                card.dataset.stencilId = stencil.id;
+                const artistName = stencil.artist?.name || stencil.artist?.id || '';
+                const artistLoc = stencil.artist?.location || '';
+                const artistIg = stencil.artist?.instagram || '';
+                const artistWa = stencil.artist?.whatsapp || '';
+                const hasArtistInfo = artistName || artistLoc || artistIg || artistWa;
+                const artistBlock = hasArtistInfo ? `
+                    <p>By ${artistName || 'Artist'}${artistLoc ? ` · ${artistLoc}` : ''}</p>
+                    ${artistIg ? `<p><a href="${artistIg}" target="_blank" rel="noopener noreferrer">Instagram</a></p>` : ''}
+                    ${artistWa ? `<p><a href="https://wa.me/${artistWa}" target="_blank" rel="noopener noreferrer">WhatsApp</a></p>` : ''}
+                ` : '';
+
+                card.innerHTML = `
+                    <img src="${stencil.imageUrl}" alt="${stencil.name}" loading="lazy">
+                    <div class="sketch-card-info">
+                        <h4>${stencil.name}</h4>
+                        ${artistBlock}
+                    </div>
+                `;
+                card.addEventListener('click', () => handleSketchSelection(stencil));
+                return card;
+            }
+
+            // Extracted selection logic to reuse
+            async function handleSketchSelection(selectedStencil) {
+                if (!selectedStencil) return;
+
+                logUserEvent('SKETCH_CLICK', selectedStencil.artist.id, selectedStencil.id);
+                STATE.selectedStencil = selectedStencil;
+
+                try {
+                    utils.showLoading('Cleaning stencil...');
+                    STATE.selectedStencil.cleanedUrl = await cleanStencilWhiteBg(selectedStencil.imageUrl);
+                    utils.hideLoading();
+                } catch (err) {
+                    utils.hideLoading();
+                    console.warn('BG clean failed; using original:', err);
+                    STATE.selectedStencil.cleanedUrl = selectedStencil.imageUrl;
+                }
+
+                // Show selected stencil preview
+                const selectedStencilPreview = document.getElementById('selectedStencilPreview');
+                const selectedStencilPreviewImg = document.getElementById('selectedStencilPreviewImg');
+                selectedStencilPreviewImg.src = STATE.selectedStencil.cleanedUrl;
+                selectedStencilPreview.style.display = 'block';
+
+                document.getElementById('styleSelectionSection').style.display = 'none';
+                const skinSection = document.getElementById('skinPhotoUploadSection');
+                skinSection.style.display = 'block';
+
+                // On mobile, scroll the user to the upload/CTA area instead of jumping to bottom
+                if (window.innerWidth <= 768) {
+                    setTimeout(() => {
+                        skinSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }, 50);
+                }
+            }
+
+            // Remove old event listeners that are no longer needed since we generate cards dynamically with listeners
+            // (The old 'styleChipsContainer' logic is replaced by 'populateStyleChips' above)
+
+            await fetchStencilData();
+            console.log('[artists] kicking off load after stencil data');
+            if (window.loadArtistsFromApi) {
+                await window.loadArtistsFromApi({ showSection: true });
             } else {
-                console.error("window.handleAuthSuccess is not defined. UI may not update correctly.");
-                localStorage.setItem('jwtToken', data.token);
-                localStorage.setItem('userEmail', data.user.email);
-                localStorage.setItem('userName', data.user.username);
-                window.updateUserTokensDisplay(data.user.tokens_remaining);
-                // Redirect or change section manually if handleAuthSuccess is missing
-                document.getElementById('authSection').style.display = 'none';
-                document.getElementById('tattooDesignUploadSection').style.display = 'block';
+                window.loadDemoArtistsWithFilter();
+                showArtistsSection();
             }
-        } else {
-            console.error('Login failed:', data.error);
-            if (window.displayAuthError) {
-                window.displayAuthError(data.error || 'Login failed. Please check your credentials.');
-            }
-        }
-    } catch (error) {
-        console.error('Network or server error during login:', error);
-        if (window.displayAuthError) {
-            window.displayAuthError('Network error or server unavailable. Please try again.');
-        }
-    }
-};
+            setTimeout(ensureArtistsVisibleFallback, 800);
 
-// Function to handle user registration
-window.registerUser = async (email, password, username) => {
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ email, password, username })
-        });
+            // Clean up unused modal elements if any (optional, but good for cleanliness)
+            const oldModal = document.getElementById('stencilModal');
+            if(oldModal) oldModal.remove();
 
-        const data = await response.json();
+            // --- Upload Stencil Logic ---
+            const uploadStencilLink = document.getElementById('uploadStencilLink');
+            const stencilFileInput = document.getElementById('stencilFileInput');
 
-        if (response.ok) {
-            console.log('Registration successful:', data);
-            if (window.handleAuthSuccess) {
-                window.handleAuthSuccess(data.user, data.token);
-            } else {
-                console.error("window.handleAuthSuccess is not defined. UI may not update correctly.");
-                localStorage.setItem('jwtToken', data.token);
-                localStorage.setItem('userEmail', data.user.email);
-                localStorage.setItem('userName', data.user.username);
-                window.updateUserTokensDisplay(data.user.tokens_remaining);
-                // Redirect or change section manually if handleAuthSuccess is missing
-                document.getElementById('authSection').style.display = 'none';
-                document.getElementById('tattooDesignUploadSection').style.display = 'block';
-            }
-        } else {
-            console.error('Registration failed:', data.error);
-            if (window.displayAuthError) {
-                window.displayAuthError(data.error || 'Registration failed. Please try again.');
-            }
-        }
-    } catch (error) {
-        console.error('Network or server error during registration:', error);
-        if (window.displayAuthError) {
-            window.displayAuthError('Network error or server unavailable. Please try again.');
-        }
-    }
-};
+            uploadStencilLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                stencilFileInput.click();
+            });
 
-// Function to handle user logout
-window.logoutUser = () => {
-    localStorage.removeItem('jwtToken');
-    localStorage.removeItem('userEmail');
-    localStorage.removeItem('userName');
-    document.getElementById('userInfo').textContent = '';
-    document.getElementById('logoutBtn').style.display = 'none';
-    console.log('User logged out.');
-    // The index.html DOMContentLoaded listener will handle showing auth section
-};
-
-// Function to check authentication status and fetch tokens on page load
-window.checkAuthStatus = async () => {
-    const token = localStorage.getItem('jwtToken');
-    if (token) {
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/user/tokens`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${token}`
+            stencilFileInput.addEventListener('change', async (e) => {
+                if (e.target.files.length > 0) {
+                    await handleTattooDesignFile(e.target.files[0]);
                 }
             });
 
-            if (response.ok) {
-                const data = await response.json();
-                window.updateUserTokensDisplay(data.tokensRemaining);
-                document.getElementById('logoutBtn').style.display = 'block'; // Ensure logout button is visible if authenticated
-            } else {
-                // Token invalid or expired, force logout
-                console.warn('Authentication check failed, logging out:', response.status);
-                window.logoutUser();
-                if (window.showSection) window.showSection('authSection'); // Go back to auth
-            }
-        } catch (error) {
-            console.error('Error checking auth status:', error);
-            window.logoutUser(); // Logout on network error too
-            if (window.showSection) window.showSection('authSection');
-        }
-    } else {
-        // No token, ensure UI is in logged-out state
-        window.logoutUser(); // Clears display
-        if (window.showSection) window.showSection('authSection');
-    }
-};
+            async function handleTattooDesignFile(file) {
+                if (!CONFIG.ALLOWED_FILE_TYPES.includes(file.type)) {
+                    utils.showError('Please upload a JPEG, PNG, or WebP image for your tattoo design.');
+                    return;
+                }
+                utils.showLoading('Processing tattoo design...');
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const originalDataURL = e.target.result;
+                    const resizedDataURL = await resizeImage(originalDataURL, file.type, 768, 768, 0.9);
 
-// Call checkAuthStatus on initial load
-document.addEventListener('DOMContentLoaded', () => {
-    window.checkAuthStatus();
-});
+                    try {
+                        STATE.uploadedTattooDesignBase64 = await cleanStencilWhiteBg(resizedDataURL);
+                    } catch (err) {
+                        console.warn('BG clean failed for uploaded stencil; using original:', err);
+                        STATE.uploadedTattooDesignBase64 = resizedDataURL; // Fallback
+                    }
+                    STATE.selectedStencil = null; // Clear any gallery selection
+
+                    document.getElementById('styleSelectionSection').style.display = 'none';
+                    document.getElementById('skinPhotoUploadSection').style.display = 'block';
+                    utils.hideLoading();
+                };
+                reader.readAsDataURL(file);
+            }
+
+
+            // Initialize auth module (handles redirection for authenticated users)
+            if (typeof auth !== 'undefined' && auth.init) {
+                auth.init();
+            } else {
+                console.error("Auth module not loaded or 'auth.init' is not defined.");
+            }
+
+            // --- UI Element References ---
+            const changeSkinPhotoBtn = document.getElementById('changeSkinPhotoBtn');
+            const skinPhotoUploadSection = document.getElementById('skinPhotoUploadSection');
+            const skinUploadArea = document.getElementById('skinUploadArea');
+            const fileInput = document.getElementById('fileInput');
+            const imagePreview = document.getElementById('imagePreview');
+            const previewImg = document.getElementById('previewImg');
+            const changeImageBtn = document.getElementById('changeImageBtn');
+
+            const drawingSection = document.getElementById('drawingSection');
+            const continueBtn = document.getElementById('continueBtn'); // This is now "Generate Tattoo on Skin"
+
+            const designSection = document.getElementById('designSection'); // This section will be hidden/removed
+            const creditsRemainingDisplay = document.getElementById('creditsRemaining'); // Keep for token display
+            const socialShareDiv = document.getElementById('socialShare');
+            const shareToInstagramBtn = document.getElementById('shareToInstagramBtn');
+            const resultsSection = document.getElementById('resultsSection');
+            const artistsSection = document.getElementById('artistsSection');
+
+            const togglePanBtn = document.getElementById('togglePanBtn');
+            let panMode = false;
+            let imageExpiryInterval = null;
+
+            function setPanModeUI(enabled) {
+              panMode = !!enabled;
+              if (togglePanBtn) {
+                togglePanBtn.classList.toggle('active', panMode);
+                togglePanBtn.textContent = panMode ? 'Done Moving Skin' : 'Move Skin';
+              }
+              if (window.drawing?.setPanMode) {
+                drawing.setPanMode(panMode);
+              }
+            }
+
+            function getGeneratedImageUrls() {
+                return (STATE.generatedImages || [])
+                    .map((entry) => typeof entry === 'string' ? entry : entry?.url)
+                    .filter(Boolean);
+            }
+
+            function getImageExpiryTimestamp(entry) {
+                if (entry && typeof entry === 'object' && entry.expires_at) {
+                    const ts = Date.parse(entry.expires_at);
+                    if (!Number.isNaN(ts)) {
+                        return ts;
+                    }
+                }
+                if (STATE.imageExpirySeconds) {
+                    return Date.now() + STATE.imageExpirySeconds * 1000;
+                }
+                return null;
+            }
+
+            function startImageExpiryCountdowns() {
+                if (imageExpiryInterval) {
+                    clearInterval(imageExpiryInterval);
+                    imageExpiryInterval = null;
+                }
+                const countdownEls = document.querySelectorAll('.image-expiry-countdown');
+                if (!countdownEls.length) return;
+
+                const update = () => {
+                    const now = Date.now();
+                    countdownEls.forEach((el) => {
+                        const expireAt = Number(el.dataset.expireAt);
+                        if (!expireAt) return;
+                        const remaining = Math.max(0, Math.ceil((expireAt - now) / 1000));
+                        el.textContent = remaining;
+                        if (remaining <= 0) {
+                            el.closest('.image-expiry-warning')?.classList.add('expired');
+                        }
+                    });
+                };
+
+                update();
+                imageExpiryInterval = setInterval(update, 1000);
+            }
+
+            function renderGeneratedResults() {
+                const resultsGrid = document.querySelector('.results-grid');
+                if (!resultsGrid) return;
+                const now = Date.now();
+                resultsGrid.innerHTML = (STATE.generatedImages || []).map((entry, index) => {
+                    const imageUrl = typeof entry === 'string' ? entry : entry?.url;
+                    if (!imageUrl) return '';
+                    const expireAt = getImageExpiryTimestamp(entry);
+                    const countdownAttr = expireAt ? `data-expire-at="${expireAt}"` : '';
+                    const countdownInitial = expireAt ? Math.max(0, Math.ceil((expireAt - now) / 1000)) : '';
+                    const warning = expireAt
+                        ? `<p class="image-expiry-warning">This image will be deleted from our DB in <span class="image-expiry-countdown" ${countdownAttr}>${countdownInitial}</span> seconds. If you want to keep this pic better save it on your device.</p>`
+                        : '';
+                    return `
+                        <div class="result-item">
+                            <img src="${imageUrl}" alt="Generated tattoo ${index + 1}">
+                            <div class="result-actions">
+                                <button class="btn btn-sm btn-outline" onclick="window.open('${imageUrl}', '_blank')">View Full Size</button>
+                            </div>
+                            ${warning}
+                        </div>
+                    `;
+                }).join('');
+                startImageExpiryCountdowns();
+            }
+
+            togglePanBtn?.addEventListener('click', () => {
+              setPanModeUI(!panMode);
+            });
+
+            const rotationSlider = document.getElementById('rotationSlider');
+            const sizeSlider = document.getElementById('sizeSlider');
+
+            rotationSlider?.addEventListener('input', (e) => {
+                if (window.drawing && drawing.setTattooRotation) {
+                    drawing.setTattooRotation(e.target.value);
+                }
+            });
+
+            sizeSlider?.addEventListener('input', (e) => {
+                if (window.drawing && drawing.setTattooScale) {
+                    drawing.setTattooScale(e.target.value / 100);
+                }
+            });
+
+
+            // --- Core Logic & State Management ---
+
+            // Initial UI setup and reset function
+            function resetUI() {
+                const styleSelectionSection = document.getElementById('styleSelectionSection');
+                const selectedStencilPreview = document.getElementById('selectedStencilPreview');
+                const skinPhotoUploadSection = document.getElementById('skinPhotoUploadSection');
+                const imagePreview = document.getElementById('imagePreview');
+                const skinUploadArea = document.getElementById('skinUploadArea');
+                const drawingSection = document.getElementById('drawingSection');
+                const designSection = document.getElementById('designSection');
+                const resultsSection = document.getElementById('resultsSection');
+                const artistsSection = document.getElementById('artistsSection');
+                const socialShareDiv = document.getElementById('socialShare');
+                const fileInput = document.getElementById('fileInput');
+
+                if (styleSelectionSection) styleSelectionSection.style.display = 'block';
+                if (selectedStencilPreview) selectedStencilPreview.style.display = 'none';
+                if (skinPhotoUploadSection) skinPhotoUploadSection.style.display = 'none';
+                if (imagePreview) imagePreview.style.display = 'none';
+                if (skinUploadArea) skinUploadArea.style.display = 'flex';
+                if (drawingSection) drawingSection.style.display = 'none';
+                if (designSection) designSection.style.display = 'none';
+                if (resultsSection) resultsSection.style.display = 'none';
+                if (artistsSection) artistsSection.style.display = allArtists.length ? 'block' : 'none';
+                if (socialShareDiv) socialShareDiv.style.display = 'none';
+                setPanModeUI(false);
+                if (fileInput) fileInput.value = '';
+                if (stencilFileInput) stencilFileInput.value = '';
+
+
+                if (window.drawing && drawing.clearCanvas) {
+                    drawing.clearCanvas();
+                }
+                STATE.selectedStencil = null;
+                STATE.uploadedTattooDesignBase64 = null;
+                STATE.currentImage = null;
+                STATE.currentMask = null;
+                STATE.generatedImages = [];
+                STATE.imageExpirySeconds = null;
+                if (imageExpiryInterval) {
+                    clearInterval(imageExpiryInterval);
+                    imageExpiryInterval = null;
+                }
+
+                utils.updateTokenDisplay();
+            }
+
+            // --- START Cross-Device Inactivity Auto-Logout Logic ---
+            let inactivityTimeout; // Holds the timer reference
+
+            function startInactivityTimer() {
+                if (STATE.user && STATE.token) {
+                    inactivityTimeout = setTimeout(handleInactivityLogout, CONFIG.INACTIVITY_TIMEOUT_MS);
+                    console.log(`Inactivity timer set. Auto-logout in ${CONFIG.INACTIVITY_TIMEOUT_MS / 1000 / 60} minutes.`);
+                }
+            }
+
+            function resetInactivityTimer() {
+                clearTimeout(inactivityTimeout);
+                startInactivityTimer();
+            }
+
+            function handleInactivityLogout() {
+                console.log('User inactive for too long. Forcing logout.');
+                utils.showError('Session expired. Please log in again.');
+                if (typeof auth !== 'undefined' && auth.logout) {
+                    auth.logout();
+                } else {
+                    STATE.user = null;
+                    STATE.token = null;
+                    STATE.userTokens = 0;
+                    localStorage.removeItem('jwt_token');
+                    localStorage.removeItem('user_info');
+                    window.location.href = 'welcome.html';
+                }
+            }
+
+            const activityEvents = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart', 'touchmove', 'touchend'];
+            activityEvents.forEach(event => {
+                document.addEventListener(event, resetInactivityTimer, { passive: true });
+            });
+
+            startInactivityTimer();
+
+            // --- END Cross-Device Inactivity Auto-Logout Logic ---
+
+            // --- START Main Event Listeners Block (Correctly placed) ---
+
+            changeSkinPhotoBtn?.addEventListener('click', () => {
+                drawingSection.style.display = 'none';
+                skinPhotoUploadSection.style.display = 'block';
+                if (window.drawing && drawing.clearCanvas) {
+                    drawing.clearCanvas();
+                }
+            });
+
+            // Skin Photo Upload 
+            skinUploadArea?.addEventListener('click', () => {
+                fileInput.click();
+            });
+
+            const skinConfirmModal = document.getElementById('skinConfirmModal');
+            const skinConfirmBtn = document.getElementById('skinConfirmBtn');
+            const skinCancelBtn = document.getElementById('skinCancelBtn');
+            const skinCheckbox1 = document.getElementById('skinCheckboxNoIntimate');
+            const skinCheckbox2 = document.getElementById('skinCheckboxThirdParty');
+            let pendingSkinFile = null;
+            let hasSkinUploadConsent = false;
+
+            function openSkinConfirmModal(file) {
+                pendingSkinFile = file;
+                hasSkinUploadConsent = false;
+                if (skinCheckbox1) skinCheckbox1.checked = false;
+                if (skinCheckbox2) skinCheckbox2.checked = false;
+                if (skinConfirmModal) skinConfirmModal.style.display = 'flex';
+            }
+
+            function closeSkinConfirmModal() {
+                pendingSkinFile = null;
+                hasSkinUploadConsent = false;
+                if (skinConfirmModal) skinConfirmModal.style.display = 'none';
+                if (fileInput) fileInput.value = '';
+            }
+
+            skinConfirmBtn?.addEventListener('click', async () => {
+                if (!skinCheckbox1?.checked || !skinCheckbox2?.checked) {
+                    utils.showError('Please confirm both checkboxes before continuing.');
+                    return;
+                }
+
+                if (!pendingSkinFile) {
+                    utils.showError('No file selected. Please choose a skin photo again.');
+                    closeSkinConfirmModal();
+                    return;
+                }
+
+                utils.showLoading('Recording confirmation...');
+                const consentLogged = await logUserEvent(
+                    'SKIN_UPLOAD_APPROVED',
+                    null,
+                    null,
+                    {
+                        consent_no_intimate_content: true,
+                        consent_third_party_processing: true
+                    }
+                );
+                utils.hideLoading();
+
+                if (!consentLogged) {
+                    utils.showError('Could not record your confirmation. Please try again.');
+                    return;
+                }
+
+                const file = pendingSkinFile;
+                pendingSkinFile = null;
+                hasSkinUploadConsent = true;
+                if (skinConfirmModal) skinConfirmModal.style.display = 'none';
+                if (file) {
+                    await handleSkinPhotoFile(file);
+                }
+            });
+
+            skinCancelBtn?.addEventListener('click', () => {
+                closeSkinConfirmModal();
+            });
+
+            skinConfirmModal?.addEventListener('click', (e) => {
+                if (e.target === skinConfirmModal) {
+                    closeSkinConfirmModal();
+                }
+            });
+
+            fileInput?.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    openSkinConfirmModal(e.target.files[0]);
+                }
+            });
+
+
+            async function handleSkinPhotoFile(file) {
+                if (!hasSkinUploadConsent) {
+                    utils.showError('Please confirm the upload requirements before continuing.');
+                    return;
+                }
+                if (!CONFIG.ALLOWED_FILE_TYPES.includes(file.type)) {
+                    utils.showError('Please upload a JPEG, PNG, or WebP image for your skin photo.');
+                    return;
+                }
+
+            utils.showLoading('Processing skin photo...');
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const originalDataURL = e.target.result;
+                // Pass original file type to resizeImage
+                const resizedDataURL = await resizeImage(originalDataURL, file.type, 768, 768, 0.8);
+
+                const resizedFile = await (await fetch(resizedDataURL)).blob();
+                Object.defineProperty(resizedFile, 'name', { value: file.name });
+                Object.defineProperty(resizedFile, 'type', { value: file.type }); // Use original file type here!
+                STATE.currentImage = resizedFile;
+
+                skinPhotoUploadSection.style.display = 'none';
+                document.getElementById('drawingSection').style.display = 'block';
+
+                if (window.drawing && drawing.init) {
+                    const tattooImageUrl =
+                      STATE.selectedStencil?.cleanedUrl
+                      ?? STATE.uploadedTattooDesignBase64
+                      ?? STATE.selectedStencil?.imageUrl;
+
+                    if (!tattooImageUrl) {
+                        utils.showError('No stencil selected or uploaded. Please go back and choose a stencil or upload one.');
+                        return;
+                    }
+
+                    // Pass both skin and tattoo image URLs to the new init function
+                    drawing.init(resizedDataURL, tattooImageUrl);
+                } else {
+                    console.error("drawing.js module not loaded correctly or 'drawing' object not exposed.");
+                }
+                utils.hideLoading();
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Continue from Drawing to Design (NOW DIRECTLY GENERATES)
+        continueBtn?.addEventListener('click', async () => { // Changed to async
+            // Ensure user is logged in
+            if (!STATE.user || !STATE.token) {
+                utils.showError('You must be logged in to generate tattoos.');
+                auth.showModal();
+                return;
+            }
+
+            if (!STATE.userTokens || STATE.userTokens < CONFIG.TOKEN_COSTS.FLUX_PLACEMENT) {
+                utils.showError(`Not enough tokens! This action costs ${CONFIG.TOKEN_COSTS.FLUX_PLACEMENT} tokens. You have ${STATE.userTokens || 0}.`);
+                return;
+            }
+            if ((!STATE.selectedStencil && !STATE.uploadedTattooDesignBase64) || !STATE.currentImage) {
+                utils.showError('Please ensure you have selected a stencil or uploaded a design, and uploaded a skin photo.');
+                return;
+            }
+
+            // Generate the mask from the current tattoo position
+            if (window.drawing && drawing.updateMask) {
+                await drawing.updateMask(); // It's async now because of image cloning
+            } else {
+                 utils.showError('Drawing module not ready.');
+                 return;
+            }
+
+            if (!drawing.selectedArea) {
+                utils.showError('Could not generate the tattoo mask. Please try again.');
+                return;
+            }
+
+            STATE.currentMask = drawing.selectedArea;
+
+            // --- Display artist info in loading overlay ---
+            console.log('DEBUG: Checking for artist info. STATE.selectedStencil:', STATE.selectedStencil);
+            const artistInfo = document.getElementById('artistInfo');
+            const artistName = document.getElementById('artistName');
+            const artistSketchesGrid = document.getElementById('artistSketchesGrid');
+            const artistWhatsappLink = document.getElementById('artistWhatsappLink');
+
+            // Only show artist info if it exists AND the sketch is flagged as an artist sketch (or if we assume existing ones with artist data are)
+            // Ideally we check a specific flag, but for now checking if artist name is not "Unknown Artist" is a good proxy if we don't have the flag yet.
+            // But user requested a specific flag behavior.
+            // Let's assume the backend will return 'is_artist_sketch' on the stencil object.
+            
+            if (STATE.selectedStencil && STATE.selectedStencil.artist && STATE.selectedStencil.isArtistSketch) {
+                artistName.textContent = STATE.selectedStencil.artist.name;
+
+                // Find other sketches by the same artist
+                const artistSketches = [];
+                for (const style in stencilData) {
+                    stencilData[style].forEach(stencil => {
+                        if (stencil.artist.name === STATE.selectedStencil.artist.name && stencil.id !== STATE.selectedStencil.id) {
+                            artistSketches.push(stencil);
+                        }
+                    });
+                }
+
+                artistSketchesGrid.innerHTML = '';
+                for (let i = 0; i < Math.min(3, artistSketches.length); i++) {
+                    artistSketchesGrid.innerHTML += `<img src="${artistSketches[i].imageUrl}" alt="${artistSketches[i].name}">`;
+                }
+
+                if (STATE.selectedStencil.artist.whatsapp) {
+                    const earlyContactMessage = `Hi ${STATE.selectedStencil.artist.name}.\n\nI'm interested in this tattoo design: ${STATE.selectedStencil.imageUrl}\n\nCould you tell me more about it?\n\nThanks!`;
+                    artistWhatsappLink.href = `https://wa.me/${STATE.selectedStencil.artist.whatsapp}?text=${encodeURIComponent(earlyContactMessage)}`;
+                    artistWhatsappLink.onclick = () => logUserEvent('WHATSAPP_CONTACT', STATE.selectedStencil.artist.id, STATE.selectedStencil.id);
+                    artistWhatsappLink.style.display = 'inline-block';
+                } else {
+                    artistWhatsappLink.style.display = 'none';
+                }
+                artistInfo.style.display = 'block';
+            } else {
+                artistInfo.style.display = 'none';
+            }
+            // ---
+
+            utils.showLoading('Placing the sketch on your skin...');
+
+            try {
+                const formData = new FormData();
+                formData.append('skinImage', STATE.currentImage);
+                const tattooImageUrl =
+                  STATE.selectedStencil?.cleanedUrl
+                  ?? STATE.uploadedTattooDesignBase64
+                  ?? STATE.selectedStencil?.imageUrl;
+                const tattooDesignBlob = await (await fetch(tattooImageUrl)).blob();
+                // Crucial fix: Use the correct original file type, not hardcoded 'image/jpeg'
+                // Ensure the name also suggests PNG if the type is PNG
+                const tattooDesignFileName = tattooDesignBlob.type === 'image/png' ? 'tattoo_design.png' : 'tattoo_design.jpeg';
+                Object.defineProperty(tattooDesignBlob, 'name', { value: tattooDesignFileName });
+                Object.defineProperty(tattooDesignBlob, 'type', { value: tattooDesignBlob.type }); // Retain the type from the blob (which comes from toDataURL)
+                formData.append('tattooDesignImage', tattooDesignBlob);
+                
+                let maskToSend = STATE.currentMask;
+                if (maskToSend && maskToSend.startsWith('data:')) {
+                    maskToSend = maskToSend.split(',')[1];
+                }
+                formData.append('mask', maskToSend);
+                formData.append('prompt', '');
+                // Use the *actual* angle the user placed (pinch or slider), invert to match backend/sharp
+                const actualAngleDeg = (window.drawing.getTattooAngleDeg?.() ?? 0);
+                formData.append('tattooAngle', -actualAngleDeg);
+
+                // Size is already encoded by your mask. Tell backend "do not rescale".
+                formData.append('tattooScale', '1.0');
+
+                // Detect mobile device to adjust mask growth logic on backend
+                const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (window.innerWidth <= 768);
+                formData.append('isMobile', isMobile.toString());
+
+                const response = await fetch(`${CONFIG.API_URL}/generate-final-tattoo`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${STATE.token}`
+                    },
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json(); // Renamed 'error' to 'errorData' for clarity
+
+                    // --- START Mobile-specific JWT expired handling ---
+                    // Check for 401 status and if the error message includes 'jwt expired'
+                    if (response.status === 401 && (errorData.error && errorData.error.includes('jwt expired'))) {
+                        utils.showError('Your session has expired. Please log in again.');
+                        // Call the dedicated logout function (from auth.js)
+                        if (typeof auth !== 'undefined' && auth.forceLogoutAndShowModal) {
+                            auth.forceLogoutAndShowModal();
+                        }
+                        return; // Important: Stop execution here after handling the specific error
+                    }
+                    // --- END Mobile-specific JWT expired handling ---
+
+                    // If it's not a JWT expired error, then throw the general error
+                    throw new Error(errorData.error || 'Failed to generate tattoo');
+                }
+
+                const data = await response.json();
+                console.log('=== API RESPONSE ===');
+                console.log('Generated image URLs:', data.images);
+
+                if (typeof data.tokens_remaining === 'number') {
+                    STATE.userTokens = data.tokens_remaining;
+                    if (STATE.user) {
+                        STATE.user.tokens_remaining = data.tokens_remaining;
+                        localStorage.setItem('user_info', JSON.stringify(STATE.user));
+                    }
+                }
+                utils.updateTokenDisplay();
+                if (window.auth?.updateUIForAuth) {
+                    auth.updateUIForAuth(true);
+                }
+
+                utils.hideLoading();
+
+                // Store expiry timestamp computed once at response time
+                // Backend returns array of { url, path, expires_at } objects
+                const fallbackExpiry = data.image_expiry_seconds 
+                    ? Date.now() + data.image_expiry_seconds * 1000 
+                    : null;
+                STATE.generatedImages = (data.images || []).map((item) => {
+                    // Handle both string URLs (legacy) and object format
+                    if (typeof item === 'string') {
+                        return { url: item, expires_at: fallbackExpiry };
+                    }
+                    // Object format: use expires_at from backend if available
+                    const expiresAt = item.expires_at 
+                        ? new Date(item.expires_at).getTime() 
+                        : fallbackExpiry;
+                    return { url: item.url, expires_at: expiresAt };
+                });
+                STATE.imageExpirySeconds = data.image_expiry_seconds || null;
+                renderGeneratedResults();
+
+                resultsSection.style.display = 'block';
+                artistsSection.style.display = 'block';
+                resultsSection.scrollIntoView({behavior: 'smooth'}); // Scroll to results section
+                socialShareDiv.style.display = 'block';
+                if (window.loadArtistsFromApi) {
+                    window.loadArtistsFromApi({ showSection: true });
+                } else {
+                    window.loadDemoArtistsWithFilter();
+                    showArtistsSection();
+                }
+
+                // Show and configure artist contact link if a stencil was used
+                const artistContactSection = document.getElementById('artistContactSection');
+                if (STATE.selectedStencil && STATE.selectedStencil.artist && STATE.selectedStencil.isArtistSketch && artistContactSection) {
+                    const whatsappLink = document.getElementById('whatsappLink');
+                    const artistName = STATE.selectedStencil.artist.name;
+                    const messageBody = `Hi ${artistName},\n\nI got this stunning AI tattoo from your catalog. Can you share more details about yourself and the tattoo?\n\nThanks!`;
+                    const previewsHeader = `\n\nHere are the previews I generated:\n`;
+                    const imageUrlsText = getGeneratedImageUrls().join('\n\n');
+                    const fullMessage = messageBody + previewsHeader + imageUrlsText;
+
+                    if (STATE.selectedStencil.artist.whatsapp) {
+                        whatsappLink.href = `https://wa.me/${STATE.selectedStencil.artist.whatsapp}?text=${encodeURIComponent(fullMessage)}`;
+                        whatsappLink.onclick = () => logUserEvent('WHATSAPP_CONTACT', STATE.selectedStencil.artist.id, STATE.selectedStencil.id);
+                        artistContactSection.style.display = 'block';
+                    } else {
+                        artistContactSection.style.display = 'none';
+                    }
+                } else if (artistContactSection) {
+                    artistContactSection.style.display = 'none';
+                }
+                
+            } catch (error) {
+                console.error('Generation error:', error);
+                utils.hideLoading();
+                // --- START Robust Logout for Generic Fetch Errors ---
+                // If it's a TypeError (like 'Failed to fetch') or other unhandled network/API error,
+                // assume session might be the issue and force logout.
+                if (error.message.includes('Failed to fetch') || (error instanceof TypeError)) {
+                     utils.showError('There was a network or server issue. Your session might have expired. Please log in again.');
+                     if (typeof auth !== 'undefined' && auth.forceLogoutAndShowModal) {
+                         auth.forceLogoutAndShowModal();
+                     }
+                } else if (!error.message.includes('Your session has expired')) { // Avoid double message if already handled above
+                     utils.showError(`Tattoo generation failed: ${error.message}`);
+                } else { // Fallback for any other unhandled errors.
+                     utils.showError(`Tattoo generation failed: ${error.message}`);
+                }
+                // --- END Robust Logout for Generic Fetch Errors ---
+            }
+        });
+
+
+        // Social Share to Instagram
+        shareToInstagramBtn?.addEventListener('click', () => {
+            const urls = getGeneratedImageUrls();
+            if (!urls.length) {
+                utils.showError('No images generated yet to share.');
+                return;
+            }
+            alert('To share to Instagram:\n1. Right-click (or long-press on mobile) on the image(s) below to save them to your device.\n2. Open the Instagram app and upload the saved image(s) as a new post.');
+        });
+
+
+        // Download All button
+        document.getElementById('downloadAllBtn')?.addEventListener('click', async () => {
+            const urls = getGeneratedImageUrls();
+            if (!urls.length) {
+                utils.showError('No images generated to download.');
+                return;
+            }
+            utils.showLoading('Preparing images for download...');
+            for (const imageUrl of urls) {
+                try {
+                    const response = await fetch(imageUrl);
+                    const blob = await response.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    // IMPORTANT: Set download filename based on the actual image type, which should be PNG now
+                    // Infer extension from blob.type, or assume PNG if that's what backend returns
+                    const filenameExtension = blob.type.split('/')[1] || 'png';
+                    a.download = `skintip_tattoo_${Date.now()}.${filenameExtension}`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                } catch (error) {
+                    console.error('Failed to download image:', imageUrl, error);
+                    utils.showError('Failed to download one or more images.');
+                    break;
+                }
+            }
+            utils.hideLoading();
+        });
+
+
+        // --- General Navigation & Artist Loading ---
+
+        // New Design button
+            document.getElementById('newDesignBtn')?.addEventListener('click', () => {
+                resetUI();
+                document.getElementById('styleSelectionSection').scrollIntoView({ behavior: 'smooth' });
+            });
+
+            // Delete Account functionality
+            const deleteAccountBtn = document.getElementById('deleteAccountBtn');
+            const deleteAccountModal = document.getElementById('deleteAccountModal');
+            const deleteAccountConfirmBtn = document.getElementById('deleteAccountConfirmBtn');
+            const deleteAccountCancelBtn = document.getElementById('deleteAccountCancelBtn');
+
+            // Show delete account modal
+            deleteAccountBtn?.addEventListener('click', () => {
+                if (deleteAccountModal) {
+                    deleteAccountModal.style.display = 'flex';
+                }
+            });
+
+            // Cancel deletion
+            deleteAccountCancelBtn?.addEventListener('click', () => {
+                if (deleteAccountModal) {
+                    deleteAccountModal.style.display = 'none';
+                }
+            });
+
+            // Close modal when clicking outside
+            deleteAccountModal?.addEventListener('click', (e) => {
+                if (e.target === deleteAccountModal) {
+                    deleteAccountModal.style.display = 'none';
+                }
+            });
+
+            // Confirm account deletion
+            deleteAccountConfirmBtn?.addEventListener('click', async () => {
+                if (!STATE.token) {
+                    utils.showError('You must be logged in to delete your account.');
+                    return;
+                }
+
+                try {
+                    utils.showLoading('Deleting your account...');
+                    const response = await fetch(`${CONFIG.API_URL}/account/delete`, {
+                        method: 'DELETE',
+                        headers: {
+                            'Authorization': `Bearer ${STATE.token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    const data = await response.json();
+                    utils.hideLoading();
+
+                    if (!response.ok) {
+                        throw new Error(data.error || 'Failed to delete account');
+                    }
+
+                    // Success - clear everything and redirect
+                    localStorage.removeItem('jwt_token');
+                    localStorage.removeItem('user_info');
+                    STATE.user = null;
+                    STATE.token = null;
+                    
+                    utils.showSuccess('Your account has been successfully deleted.');
+                    setTimeout(() => {
+                        window.location.href = 'welcome.html';
+                    }, 2000);
+                } catch (error) {
+                    utils.hideLoading();
+                    console.error('Delete account error:', error);
+                    utils.showError(error.message || 'Failed to delete account. Please try again.');
+                }
+            });
+
+            resetUI();
+
+        // The filter event listeners for artists:
+        const locationFilter = document.getElementById('locationFilter');
+        const styleFilter = document.getElementById('styleFilter');
+        locationFilter?.addEventListener('input', window.filterArtists);
+        styleFilter?.addEventListener('change', window.filterArtists);
+
+        // This block is intentionally left empty as the logic will be moved
+        // into the results display section.
+
+        console.log('✅ SkinTip ready!');
+    });
+    console.log('Main inline script finished.');
+</script>
+</body>
+</html>

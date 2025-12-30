@@ -1,339 +1,390 @@
 // frontend/js/drawing.js
+// Tattoo positioning overlay - allows dragging, rotating, and resizing tattoo on skin photo
 
 const drawing = {
     canvas: null,
     ctx: null,
-    maskCanvas: null, // Hidden canvas for creating the mask sent to AI
+    maskCanvas: null,
     maskCtx: null,
-    originalImage: null, // The skin image being drawn on
-    isDrawing: false,
-    currentPath: [], // Stores coordinates of the path being drawn
-    currentPathCoords: null, // Stores the coordinates of the *saved* closed path
-    selectedArea: null, // Stores the Base64 Data URL of the final mask image for API
+    
+    // Images
+    skinImage: null,
+    tattooImage: null,
+    
+    // Tattoo transform state
+    tattooX: 0,
+    tattooY: 0,
+    tattooScale: 1,
+    tattooRotation: 0, // degrees
+    
+    // Drag state
+    isDragging: false,
+    dragStartX: 0,
+    dragStartY: 0,
+    tattooStartX: 0,
+    tattooStartY: 0,
+    
+    // Pan mode (for moving skin view)
+    panMode: false,
+    panOffsetX: 0,
+    panOffsetY: 0,
+    panStartX: 0,
+    panStartY: 0,
+    panStartOffsetX: 0,
+    panStartOffsetY: 0,
+    isPanning: false,
+    
+    // Display scaling
+    displayScale: 1,
 
-    init: (imageUrl) => {
+    init: (skinImageUrl, tattooImageUrl) => {
+        console.log('Drawing init called with:', { skinImageUrl: skinImageUrl?.substring(0, 50), tattooImageUrl: tattooImageUrl?.substring(0, 50) });
+        
         drawing.canvas = document.getElementById('drawingCanvas');
+        if (!drawing.canvas) {
+            console.error('drawingCanvas element not found');
+            return;
+        }
         drawing.ctx = drawing.canvas.getContext('2d');
 
-        // Create hidden mask canvas for Flux AI
+        // Create hidden mask canvas
         drawing.maskCanvas = document.createElement('canvas');
         drawing.maskCtx = drawing.maskCanvas.getContext('2d');
 
-        // Reset drawing state for a new image
-        drawing.currentPath = [];
-        drawing.currentPathCoords = null;
-        drawing.selectedArea = null;
+        // Reset state
+        drawing.tattooX = 0;
+        drawing.tattooY = 0;
+        drawing.tattooScale = 1;
+        drawing.tattooRotation = 0;
+        drawing.panOffsetX = 0;
+        drawing.panOffsetY = 0;
+        drawing.panMode = false;
 
-        // Load the skin image
-        const img = new Image();
-        img.onload = () => {
-            drawing.originalImage = img;
-
-            // Set display canvas sizes, respecting aspect ratio
-            const maxWidth = 600; // Max width for display on screen
-            const scale = Math.min(1, maxWidth / img.width);
-            drawing.canvas.width = img.width * scale;
-            drawing.canvas.height = img.height * scale;
-
-            // Set mask canvas to original image size (essential for AI API input consistency)
-            drawing.maskCanvas.width = img.width;
-            drawing.maskCanvas.height = img.height;
-
-            // Draw image on display canvas
-            drawing.redrawCanvas();
-
-            // Initialize mask canvas with BLACK background (represents no tattoo area initially for Flux fill model)
-            drawing.maskCtx.fillStyle = 'black'; // Initial state of the mask canvas is black (no tattoo area initially)
-            drawing.maskCtx.fillRect(0, 0, drawing.maskCanvas.width, drawing.maskCtx.height);
-
-            // Show drawing section and scroll to it
-            document.getElementById('drawingSection').style.display = 'block';
-            document.getElementById('drawingSection').scrollIntoView({ behavior: 'smooth' });
-
-            // Hide continue button initially (it will be shown after a valid mask is drawn)
-            const continueBtn = document.getElementById('continueBtn');
-            if (continueBtn) continueBtn.style.display = 'none';
-
-            drawing.setupEventListeners();
+        // Load both images
+        let imagesLoaded = 0;
+        const checkBothLoaded = () => {
+            imagesLoaded++;
+            if (imagesLoaded === 2) {
+                drawing.initializeCanvas();
+            }
         };
-        img.src = imageUrl;
+
+        // Load skin image
+        drawing.skinImage = new Image();
+        drawing.skinImage.crossOrigin = 'anonymous';
+        drawing.skinImage.onload = () => {
+            console.log('Skin image loaded:', drawing.skinImage.width, 'x', drawing.skinImage.height);
+            checkBothLoaded();
+        };
+        drawing.skinImage.onerror = (e) => {
+            console.error('Failed to load skin image:', e);
+        };
+        drawing.skinImage.src = skinImageUrl;
+
+        // Load tattoo image
+        drawing.tattooImage = new Image();
+        drawing.tattooImage.crossOrigin = 'anonymous';
+        drawing.tattooImage.onload = () => {
+            console.log('Tattoo image loaded:', drawing.tattooImage.width, 'x', drawing.tattooImage.height);
+            checkBothLoaded();
+        };
+        drawing.tattooImage.onerror = (e) => {
+            console.error('Failed to load tattoo image:', e);
+        };
+        drawing.tattooImage.src = tattooImageUrl;
+    },
+
+    initializeCanvas: () => {
+        if (!drawing.skinImage || !drawing.tattooImage) {
+            console.error('Images not loaded');
+            return;
+        }
+
+        const container = drawing.canvas.parentElement;
+        const containerWidth = container.clientWidth || 600;
+        const containerHeight = container.clientHeight || 500;
+
+        // Calculate scale to fit skin image in container
+        const scaleX = containerWidth / drawing.skinImage.width;
+        const scaleY = containerHeight / drawing.skinImage.height;
+        drawing.displayScale = Math.min(scaleX, scaleY, 1); // Don't upscale
+
+        // Set canvas size
+        drawing.canvas.width = drawing.skinImage.width * drawing.displayScale;
+        drawing.canvas.height = drawing.skinImage.height * drawing.displayScale;
+
+        // Set mask canvas to original skin image size
+        drawing.maskCanvas.width = drawing.skinImage.width;
+        drawing.maskCanvas.height = drawing.skinImage.height;
+
+        // Center tattoo initially
+        drawing.tattooX = drawing.skinImage.width / 2;
+        drawing.tattooY = drawing.skinImage.height / 2;
+
+        // Initial tattoo scale - make it a reasonable size relative to skin
+        const tattooMaxDim = Math.max(drawing.tattooImage.width, drawing.tattooImage.height);
+        const skinMinDim = Math.min(drawing.skinImage.width, drawing.skinImage.height);
+        drawing.tattooScale = (skinMinDim * 0.3) / tattooMaxDim; // 30% of skin size
+
+        // Draw initial state
+        drawing.redrawCanvas();
+
+        // Setup event listeners
+        drawing.setupEventListeners();
+
+        // Show continue button
+        const continueBtn = document.getElementById('continueBtn');
+        if (continueBtn) continueBtn.style.display = 'block';
+
+        // Reset sliders
+        const rotationSlider = document.getElementById('rotationSlider');
+        const sizeSlider = document.getElementById('sizeSlider');
+        const rotationValue = document.getElementById('rotationValue');
+        const sizeValue = document.getElementById('sizeValue');
+        
+        if (rotationSlider) rotationSlider.value = 0;
+        if (sizeSlider) sizeSlider.value = 100;
+        if (rotationValue) rotationValue.textContent = '0°';
+        if (sizeValue) sizeValue.textContent = '100%';
+
+        console.log('Canvas initialized. Tattoo at:', drawing.tattooX, drawing.tattooY, 'Scale:', drawing.tattooScale);
     },
 
     setupEventListeners: () => {
-        // Mouse events for drawing
-        drawing.canvas.addEventListener('mousedown', drawing.startDrawing);
-        drawing.canvas.addEventListener('mousemove', drawing.draw);
-        drawing.canvas.addEventListener('mouseup', drawing.stopDrawing);
-        drawing.canvas.addEventListener('mouseleave', drawing.stopDrawing); // End drawing if mouse leaves canvas
+        // Remove old listeners by cloning
+        const newCanvas = drawing.canvas.cloneNode(true);
+        drawing.canvas.parentNode.replaceChild(newCanvas, drawing.canvas);
+        drawing.canvas = newCanvas;
+        drawing.ctx = drawing.canvas.getContext('2d');
 
-        // Touch events for drawing (mobile support)
-        drawing.canvas.addEventListener('touchstart', (e) => {
-            e.preventDefault(); // Prevent scrolling/zooming
-            const touch = e.touches[0];
-            drawing.startDrawing({
-                clientX: touch.clientX,
-                clientY: touch.clientY
-            });
-        }, { passive: false });
+        // Mouse events
+        drawing.canvas.addEventListener('mousedown', drawing.handleMouseDown);
+        drawing.canvas.addEventListener('mousemove', drawing.handleMouseMove);
+        drawing.canvas.addEventListener('mouseup', drawing.handleMouseUp);
+        drawing.canvas.addEventListener('mouseleave', drawing.handleMouseUp);
 
-        drawing.canvas.addEventListener('touchmove', (e) => {
-            e.preventDefault(); // Prevent scrolling/zooming
-            const touch = e.touches[0];
-            drawing.draw({
-                clientX: touch.clientX,
-                clientY: touch.clientY
-            });
-        }, { passive: false });
+        // Touch events
+        drawing.canvas.addEventListener('touchstart', drawing.handleTouchStart, { passive: false });
+        drawing.canvas.addEventListener('touchmove', drawing.handleTouchMove, { passive: false });
+        drawing.canvas.addEventListener('touchend', drawing.handleTouchEnd, { passive: false });
 
-        drawing.canvas.addEventListener('touchend', (e) => {
-            e.preventDefault(); // Prevent default touch behavior
-            drawing.stopDrawing();
-        }, { passive: false });
-
-        // Clear canvas button event listener - NOW WORKS
-        document.getElementById('clearCanvas')?.addEventListener('click', () => {
-            console.log('Clear Selection button clicked.'); // DEBUG LOG
-            drawing.clearCanvas();
-        });
-
-        // The "Continue to Design" (now "Generate Tattoo on Skin") button listener is handled in index.html.
+        // Redraw after setup
+        drawing.redrawCanvas();
     },
 
-    startDrawing: (e) => {
-        drawing.isDrawing = true;
-        drawing.currentPath = []; // Start a new path for this drawing session
-
+    getEventCoords: (e) => {
         const rect = drawing.canvas.getBoundingClientRect();
-        // Scale coordinates from display canvas to original image dimensions for mask accuracy
-        const x = (e.clientX - rect.left) / drawing.canvas.clientWidth * drawing.originalImage.width;
-        const y = (e.clientY - rect.top) / drawing.canvas.clientHeight * drawing.originalImage.height;
-
-        drawing.currentPath.push({ x, y });
-    },
-
-    draw: (e) => {
-        if (!drawing.isDrawing) return;
-
-        const rect = drawing.canvas.getBoundingClientRect();
-        // Scale coordinates from display canvas to original image dimensions for mask accuracy
-        const x = (e.clientX - rect.left) / drawing.canvas.clientWidth * drawing.originalImage.width;
-        const y = (e.clientY - rect.top) / drawing.canvas.clientHeight * drawing.originalImage.height;
-
-        drawing.currentPath.push({ x, y });
-
-        drawing.redrawCanvas(); // Redraw the display canvas with the original image and any saved path
-
-        // Draw the current path (the line being drawn by the user) with luminescent effect
-        if (drawing.currentPath.length > 1) {
-            drawing.ctx.save();
-
-            // Scale drawing style to match display canvas
-            const displayScaleX = drawing.canvas.width / drawing.originalImage.width;
-            const displayScaleY = drawing.canvas.height / drawing.originalImage.height;
-
-            // Outer glow
-            drawing.ctx.strokeStyle = 'rgba(99, 102, 241, 0.2)';
-            drawing.ctx.lineWidth = 12 * displayScaleX;
-            drawing.ctx.setLineDash([]); // Solid line for glow
-            drawing.ctx.shadowColor = '#6366f1';
-            drawing.ctx.shadowBlur = 20 * displayScaleX;
-            drawing.ctx.beginPath();
-            // Draw path using scaled coordinates for display
-            drawing.ctx.moveTo(drawing.currentPath[0].x * displayScaleX, drawing.currentPath[0].y * displayScaleY);
-            for (let i = 1; i < drawing.currentPath.length; i++) {
-                drawing.ctx.lineTo(drawing.currentPath[i].x * displayScaleX, drawing.currentPath[i].y * displayScaleY);
-            }
-            drawing.ctx.stroke();
-
-            // Middle glow
-            drawing.ctx.strokeStyle = 'rgba(129, 140, 248, 0.4)';
-            drawing.ctx.lineWidth = 6 * displayScaleX;
-            drawing.ctx.shadowBlur = 10 * displayScaleX;
-            drawing.ctx.stroke();
-
-            // Inner bright line (dotted)
-            drawing.ctx.strokeStyle = '#e0e7ff';
-            drawing.ctx.lineWidth = 2 * displayScaleX;
-            drawing.ctx.shadowBlur = 5 * displayScaleX;
-            drawing.ctx.setLineDash([5 * displayScaleX, 5 * displayScaleX]); // Dotted line
-            drawing.ctx.stroke();
-
-            drawing.ctx.restore();
-        }
-    },
-
-    stopDrawing: () => {
-        if (!drawing.isDrawing) return; // If drawing wasn't active, do nothing
-        drawing.isDrawing = false;
-
-        // Get the continue button (Generate Tattoo on Skin)
-        const continueBtn = document.getElementById('continueBtn');
-
-        // Check if path is closed and has enough points (min 10 points to avoid tiny clicks)
-        if (drawing.currentPath.length > 10) {
-            const first = drawing.currentPath[0];
-            const last = drawing.currentPath[drawing.currentPath.length - 1];
-            // Distance check in original image coordinates
-            const distance = Math.sqrt(Math.pow(last.x - first.x, 2) + Math.pow(last.y - first.y, 2));
-
-            if (distance < 30) { // If closed (threshold of 30 pixels in original image resolution)
-                drawing.currentPathCoords = [...drawing.currentPath]; // Save the coordinates of the closed path
-                drawing.updateMask(); // Generate the mask image on the hidden canvas
-                drawing.selectedArea = drawing.maskCanvas.toDataURL('image/png'); // Store the mask as Base64 for API
-
-                // Show continue button (now "Generate Tattoo on Skin")
-                if (continueBtn) continueBtn.style.display = 'block';
-                console.log('Drawing stopped: Valid mask created. Generate button shown.'); // DEBUG LOG
-            } else {
-                alert('Please close the shape by drawing near your starting point to define the tattoo area.');
-                // Clear the path if not closed well enough
-                drawing.currentPath = [];
-                drawing.currentPathCoords = null;
-                drawing.selectedArea = null;
-                if (continueBtn) continueBtn.style.display = 'none'; // Hide if not valid
-                console.log('Drawing stopped: Mask not closed. Generate button hidden.'); // DEBUG LOG
-            }
+        let clientX, clientY;
+        
+        if (e.touches && e.touches.length > 0) {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
         } else {
-            alert('Please draw a larger and more defined area for your tattoo.');
-            // Clear the path if too small
-            drawing.currentPath = [];
-            drawing.currentPathCoords = null;
-            drawing.selectedArea = null;
-            if (continueBtn) continueBtn.style.display = 'none'; // Hide if not valid
-            console.log('Drawing stopped: Mask too small. Generate button hidden.'); // DEBUG LOG
+            clientX = e.clientX;
+            clientY = e.clientY;
         }
 
-        drawing.redrawCanvas(); // Redraw to show the filled selected area or clear temporary path
+        // Convert to original image coordinates
+        const x = (clientX - rect.left) / drawing.displayScale;
+        const y = (clientY - rect.top) / drawing.displayScale;
+        return { x, y };
+    },
+
+    handleMouseDown: (e) => {
+        const coords = drawing.getEventCoords(e);
+        
+        if (drawing.panMode) {
+            drawing.isPanning = true;
+            drawing.panStartX = coords.x;
+            drawing.panStartY = coords.y;
+            drawing.panStartOffsetX = drawing.panOffsetX;
+            drawing.panStartOffsetY = drawing.panOffsetY;
+        } else {
+            drawing.isDragging = true;
+            drawing.dragStartX = coords.x;
+            drawing.dragStartY = coords.y;
+            drawing.tattooStartX = drawing.tattooX;
+            drawing.tattooStartY = drawing.tattooY;
+        }
+    },
+
+    handleMouseMove: (e) => {
+        const coords = drawing.getEventCoords(e);
+
+        if (drawing.isPanning && drawing.panMode) {
+            const dx = coords.x - drawing.panStartX;
+            const dy = coords.y - drawing.panStartY;
+            drawing.panOffsetX = drawing.panStartOffsetX + dx;
+            drawing.panOffsetY = drawing.panStartOffsetY + dy;
+            drawing.redrawCanvas();
+        } else if (drawing.isDragging) {
+            const dx = coords.x - drawing.dragStartX;
+            const dy = coords.y - drawing.dragStartY;
+            drawing.tattooX = drawing.tattooStartX + dx;
+            drawing.tattooY = drawing.tattooStartY + dy;
+            drawing.redrawCanvas();
+        }
+    },
+
+    handleMouseUp: () => {
+        drawing.isDragging = false;
+        drawing.isPanning = false;
+    },
+
+    handleTouchStart: (e) => {
+        e.preventDefault();
+        drawing.handleMouseDown(e);
+    },
+
+    handleTouchMove: (e) => {
+        e.preventDefault();
+        drawing.handleMouseMove(e);
+    },
+
+    handleTouchEnd: (e) => {
+        e.preventDefault();
+        drawing.handleMouseUp();
+    },
+
+    setTattooRotation: (degrees) => {
+        drawing.tattooRotation = parseFloat(degrees);
+        const rotationValue = document.getElementById('rotationValue');
+        if (rotationValue) rotationValue.textContent = `${Math.round(degrees)}°`;
+        drawing.redrawCanvas();
+    },
+
+    setTattooScale: (scale) => {
+        // scale is a multiplier (e.g., 0.5 to 2.0)
+        const baseScale = (Math.min(drawing.skinImage.width, drawing.skinImage.height) * 0.3) / 
+                          Math.max(drawing.tattooImage.width, drawing.tattooImage.height);
+        drawing.tattooScale = baseScale * scale;
+        const sizeValue = document.getElementById('sizeValue');
+        if (sizeValue) sizeValue.textContent = `${Math.round(scale * 100)}%`;
+        drawing.redrawCanvas();
+    },
+
+    setPanMode: (enabled) => {
+        drawing.panMode = enabled;
+        drawing.canvas.style.cursor = enabled ? 'grab' : 'move';
     },
 
     redrawCanvas: () => {
-        // Only attempt to draw if canvas and context are initialized
-        if (!drawing.canvas || !drawing.ctx || !drawing.originalImage) {
-            console.log('RedrawCanvas: Canvas not initialized, skipping redraw.'); // DEBUG LOG
+        if (!drawing.ctx || !drawing.skinImage || !drawing.tattooImage) {
             return;
         }
 
-        // Always clear and redraw the original image first
-        drawing.ctx.clearRect(0, 0, drawing.canvas.width, drawing.canvas.height);
-        drawing.ctx.drawImage(drawing.originalImage, 0, 0, drawing.canvas.width, drawing.canvas.height);
+        const ctx = drawing.ctx;
+        const scale = drawing.displayScale;
 
-        // Draw the previously selected (closed) area if it exists
-        if (drawing.currentPathCoords && drawing.currentPathCoords.length > 0) {
-            drawing.ctx.save();
+        // Clear canvas
+        ctx.clearRect(0, 0, drawing.canvas.width, drawing.canvas.height);
 
-            // Scale drawing to display canvas dimensions
-            const displayScaleX = drawing.canvas.width / drawing.originalImage.width;
-            const displayScaleY = drawing.canvas.height / drawing.originalImage.height;
+        // Draw skin image with pan offset
+        ctx.save();
+        ctx.translate(drawing.panOffsetX * scale, drawing.panOffsetY * scale);
+        ctx.drawImage(drawing.skinImage, 0, 0, drawing.canvas.width, drawing.canvas.height);
+        ctx.restore();
 
-            // Luminescent fill style for the selected area
-            drawing.ctx.fillStyle = 'rgba(99, 102, 241, 0.2)';
-            drawing.ctx.strokeStyle = '#818cf8';
-            drawing.ctx.lineWidth = 3 * Math.min(displayScaleX, displayScaleY); // Scale line width
-            drawing.ctx.shadowColor = '#6366f1';
-            drawing.ctx.shadowBlur = 15 * Math.min(displayScaleX, displayScaleY);
-
-            drawing.ctx.beginPath();
-            // Draw the saved path coordinates, scaled for display
-            drawing.ctx.moveTo(drawing.currentPathCoords[0].x * displayScaleX, drawing.currentPathCoords[0].y * displayScaleY);
-            for (let i = 1; i < drawing.currentPathCoords.length; i++) {
-                drawing.ctx.lineTo(drawing.currentPathCoords[i].x * displayScaleX, drawing.currentPathCoords[i].y * displayScaleY);
-            }
-            drawing.ctx.closePath(); // Close the shape
-            drawing.ctx.fill(); // Fill the shape
-            drawing.ctx.stroke(); // Draw the outline
-            drawing.ctx.restore();
-            console.log('RedrawCanvas: Mask drawn on display canvas.'); // DEBUG LOG
-        } else {
-            console.log('RedrawCanvas: No mask to draw on display canvas.'); // DEBUG LOG
-        }
+        // Draw tattoo with transforms
+        ctx.save();
+        
+        // Translate to tattoo center position (with pan offset)
+        ctx.translate(
+            (drawing.tattooX + drawing.panOffsetX) * scale,
+            (drawing.tattooY + drawing.panOffsetY) * scale
+        );
+        
+        // Rotate
+        ctx.rotate(drawing.tattooRotation * Math.PI / 180);
+        
+        // Calculate scaled tattoo dimensions
+        const tattooWidth = drawing.tattooImage.width * drawing.tattooScale * scale;
+        const tattooHeight = drawing.tattooImage.height * drawing.tattooScale * scale;
+        
+        // Draw tattoo centered at origin (which we translated to tattooX, tattooY)
+        ctx.drawImage(
+            drawing.tattooImage,
+            -tattooWidth / 2,
+            -tattooHeight / 2,
+            tattooWidth,
+            tattooHeight
+        );
+        
+        ctx.restore();
     },
 
     updateMask: () => {
-        // Only attempt to update mask if maskCanvas and maskCtx are initialized
-        if (!drawing.maskCanvas || !drawing.maskCtx || !drawing.originalImage) {
-            console.log('UpdateMask: Mask canvas not initialized, skipping update.'); // DEBUG LOG
+        if (!drawing.maskCtx || !drawing.skinImage || !drawing.tattooImage) {
+            console.error('Cannot update mask - images not loaded');
             return;
         }
 
-        // Create the mask on the HIDDEN canvas.
-        // Frontend mask is white for the tattoo area, black elsewhere.
+        const maskCtx = drawing.maskCtx;
 
-        // Start with a BLACK background for the mask canvas
-        drawing.maskCtx.fillStyle = 'black';
-        drawing.maskCtx.fillRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
+        // Clear mask to black
+        maskCtx.fillStyle = 'black';
+        maskCtx.fillRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
 
-        // Draw the drawn area as WHITE on the mask canvas
-        if (drawing.currentPathCoords && drawing.currentPathCoords.length > 0) {
-            drawing.maskCtx.fillStyle = 'white'; // Use white for the area to be filled
-            drawing.maskCtx.beginPath();
-            // Use original image coordinates for mask for pixel accuracy
-            drawing.maskCtx.moveTo(drawing.currentPathCoords[0].x, drawing.currentPathCoords[0].y);
+        // Draw tattoo shape as white on mask (at original skin image resolution)
+        maskCtx.save();
+        
+        // Translate to tattoo position
+        maskCtx.translate(drawing.tattooX, drawing.tattooY);
+        
+        // Rotate
+        maskCtx.rotate(drawing.tattooRotation * Math.PI / 180);
+        
+        // Calculate tattoo dimensions at original resolution
+        const tattooWidth = drawing.tattooImage.width * drawing.tattooScale;
+        const tattooHeight = drawing.tattooImage.height * drawing.tattooScale;
+        
+        // Fill white rectangle where tattoo is
+        maskCtx.fillStyle = 'white';
+        maskCtx.fillRect(-tattooWidth / 2, -tattooHeight / 2, tattooWidth, tattooHeight);
+        
+        maskCtx.restore();
 
-            for (let i = 1; i < drawing.currentPathCoords.length; i++) {
-                drawing.maskCtx.lineTo(drawing.currentPathCoords[i].x, drawing.currentPathCoords[i].y);
-            }
+        drawing.selectedArea = drawing.maskCanvas.toDataURL('image/png');
+        console.log('Mask updated');
+    },
 
-            drawing.maskCtx.closePath();
-            drawing.maskCtx.fill(); // Fill the shape with white
-            console.log('UpdateMask: Mask drawn on hidden canvas.'); // DEBUG LOG
-        } else {
-            console.log('UpdateMask: No mask to draw on hidden canvas.'); // DEBUG LOG
-        }
+    getMaskDataURL: () => {
+        return drawing.selectedArea;
+    },
+
+    // Get tattoo position and transform data for the API
+    getTattooTransform: () => {
+        return {
+            x: drawing.tattooX,
+            y: drawing.tattooY,
+            scale: drawing.tattooScale,
+            rotation: drawing.tattooRotation,
+            skinWidth: drawing.skinImage?.width,
+            skinHeight: drawing.skinImage?.height,
+            tattooWidth: drawing.tattooImage?.width,
+            tattooHeight: drawing.tattooImage?.height
+        };
     },
 
     clearCanvas: () => {
-        console.log('clearCanvas function called.'); // DEBUG LOG at start
-
-        // Only attempt to clear if canvas and context are initialized
-        if (!drawing.canvas || !drawing.ctx) {
-            console.warn("clearCanvas: Canvas not initialized, cannot clear."); // DEBUG LOG
-            return;
+        if (drawing.ctx) {
+            drawing.ctx.clearRect(0, 0, drawing.canvas.width, drawing.canvas.height);
         }
-
-        // Clear both display and mask canvases
-        drawing.ctx.clearRect(0, 0, drawing.canvas.width, drawing.canvas.height);
-        console.log('clearCanvas: Display canvas cleared.'); // DEBUG LOG
-
-        if (drawing.maskCtx && drawing.maskCanvas) {
+        if (drawing.maskCtx) {
             drawing.maskCtx.clearRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
-            console.log('clearCanvas: Mask canvas cleared.'); // DEBUG LOG
         }
-
-        // Reset all drawing state variables
-        drawing.currentPath = [];
         drawing.selectedArea = null;
-        drawing.currentPathCoords = null;
-        console.log('clearCanvas: Drawing state variables reset.'); // DEBUG LOG
+        drawing.tattooX = 0;
+        drawing.tattooY = 0;
+        drawing.tattooScale = 1;
+        drawing.tattooRotation = 0;
+        drawing.panOffsetX = 0;
+        drawing.panOffsetY = 0;
         
-        // Redraw the original image (which will clear the display canvas if no image)
-        // This will effectively put the original image back without any drawings.
-        drawing.redrawCanvas();
-        console.log('clearCanvas: redrawCanvas called after reset.'); // DEBUG LOG
-
-        // Re-initialize mask canvas with black background after clearing for consistency
-        if (drawing.maskCtx && drawing.maskCanvas) {
-            drawing.maskCtx.fillStyle = 'black';
-            drawing.maskCtx.fillRect(0, 0, drawing.maskCanvas.width, drawing.maskCanvas.height);
-            console.log('clearCanvas: Mask canvas re-initialized with black background.'); // DEBUG LOG
-        }
-
-        // Hide the continue button (now "Generate Tattoo on Skin") explicitly on clear
         const continueBtn = document.getElementById('continueBtn');
-        if (continueBtn) {
-            continueBtn.style.display = 'none';
-            console.log('clearCanvas: Generate button hidden.'); // DEBUG LOG
-        } else {
-            console.warn('clearCanvas: Generate button element not found.'); // DEBUG LOG
-        }
-        
-        console.log('clearCanvas function finished.'); // DEBUG LOG at end
-    },
-
-    // Public getter for mask data URL (used by index.html)
-    getMaskDataURL: () => {
-        return drawing.selectedArea;
+        if (continueBtn) continueBtn.style.display = 'none';
     }
 };
 
-// Expose the drawing object globally so index.html can access it
+// Expose globally
 window.drawing = drawing;

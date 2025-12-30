@@ -45,7 +45,7 @@ async function getMaskBoundingBox(maskBuffer, width, height) {
     maxX = Math.min(width, maxX + padding);
     maxY = Math.min(height, maxY + padding);
 
-    return {
+  return {
         minX: minX,
         minY: minY,
         maxX: maxX,
@@ -63,20 +63,22 @@ const fluxPlacementHandler = {
      * Calls Remove.bg API to remove background from an image buffer.
      * Returns a buffer of the image with background removed (always PNG).
      */
-    removeImageBackground: async (imageBuffer) => {
-        if (!REMOVE_BG_API_KEY) {
-            console.warn('REMOVE_BG_API_KEY is not set. Skipping background removal and returning original image as PNG.');
+  removeImageBackground: async (imageBuffer) => {
+        console.log('removeImageBackground called. REMOVE_BG_API_KEY exists:', !!REMOVE_BG_API_KEY);
+
+    if (!REMOVE_BG_API_KEY) {
+            console.error('❌ REMOVE_BG_API_KEY is NOT set! Background removal SKIPPED.');
             return await sharp(imageBuffer).png().toBuffer(); // Ensure it's PNG even if no removal
         }
 
         try {
-            console.log('Calling Remove.bg API for background removal...');
-            const formData = new FormData();
+            console.log('✅ Calling Remove.bg API for background removal...');
+      const formData = new FormData();
             formData.append('image_file', new Blob([imageBuffer], { type: 'image/png' }), 'tattoo_design.png'); // Send as PNG
-            formData.append('size', 'auto');
+      formData.append('size', 'auto');
             formData.append('format', 'png'); // Request PNG output from remove.bg
 
-            const response = await axios.post('https://api.remove.bg/v1.0/removebg', formData, {
+      const response = await axios.post('https://api.remove.bg/v1.0/removebg', formData, {
                 headers: {
                     'X-Api-Key': REMOVE_BG_API_KEY,
                     ...formData.getHeaders() // Important for FormData
@@ -93,38 +95,39 @@ const fluxPlacementHandler = {
                 throw new Error(`Remove.bg API failed with status ${response.status}: ${errorResponseData.substring(0, 100)}`);
             }
         } catch (error) {
-            console.error('Error calling Remove.bg API:', error.response?.data?.toString() || error.message);
+            console.error('❌ Error calling Remove.bg API:', error.response?.data?.toString() || error.message);
+            console.error('❌ Full error details:', error.response?.status, error.response?.statusText);
             // If remove.bg fails, proceed with the original image but ensure it's a PNG
-            console.warn('Background removal failed. Proceeding with original tattoo design (may have background).');
+            console.warn('⚠️ Background removal FAILED. Proceeding with original tattoo design (will have background).');
             return await sharp(imageBuffer).png().toBuffer();
         }
-    },
+  },
 
     /**
      * Applies a watermark to an image buffer and returns the watermarked image as a buffer.
      * Always outputs PNG to preserve transparency.
      */
-    applyWatermark: async (imageBuffer) => {
-        try {
-            const watermarkText = 'SkinTip.AI';
-            const watermarkSvg = `<svg width="200" height="30" viewBox="0 0 200 30" xmlns="http://www.w3.org/2000/svg">
-                                    <text x="10" y="25" font-family="Arial, sans-serif" font-size="16" fill="#FFFFFF" fill-opacity="0.5">${watermarkText}</text>
-                                    </svg>`;
-            const svgBuffer = Buffer.from(watermarkSvg);
+  applyWatermark: async (imageBuffer) => {
+    try {
+      const watermarkText = 'SkinTip.AI';
+      const watermarkSvg = `<svg width="200" height="30" viewBox="0 0 200 30" xmlns="http://www.w3.org/2000/svg">
+        <text x="10" y="25" font-family="Arial, sans-serif" font-size="16" fill="#FFFFFF" fill-opacity="0.5">${watermarkText}</text>
+      </svg>`;
+      const svgBuffer = Buffer.from(watermarkSvg);
 
-            const metadata = await sharp(imageBuffer).metadata();
-            const imageWidth = metadata.width;
-            const imageHeight = metadata.height;
+      const metadata = await sharp(imageBuffer).metadata();
+      const imageWidth = metadata.width;
+      const imageHeight = metadata.height;
 
-            const svgWidth = 200;
-            const svgHeight = 30;
-            const padding = 15;
+      const svgWidth = 200;
+      const svgHeight = 30;
+      const padding = 15;
 
-            const left = Math.max(0, imageWidth - svgWidth - padding);
-            const top = Math.max(0, imageHeight - svgHeight - padding);
+      const left = Math.max(0, imageWidth - svgWidth - padding);
+      const top = Math.max(0, imageHeight - svgHeight - padding);
 
             // Force output to PNG to always preserve transparency
-            return await sharp(imageBuffer)
+      return await sharp(imageBuffer)
                 .composite([{
                     input: svgBuffer,
                     top: top,
@@ -132,9 +135,9 @@ const fluxPlacementHandler = {
                     blend: 'over'
                 }])
                 .png() // Always output as PNG
-                .toBuffer();
+        .toBuffer();
 
-        } catch (error) {
+    } catch (error) {
             console.error('Error applying watermark (caught):', error);
             return imageBuffer; // Return original if error
         }
@@ -146,7 +149,7 @@ const fluxPlacementHandler = {
      */
     uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '', contentType = 'image/jpeg') => {
         // Fix: Ensure correct path construction without double slashes
-        const filePath = folder ? `${userId}/${folder}/${fileName}` : `${userId}/${fileName}`;
+    const filePath = folder ? `${userId}/${folder}/${fileName}` : `${userId}/${fileName}`;
         
         // Calculate expiration time (24 hours from now)
         const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
@@ -159,10 +162,10 @@ const fluxPlacementHandler = {
                 cacheControl: '3600' // CDN cache for 1 hour
             });
 
-        if (error) {
-            console.error('Supabase upload error:', error);
-            throw new Error(`Failed to upload image to storage: ${error.message}`);
-        }
+    if (error) {
+      console.error('Supabase upload error:', error);
+      throw new Error(`Failed to upload image to storage: ${error.message}`);
+    }
 
         const { data: publicUrlData } = supabase.storage
             .from(SUPABASE_STORAGE_BUCKET)
@@ -248,7 +251,7 @@ const fluxPlacementHandler = {
                     fit: 'contain',
                     background: { r: 0, g: 0, b: 0, alpha: 0 } // Ensures transparent background if tattoo is smaller than bounding box
                 })
-                .toBuffer();
+      .toBuffer();
             console.log(`Tattoo design resized specifically for mask bounding box: ${maskBoundingBox.width}x${maskBoundingBox.height}.`);
         } catch (error) {
             console.error('Error resizing tattoo design for placement:', error);
@@ -270,7 +273,7 @@ const fluxPlacementHandler = {
                     }
                 ])
                 .png() // Output as PNG to preserve transparency for subsequent steps/display!
-                .toBuffer();
+      .toBuffer();
             console.log('Tattoo manually composited onto skin image with correct sizing, positioning, and clipping. Output format: PNG.');
 
             // --- DEBUGGING STEP: UPLOAD AND LOG INTERMEDIATE IMAGE ---
@@ -341,7 +344,7 @@ const fluxPlacementHandler = {
                 const errorDetail = error.response?.data ? JSON.stringify(error.response.data) : error.message;
                 console.error(`Flux API call for variation ${i + 1} failed:`, errorDetail);
                 console.warn(`Skipping variation ${i + 1} due to API call failure.`);
-                continue;
+              continue;
             }
 
             const taskId = fluxResponse.data.id;
@@ -349,8 +352,8 @@ const fluxPlacementHandler = {
             if (!taskId || !pollingUrl) {
                 console.error(`Flux API for variation ${i + 1} did not return a task ID or polling URL:`, fluxResponse.data);
                 console.warn(`Skipping variation ${i + 1} due to missing task ID or polling URL.`);
-                continue;
-            }
+        continue;
+      }
 
             // Poll for results for THIS specific task ID and URL
             let attempts = 0;
@@ -417,12 +420,12 @@ const fluxPlacementHandler = {
             }
         } // End of for loop for multiple variations
 
-        if (generatedImageUrls.length === 0) {
+    if (generatedImageUrls.length === 0) {
             throw new Error('Flux API: No images were generated across all attempts. Please try again or with a different design.');
-        }
-
-        return generatedImageUrls;
     }
+
+    return generatedImageUrls;
+  }
 };
 
 export default fluxPlacementHandler;

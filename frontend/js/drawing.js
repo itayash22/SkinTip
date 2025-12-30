@@ -265,7 +265,9 @@ const drawing = {
 
     setPanMode: (enabled) => {
         drawing.panMode = enabled;
-        drawing.canvas.style.cursor = enabled ? 'grab' : 'move';
+        if (drawing.canvas) {
+            drawing.canvas.style.cursor = enabled ? 'grab' : 'move';
+        }
     },
 
     redrawCanvas: () => {

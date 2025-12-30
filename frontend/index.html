@@ -515,7 +515,7 @@
 
                 const stylesByArtist = {};
                 const portfolioByArtist = {};
-                Object.entries(stencilData || {}).forEach(([styleName, stencils]) => {
+                Object.entries(window.stencilData || {}).forEach(([styleName, stencils]) => {
                     stencils?.forEach((stencil) => {
                         const artistId = stencil?.artist?.id || stencil?.artist?.name;
                         if (!artistId) return;
@@ -644,10 +644,13 @@
         // --- END ARTIST FUNCTIONS GLOBAL SCOPE ---
 
 
+        // Global stencilData for artist loading
+        window.stencilData = {};
+        
         document.addEventListener('DOMContentLoaded', async () => {
             console.log('🎨 SkinTip initializing (DOMContentLoaded)!');
 
-            let stencilData = {};
+            let stencilData = window.stencilData;
 
             async function fetchStencilData() {
                 if (window.utils && utils.showLoading) {
@@ -659,6 +662,7 @@
                         throw new Error('Failed to fetch stencil data');
                     }
                     stencilData = await response.json();
+                    window.stencilData = stencilData; // Make available globally for artist loading
 
                     // Debug logging to surface artist payload
                     console.log('[styles-with-stencils] raw keys', Object.keys(stencilData || {}));

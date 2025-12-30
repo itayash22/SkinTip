@@ -290,7 +290,7 @@ const fluxPlacementHandler = {
                 guidance_scale: 8.0,
                 // New parameters from Flux API bot:
                 prompt_upsampling: true,
-                safety_tolerance: 'low', // As requested, set to 'low' for less strict filtering
+                safety_tolerance: 6, // Integer 0-6, where 6 is least strict
                 seed: currentSeed
             };
 

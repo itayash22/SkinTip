@@ -482,66 +482,14 @@
             images[currentIndex].classList.add('active');
         };
 
+        // Demo artists removed - only show real artists from database
         window.loadDemoArtistsWithFilter = function() {
-            allArtists = [
-                {
-                    name: 'Sarah Martinez',
-                    location: 'Los Angeles, CA',
-                    styles: ['Fine Line', 'Minimalist', 'Geometric'],
-                    bio: 'Specializing in delicate designs with 10+ years experience',
-                    likes: 234,
-                    whatsapp: '+1234567890',
-                    portfolio: [
-                        'https://images.unsplash.com/photo-1611501275019-9b5cda994e8d',
-                        'https://images.unsplash.com/photo-1598371839696-5c5bb00bdc28',
-                        'https://images.unsplash.com/photo-1567406889330-43e4639e8d4f',
-                        'https://images.unsplash.com/photo-1475695752828-6d2b0a83cf8a'
-                    ]
-                },
-                {
-                    name: 'Mike Chen',
-                    location: 'New York, NY',
-                    styles: ['Japanese', 'Neo-Traditional'],
-                    bio: 'Award-winning traditional Japanese artist',
-                    likes: 189,
-                    whatsapp: '+0987654321',
-                    portfolio: [
-                        'https://images.unsplash.com/photo-1565058379802-bbe93b2f703a',
-                        'https://images.unsplash.com/photo-1540202403-b7abd6747a18',
-                        'https://images.unsplash.com/photo-1582736317441-e6937f84b6b3',
-                        'https://images.unsplash.com/photo-1552627019-947c3789ffb5'
-                    ]
-                },
-                {
-                    name: 'Emma Thompson',
-                    location: 'Austin, TX',
-                    styles: ['Watercolor', 'Abstract'],
-                    bio: 'Creating unique watercolor tattoos since 2015',
-                    likes: 156,
-                    whatsapp: '+1122334455',
-                    portfolio: [
-                        'https://images.unsplash.com/photo-1598371839696-5c5bb00bdc28',
-                        'https://images.unsplash.com/photo-1604881991720-f91add269bed',
-                        'https://images.unsplash.com/photo-1590736969955-71cc94901144',
-                        'https://images.unsplash.com/photo-1611501275019-9b5cda994e8d'
-                    ]
-                },
-                {
-                    name: 'Carlos Rodriguez',
-                    location: 'Miami, FL',
-                    styles: ['Blackwork', 'Geometric', 'Tribal'],
-                    bio: 'Bold designs with precision and passion',
-                    likes: 298,
-                    whatsapp: '+9988776655',
-                    portfolio: [
-                        'https://images.unsplash.com/photo-1590736969955-71cc94901144',
-                        'https://images.unsplash.com/photo-1568515045052-f9a854d70bfd',
-                        'https://images.unsplash.com/photo-1582731478949-884de7283343',
-                        'https://images.unsplash.com/photo-1604881991720-f91add269bed'
-                ]
-                }
-            ]; // Correctly closing allArtists array
-            window.displayArtists(allArtists);
+            // No demo artists - show empty state or hide section
+            allArtists = [];
+            const artistsSection = document.getElementById('artistsSection');
+            if (artistsSection) {
+                artistsSection.style.display = 'none';
+            }
         };
 
         function showArtistsSection() {
@@ -622,11 +570,10 @@
             const artistsSection = document.getElementById('artistsSection');
             const artistsGrid = document.getElementById('artistsGrid');
             const hasContent = artistsGrid && artistsGrid.children.length > 0;
-            if (!hasContent) {
-                console.warn('[artists] grid empty after initial load; showing demo fallback');
-                window.loadDemoArtistsWithFilter();
+            // Only show artists section if there are real artists
+            if (artistsSection) {
+                artistsSection.style.display = hasContent ? 'block' : 'none';
             }
-            if (artistsSection) artistsSection.style.display = 'block';
         }
         window.displayArtists = function(artists) {
             const artistsGrid = document.getElementById('artistsGrid');

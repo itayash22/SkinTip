@@ -30,7 +30,7 @@ app.set('trust proxy', 1);
 
 console.log('SERVER STARTUP DEBUG: process.env.FRONTEND_URL =', process.env.FRONTEND_URL);
 
-// Initialize Supabase
+// Initialize Supabase - SECURITY: Separate clients for different access levels
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -40,7 +40,15 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SERVICE_KEY || !process.env
     process.exit(1);
 }
 
+// Public client for read operations (uses anon key with RLS)
+const supabasePublic = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Service client for authenticated/admin operations (bypasses RLS)
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+// JWT token expiration times
+const ACCESS_TOKEN_EXPIRY = '15m';  // Short-lived access token
+const REFRESH_TOKEN_EXPIRY = '7d';  // Longer-lived refresh token
 
 // Middleware
 app.use(helmet());
@@ -79,6 +87,7 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// General rate limiter
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 100,
@@ -89,6 +98,19 @@ const limiter = rateLimit({
     trustProxy: 1
 });
 app.use('/api/', limiter);
+
+// Expensive endpoint rate limiter (for generate-final-tattoo: 20/hour)
+const expensiveLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 20, // 20 requests per hour
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many generation requests. Please try again later. Limit: 20 per hour.' },
+    keyGenerator: (req) => {
+        // Use user ID if authenticated, otherwise IP
+        return req.user?.id || req.ip;
+    }
+});
 
 const upload = multer({
     storage: multer.memoryStorage(),
@@ -109,8 +131,96 @@ app.get('/', (req, res) => {
     res.json({ status: 'OK', message: 'SkinTip API is running' });
 });
 
-app.get('/api/health', (req, res) => {
-    res.json({ status: 'OK', message: 'SkinTip API is running' });
+// Comprehensive health monitoring endpoint
+app.get('/api/health', async (req, res) => {
+    const health = {
+        status: 'OK',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        checks: {}
+    };
+    
+    try {
+        // Check Supabase connection
+        const startDb = Date.now();
+        const { error: dbError } = await supabase.from('users').select('id').limit(1);
+        health.checks.database = {
+            status: dbError ? 'ERROR' : 'OK',
+            responseTime: Date.now() - startDb,
+            error: dbError?.message
+        };
+    } catch (e) {
+        health.checks.database = { status: 'ERROR', error: e.message };
+    }
+    
+    try {
+        // Check Flux API (just verify key exists)
+        health.checks.fluxApi = {
+            status: process.env.FLUX_API_KEY ? 'CONFIGURED' : 'NOT_CONFIGURED'
+        };
+    } catch (e) {
+        health.checks.fluxApi = { status: 'ERROR', error: e.message };
+    }
+    
+    // Overall status
+    const hasErrors = Object.values(health.checks).some(c => c.status === 'ERROR');
+    health.status = hasErrors ? 'DEGRADED' : 'OK';
+    
+    res.status(hasErrors ? 503 : 200).json(health);
+});
+
+// Internal endpoint for cron-based cleanup of expired images
+app.post('/api/internal/cleanup-expired-images', async (req, res) => {
+    // Verify cron secret
+    const cronSecret = req.headers['x-cron-secret'];
+    if (cronSecret !== process.env.CRON_SECRET) {
+        return res.status(403).json({ error: 'Invalid cron secret' });
+    }
+    
+    try {
+        const now = new Date().toISOString();
+        
+        // Find expired images
+        const { data: expiredImages, error: fetchError } = await supabase
+            .from('image_metadata')
+            .select('id, storage_path')
+            .lt('expires_at', now)
+            .is('deleted_at', null)
+            .limit(100);
+        
+        if (fetchError) {
+            throw new Error(`Failed to fetch expired images: ${fetchError.message}`);
+        }
+        
+        let deletedCount = 0;
+        const bucket = process.env.SUPABASE_STORAGE_BUCKET || 'generated-tattoos';
+        
+        for (const img of expiredImages || []) {
+            try {
+                // Delete from storage
+                if (img.storage_path) {
+                    await supabase.storage.from(bucket).remove([img.storage_path]);
+                }
+                
+                // Mark as deleted in metadata
+                await supabase
+                    .from('image_metadata')
+                    .update({ deleted_at: now })
+                    .eq('id', img.id);
+                
+                deletedCount++;
+            } catch (e) {
+                console.error(`Failed to delete image ${img.id}:`, e.message);
+            }
+        }
+        
+        console.log(`Cleanup: Deleted ${deletedCount} expired images`);
+        res.json({ deleted: deletedCount, checked: expiredImages?.length || 0 });
+    } catch (error) {
+        console.error('Cleanup error:', error);
+        res.status(500).json({ error: 'Cleanup failed', details: error.message });
+    }
 });
 
 const authenticateToken = async (req, res, next) => {
@@ -123,6 +233,18 @@ const authenticateToken = async (req, res, next) => {
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        
+        // Check if token is blacklisted
+        const { data: blacklisted } = await supabase
+            .from('token_blacklist')
+            .select('id')
+            .eq('token', token)
+            .single();
+        
+        if (blacklisted) {
+            return res.status(403).json({ error: 'Token has been revoked' });
+        }
+        
         const { data: user, error } = await supabase
             .from('users')
             .select('*')
@@ -134,11 +256,20 @@ const authenticateToken = async (req, res, next) => {
         }
 
         req.user = user;
+        req.token = token; // Store token for potential blacklisting on logout
         next();
     } catch (error) {
         console.error('Authentication error:', error.message);
         return res.status(403).json({ error: 'Invalid or expired token' });
     }
+};
+
+// Admin-only middleware
+const requireAdmin = (req, res, next) => {
+    if (!req.user || !req.user.is_admin) {
+        return res.status(403).json({ error: 'Admin access required' });
+    }
+    next();
 };
 
 // Log user events (analytics/tracking)
@@ -185,10 +316,10 @@ app.post('/api/log-event', authenticateToken, async (req, res) => {
     }
 });
 
-// Get all artists (public endpoint)
+// Get all artists (public endpoint - uses anon key)
 app.get('/api/artists', async (req, res) => {
     try {
-        const { data, error } = await supabase
+        const { data, error } = await supabasePublic
             .from('artists')
             .select('*')
             .order('created_at', { ascending: false });
@@ -217,11 +348,11 @@ app.get('/api/artists', async (req, res) => {
     }
 });
 
-// Get tattoo styles with their stencils (public endpoint)
+// Get tattoo styles with their stencils (public endpoint - uses anon key)
 app.get('/api/styles-with-stencils', async (req, res) => {
     try {
-        // First get stencils - try simpler query first
-        const { data: stencils, error: stencilError } = await supabase
+        // First get stencils - try simpler query first (using public client)
+        const { data: stencils, error: stencilError } = await supabasePublic
             .from('tattoo_sketches')
             .select('*');
 
@@ -245,7 +376,7 @@ app.get('/api/styles-with-stencils', async (req, res) => {
         let artistMap = {};
         
         if (artistIds.length > 0) {
-            const { data: artists, error: artistError } = await supabase
+            const { data: artists, error: artistError } = await supabasePublic
                 .from('artists')
                 .select('id, name, whatsapp')
                 .in('id', artistIds);
@@ -289,18 +420,37 @@ app.post('/api/auth/register', async (req, res) => {
         if (!email || !password || !username) {
             return res.status(400).json({ error: 'All fields are required' });
         }
+        
+        // Validate email format
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            return res.status(400).json({ error: 'Invalid email format' });
+        }
+        
+        // Validate username (alphanumeric, 3-30 chars)
+        const usernameRegex = /^[a-zA-Z0-9_]{3,30}$/;
+        if (!usernameRegex.test(username)) {
+            return res.status(400).json({ error: 'Username must be 3-30 alphanumeric characters' });
+        }
 
-        const { data: existingUser } = await supabase
+        // SECURITY: Use separate queries to avoid SQL injection via .or()
+        const { data: existingEmail } = await supabase
             .from('users')
             .select('id')
-            .or(`email.eq.${email},username.eq.${username}`)
+            .eq('email', email)
+            .single();
+            
+        const { data: existingUsername } = await supabase
+            .from('users')
+            .select('id')
+            .eq('username', username)
             .single();
 
-        if (existingUser) {
+        if (existingEmail || existingUsername) {
             return res.status(409).json({ error: 'User with this email or username already exists' });
         }
 
-        const passwordHash = await bcryptjs.hash(password, 10);
+        const passwordHash = await bcryptjs.hash(password, 12); // Increased rounds
 
         const { data: newUser, error } = await supabase
             .from('users')
@@ -308,7 +458,8 @@ app.post('/api/auth/register', async (req, res) => {
                 email,
                 password_hash: passwordHash,
                 username,
-                tokens_remaining: 20
+                tokens_remaining: 20,
+                is_admin: false
             })
             .select()
             .single();
@@ -318,15 +469,31 @@ app.post('/api/auth/register', async (req, res) => {
             return res.status(500).json({ error: 'Failed to create user' });
         }
 
-        const token = jwt.sign(
-            { userId: newUser.id, email: newUser.email },
+        // Generate short-lived access token
+        const accessToken = jwt.sign(
+            { userId: newUser.id, email: newUser.email, type: 'access' },
             process.env.JWT_SECRET,
-            { expiresIn: '7d' }
+            { expiresIn: ACCESS_TOKEN_EXPIRY }
         );
+        
+        // Generate refresh token
+        const refreshToken = jwt.sign(
+            { userId: newUser.id, type: 'refresh' },
+            process.env.JWT_SECRET,
+            { expiresIn: REFRESH_TOKEN_EXPIRY }
+        );
+        
+        // Store refresh token in database
+        await supabase.from('refresh_tokens').insert({
+            user_id: newUser.id,
+            token: refreshToken,
+            expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+        });
 
         res.json({
             message: 'Registration successful',
-            token,
+            token: accessToken,
+            refreshToken,
             user: {
                 id: newUser.id,
                 email: newUser.email,
@@ -363,15 +530,31 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        const token = jwt.sign(
-            { userId: user.id, email: user.email },
+        // Generate short-lived access token
+        const accessToken = jwt.sign(
+            { userId: user.id, email: user.email, type: 'access' },
             process.env.JWT_SECRET,
-            { expiresIn: '7d' }
+            { expiresIn: ACCESS_TOKEN_EXPIRY }
         );
+        
+        // Generate refresh token
+        const refreshToken = jwt.sign(
+            { userId: user.id, type: 'refresh' },
+            process.env.JWT_SECRET,
+            { expiresIn: REFRESH_TOKEN_EXPIRY }
+        );
+        
+        // Store refresh token in database
+        await supabase.from('refresh_tokens').insert({
+            user_id: user.id,
+            token: refreshToken,
+            expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+        });
 
         res.json({
             message: 'Login successful',
-            token,
+            token: accessToken,
+            refreshToken,
             user: {
                 id: user.id,
                 email: user.email,
@@ -385,6 +568,101 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
+// Refresh token endpoint
+app.post('/api/auth/refresh-token', async (req, res) => {
+    try {
+        const { refreshToken } = req.body;
+        
+        if (!refreshToken) {
+            return res.status(400).json({ error: 'Refresh token required' });
+        }
+        
+        // Verify refresh token
+        let decoded;
+        try {
+            decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+        } catch (err) {
+            return res.status(403).json({ error: 'Invalid or expired refresh token' });
+        }
+        
+        if (decoded.type !== 'refresh') {
+            return res.status(403).json({ error: 'Invalid token type' });
+        }
+        
+        // Check if refresh token exists in database
+        const { data: storedToken, error: tokenError } = await supabase
+            .from('refresh_tokens')
+            .select('*')
+            .eq('token', refreshToken)
+            .eq('user_id', decoded.userId)
+            .single();
+        
+        if (tokenError || !storedToken) {
+            return res.status(403).json({ error: 'Refresh token not found or revoked' });
+        }
+        
+        // Check if expired
+        if (new Date(storedToken.expires_at) < new Date()) {
+            await supabase.from('refresh_tokens').delete().eq('id', storedToken.id);
+            return res.status(403).json({ error: 'Refresh token expired' });
+        }
+        
+        // Get user
+        const { data: user, error: userError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', decoded.userId)
+            .single();
+        
+        if (userError || !user) {
+            return res.status(403).json({ error: 'User not found' });
+        }
+        
+        // Generate new access token
+        const newAccessToken = jwt.sign(
+            { userId: user.id, email: user.email, type: 'access' },
+            process.env.JWT_SECRET,
+            { expiresIn: ACCESS_TOKEN_EXPIRY }
+        );
+        
+        res.json({
+            token: newAccessToken,
+            user: {
+                id: user.id,
+                email: user.email,
+                username: user.username,
+                tokens_remaining: user.tokens_remaining
+            }
+        });
+    } catch (error) {
+        console.error('Refresh token error:', error);
+        res.status(500).json({ error: 'Token refresh failed' });
+    }
+});
+
+// Logout endpoint - blacklists current token
+app.post('/api/auth/logout', authenticateToken, async (req, res) => {
+    try {
+        // Blacklist the current access token
+        const token = req.token;
+        const decoded = jwt.decode(token);
+        
+        await supabase.from('token_blacklist').insert({
+            token,
+            user_id: req.user.id,
+            expires_at: new Date(decoded.exp * 1000).toISOString()
+        });
+        
+        // Also delete any refresh tokens for this user (optional: could keep them)
+        // await supabase.from('refresh_tokens').delete().eq('user_id', req.user.id);
+        
+        res.json({ message: 'Logged out successfully' });
+    } catch (error) {
+        console.error('Logout error:', error);
+        res.status(500).json({ error: 'Logout failed' });
+    }
+});
+
 function isValidBase64(str) {
     if (!str || str.length < 100) return false;
     try {
@@ -395,54 +673,52 @@ function isValidBase64(str) {
     }
 }
 
-app.post('/api/admin/debug-add-tokens', authenticateToken, async (req, res) => {
+// Admin-only endpoint to add tokens to a user (SECURED with requireAdmin)
+app.post('/api/admin/add-tokens', authenticateToken, requireAdmin, async (req, res) => {
     try {
-        const userId = req.user.id;
-        const amountToAdd = parseInt(req.body.amount);
+        const { targetUserId, amount } = req.body;
+        const amountToAdd = parseInt(amount);
 
-        if (isNaN(amountToAdd) || amountToAdd <= 0) {
-            return res.status(400).json({ error: 'Invalid amount. Must be a positive number.' });
+        if (!targetUserId || isNaN(amountToAdd) || amountToAdd <= 0) {
+            return res.status(400).json({ error: 'Valid targetUserId and positive amount required.' });
         }
 
-        console.log(`DEBUG: Attempting direct Supabase token addition for user ${userId}, amount: ${amountToAdd}`);
-
-        const { data: currentUser, error: fetchError } = await supabase
+        const { data: targetUser, error: fetchError } = await supabase
             .from('users')
             .select('tokens_remaining')
-            .eq('id', userId)
+            .eq('id', targetUserId)
             .single();
 
-        if (fetchError || !currentUser) {
-            console.error('DEBUG: Failed to fetch current tokens:', fetchError?.message || 'User not found.');
-            return res.status(404).json({ error: 'User not found or failed to retrieve current token balance.' });
+        if (fetchError || !targetUser) {
+            return res.status(404).json({ error: 'Target user not found.' });
         }
 
-        const newTokensRemaining = currentUser.tokens_remaining + amountToAdd;
+        const newTokensRemaining = targetUser.tokens_remaining + amountToAdd;
 
-        const { data, error } = await supabase
+        const { error } = await supabase
             .from('users')
             .update({ tokens_remaining: newTokensRemaining })
-            .eq('id', userId);
+            .eq('id', targetUserId);
 
         if (error) {
-            console.error('DEBUG: Direct Supabase token update failed:', error.message);
             throw new Error(`Supabase update failed: ${error.message}`);
         }
 
-        console.log(`DEBUG: Successfully added ${amountToAdd} tokens directly for user ${userId}. New balance: ${newTokensRemaining}`);
+        console.log(`Admin ${req.user.id} added ${amountToAdd} tokens to user ${targetUserId}. New balance: ${newTokensRemaining}`);
 
         res.json({
-            message: `Successfully added ${amountToAdd} tokens directly. New balance: ${newTokensRemaining}.`,
+            message: `Successfully added ${amountToAdd} tokens. New balance: ${newTokensRemaining}.`,
             tokens_remaining: newTokensRemaining
         });
     } catch (error) {
-        console.error('DEBUG: Error in /api/admin/debug-add-tokens:', error.message);
-        res.status(500).json({ error: `Failed to add tokens via debug endpoint: ${error.message}` });
+        console.error('Error in /api/admin/add-tokens:', error.message);
+        res.status(500).json({ error: 'Failed to add tokens' });
     }
 });
 
 app.post('/api/generate-final-tattoo',
     authenticateToken,
+    expensiveLimiter,
     upload.fields([
         { name: 'skinImage', maxCount: 1 },
         { name: 'tattooDesignImage', maxCount: 1 }

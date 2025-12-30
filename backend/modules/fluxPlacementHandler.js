@@ -142,15 +142,21 @@ const fluxPlacementHandler = {
 
     /**
      * Uploads an image buffer to Supabase Storage and returns its public URL.
+     * Includes CDN cache headers and database-based expiration tracking.
      */
     uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '', contentType = 'image/jpeg') => {
         // Fix: Ensure correct path construction without double slashes
         const filePath = folder ? `${userId}/${folder}/${fileName}` : `${userId}/${fileName}`;
+        
+        // Calculate expiration time (24 hours from now)
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        
         const { data, error } = await supabase.storage
             .from(SUPABASE_STORAGE_BUCKET)
             .upload(filePath, imageBuffer, {
-                contentType: contentType, // Use provided content type
-                upsert: false
+                contentType: contentType,
+                upsert: false,
+                cacheControl: '3600' // CDN cache for 1 hour
             });
 
         if (error) {
@@ -165,6 +171,24 @@ const fluxPlacementHandler = {
         if (!publicUrlData || !publicUrlData.publicUrl) {
             console.error('Supabase getPublicUrl error: No public URL returned', publicUrlData);
             throw new Error('Failed to get public URL for uploaded image.');
+        }
+
+        // Record image metadata with expiration for database-based cleanup
+        // Skip for debug folder uploads
+        if (folder !== 'debug') {
+            try {
+                await supabase.from('image_metadata').insert({
+                    user_id: userId,
+                    storage_path: filePath,
+                    public_url: publicUrlData.publicUrl,
+                    expires_at: expiresAt,
+                    created_at: new Date().toISOString()
+                });
+                console.log(`Image metadata recorded with expiration: ${expiresAt}`);
+            } catch (metadataError) {
+                // Don't fail the upload if metadata insert fails
+                console.warn('Failed to record image metadata:', metadataError.message);
+            }
         }
 
         console.log('Image uploaded to Supabase:', publicUrlData.publicUrl);

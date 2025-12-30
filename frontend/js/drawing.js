@@ -10,6 +10,7 @@ const drawing = {
     // Images
     skinImage: null,
     tattooImage: null,
+    processedTattoo: null, // Tattoo with background removed
     
     // Tattoo transform state
     tattooX: 0,
@@ -36,6 +37,53 @@ const drawing = {
     
     // Display scaling
     displayScale: 1,
+
+    // Remove black/dark background from tattoo image
+    removeBlackBackground: (img) => {
+        const tempCanvas = document.createElement('canvas');
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCanvas.width = img.width;
+        tempCanvas.height = img.height;
+        
+        // Draw original image
+        tempCtx.drawImage(img, 0, 0);
+        
+        // Get image data
+        const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+        const data = imageData.data;
+        
+        // Threshold for what's considered "black/dark" (0-255)
+        const threshold = 50;
+        
+        // Process each pixel
+        for (let i = 0; i < data.length; i += 4) {
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            
+            // Check if pixel is dark (near black)
+            if (r < threshold && g < threshold && b < threshold) {
+                // Make transparent
+                data[i + 3] = 0;
+            } else {
+                // For lighter backgrounds, check if it's close to white
+                if (r > 200 && g > 200 && b > 200) {
+                    // Also make white/light backgrounds transparent
+                    data[i + 3] = 0;
+                }
+            }
+        }
+        
+        // Put processed data back
+        tempCtx.putImageData(imageData, 0, 0);
+        
+        // Create new image from canvas
+        const processedImg = new Image();
+        processedImg.src = tempCanvas.toDataURL('image/png');
+        
+        console.log('Tattoo background removed (black/white pixels made transparent)');
+        return tempCanvas; // Return canvas for immediate drawing
+    },
 
     init: (skinImageUrl, tattooImageUrl) => {
         console.log('Drawing init called with:', { skinImageUrl: skinImageUrl?.substring(0, 50), tattooImageUrl: tattooImageUrl?.substring(0, 50) });
@@ -81,11 +129,13 @@ const drawing = {
         };
         drawing.skinImage.src = skinImageUrl;
 
-        // Load tattoo image
+        // Load tattoo image and remove background
         drawing.tattooImage = new Image();
         drawing.tattooImage.crossOrigin = 'anonymous';
         drawing.tattooImage.onload = () => {
             console.log('Tattoo image loaded:', drawing.tattooImage.width, 'x', drawing.tattooImage.height);
+            // Process to remove black/dark background
+            drawing.processedTattoo = drawing.removeBlackBackground(drawing.tattooImage);
             checkBothLoaded();
         };
         drawing.tattooImage.onerror = (e) => {
@@ -321,9 +371,10 @@ const drawing = {
         const tattooWidth = drawing.tattooImage.width * drawing.tattooScale * scale;
         const tattooHeight = drawing.tattooImage.height * drawing.tattooScale * scale;
         
-        // Draw tattoo centered at origin (which we translated to tattooX, tattooY)
+        // Draw tattoo centered at origin (use processed tattoo with transparent background)
+        const tattooSource = drawing.processedTattoo || drawing.tattooImage;
         ctx.drawImage(
-            drawing.tattooImage,
+            tattooSource,
             -tattooWidth / 2,
             -tattooHeight / 2,
             tattooWidth,

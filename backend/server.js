@@ -228,9 +228,11 @@ app.get('/api/styles-with-stencils', async (req, res) => {
             .order('created_at', { ascending: false });
 
         if (stencilError) {
-            console.error('Error fetching stencils:', stencilError.message);
-            return res.status(500).json({ error: 'Failed to fetch stencils' });
+            console.error('Error fetching stencils:', stencilError);
+            return res.status(500).json({ error: 'Failed to fetch stencils', details: stencilError.message });
         }
+        
+        console.log('Fetched stencils count:', stencils?.length || 0);
 
         // Get artists separately
         const artistIds = [...new Set((stencils || []).map(s => s.artist_id).filter(Boolean))];
@@ -269,8 +271,8 @@ app.get('/api/styles-with-stencils', async (req, res) => {
 
         res.json(styleMap);
     } catch (error) {
-        console.error('Error in /api/styles-with-stencils:', error.message);
-        res.status(500).json({ error: 'Failed to fetch stencils' });
+        console.error('Error in /api/styles-with-stencils:', error);
+        res.status(500).json({ error: 'Failed to fetch stencils', details: error.message });
     }
 });
 

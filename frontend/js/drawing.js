@@ -102,16 +102,34 @@ const drawing = {
 
         const container = drawing.canvas.parentElement;
         const containerWidth = container.clientWidth || 600;
-        const containerHeight = container.clientHeight || 500;
+        // Use viewport height as max, not container height (which may be 0 initially)
+        const maxHeight = Math.min(window.innerHeight * 0.75, 700);
 
-        // Calculate scale to fit skin image in container
-        const scaleX = containerWidth / drawing.skinImage.width;
-        const scaleY = containerHeight / drawing.skinImage.height;
-        drawing.displayScale = Math.min(scaleX, scaleY, 1); // Don't upscale
+        // Calculate scale to fit skin image while maintaining aspect ratio
+        const imgWidth = drawing.skinImage.width;
+        const imgHeight = drawing.skinImage.height;
+        const aspectRatio = imgWidth / imgHeight;
+        
+        let canvasWidth, canvasHeight;
+        
+        // Fit within container width and max height while preserving aspect ratio
+        if (containerWidth / aspectRatio <= maxHeight) {
+            // Width is the limiting factor
+            canvasWidth = Math.min(containerWidth, imgWidth);
+            canvasHeight = canvasWidth / aspectRatio;
+        } else {
+            // Height is the limiting factor
+            canvasHeight = Math.min(maxHeight, imgHeight);
+            canvasWidth = canvasHeight * aspectRatio;
+        }
+        
+        drawing.displayScale = canvasWidth / imgWidth;
 
-        // Set canvas size
-        drawing.canvas.width = drawing.skinImage.width * drawing.displayScale;
-        drawing.canvas.height = drawing.skinImage.height * drawing.displayScale;
+        // Set canvas size (actual pixel dimensions)
+        drawing.canvas.width = canvasWidth;
+        drawing.canvas.height = canvasHeight;
+        
+        console.log(`Canvas initialized: ${canvasWidth}x${canvasHeight}, scale: ${drawing.displayScale}`);
 
         // Set mask canvas to original skin image size
         drawing.maskCanvas.width = drawing.skinImage.width;

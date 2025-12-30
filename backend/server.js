@@ -113,6 +113,34 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'OK', message: 'SkinTip API is running' });
 });
 
+const authenticateToken = async (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+        return res.status(401).json({ error: 'Access token required' });
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const { data: user, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', decoded.userId)
+            .single();
+
+        if (error || !user) {
+            return res.status(403).json({ error: 'Invalid token' });
+        }
+
+        req.user = user;
+        next();
+    } catch (error) {
+        console.error('Authentication error:', error.message);
+        return res.status(403).json({ error: 'Invalid or expired token' });
+    }
+};
+
 // Log user events (analytics/tracking)
 app.post('/api/log-event', authenticateToken, async (req, res) => {
     try {
@@ -156,34 +184,6 @@ app.post('/api/log-event', authenticateToken, async (req, res) => {
         res.status(200).json({ logged: false, message: 'Event logging skipped' });
     }
 });
-
-const authenticateToken = async (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-
-    if (!token) {
-        return res.status(401).json({ error: 'Access token required' });
-    }
-
-    try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const { data: user, error } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', decoded.userId)
-            .single();
-
-        if (error || !user) {
-            return res.status(403).json({ error: 'Invalid token' });
-        }
-
-        req.user = user;
-        next();
-    } catch (error) {
-        console.error('Authentication error:', error.message);
-        return res.status(403).json({ error: 'Invalid or expired token' });
-    }
-};
 
 app.post('/api/auth/register', async (req, res) => {
     try {

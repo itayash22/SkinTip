@@ -628,11 +628,6 @@
             }
             if (artistsSection) artistsSection.style.display = 'block';
         }
-        // Immediately show demo artists so the section is never empty while API loads
-        console.log('[artists] bootstrapping demo artists immediately');
-        window.loadDemoArtistsWithFilter();
-        showArtistsSection();
-
         window.displayArtists = function(artists) {
             const artistsGrid = document.getElementById('artistsGrid');
             if (artists.length === 0) {
@@ -694,6 +689,11 @@
             });
             window.displayArtists(filtered);
         };
+
+        // Immediately show demo artists so the section is never empty while API loads
+        console.log('[artists] bootstrapping demo artists immediately');
+        window.loadDemoArtistsWithFilter();
+        showArtistsSection();
         // --- END ARTIST FUNCTIONS GLOBAL SCOPE ---
 
 

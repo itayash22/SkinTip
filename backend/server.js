@@ -113,6 +113,50 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'OK', message: 'SkinTip API is running' });
 });
 
+// Log user events (analytics/tracking)
+app.post('/api/log-event', authenticateToken, async (req, res) => {
+    try {
+        const { eventType, artistId, stencilId, timestamp, extraDetails } = req.body;
+        const userId = req.user.id;
+
+        if (!eventType) {
+            return res.status(400).json({ error: 'Event type is required' });
+        }
+
+        // Validate UUIDs if provided (prevent SQL injection)
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        if (artistId && !uuidRegex.test(artistId)) {
+            return res.status(400).json({ error: 'Invalid artist ID format' });
+        }
+        if (stencilId && !uuidRegex.test(stencilId)) {
+            return res.status(400).json({ error: 'Invalid stencil ID format' });
+        }
+
+        const { error } = await supabase
+            .from('user_events')
+            .insert({
+                user_id: userId,
+                event_type: eventType,
+                artist_id: artistId || null,
+                stencil_id: stencilId || null,
+                extra_details: extraDetails || null,
+                created_at: timestamp || new Date().toISOString()
+            });
+
+        if (error) {
+            console.error('Failed to log user event:', error.message);
+            // Don't block user experience for logging failures
+            return res.status(200).json({ logged: false, message: 'Event logging skipped' });
+        }
+
+        res.json({ logged: true });
+    } catch (error) {
+        console.error('Error in /api/log-event:', error.message);
+        // Return 200 to not block user experience
+        res.status(200).json({ logged: false, message: 'Event logging skipped' });
+    }
+});
+
 const authenticateToken = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];

@@ -1,61 +1,122 @@
-/* Center content within the modal (Login/Register form) */
-.modal-content .auth-container {
+/* General Centering for upload areas */
+.upload-area {
     display: flex;
     flex-direction: column;
-    align-items: center; /* Centers horizontally */
-    text-align: center; /* Centers text within block elements like h2, p */
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    cursor: pointer; /* Change cursor on hover for clickable area */
+    /* Ensure other styles like border, padding, height are already present for good layout */
 }
 
-/* Ensure form elements don't stretch too wide in a centered layout */
-.modal-content .auth-container form {
-    width: 100%; /* Take full width of its flex container */
-    max-width: 300px; /* Limit the max width of the form itself */
-    margin: 0 auto; /* Center the form if it's narrower than its container */
-    display: flex; /* Make form a flex container */
-    flex-direction: column; /* Stack form groups vertically */
-    align-items: center; /* Center items within the form */
+/* Hover effect for cursor on upload areas */
+.upload-area:hover {
+    cursor: pointer; /* Pointer cursor for click action */
 }
 
-.modal-content .auth-container .form-group {
-    width: 100%; /* Ensure form groups take full width within the form */
-    margin-bottom: 1rem;
-    text-align: left; /* Align labels/inputs to left within their group */
+/* Styles for the new prompt tip box (retained from previous iteration) */
+.prompt-tip-box {
+    background-color: #f0f9ff; /* Light blue background */
+    border-left: 4px solid #3b82f6; /* Blue left border */
+    padding: 1rem;
+    margin-top: 1.5rem;
+    border-radius: 0.375rem; /* Rounded corners */
+    color: #1f2937; /* Darker text for readability */
+    font-size: 0.9rem;
+    line-height: 1.5;
 }
 
-.modal-content .auth-container .form-group label {
-    display: block; /* Make label a block element to push input to next line */
+.prompt-tip-box .prompt-tip-header {
+    font-weight: 600; /* Semi-bold header */
+    color: #1e40af; /* Darker blue for header */
     margin-bottom: 0.5rem;
-}
-
-.modal-content .auth-container .form-group input {
-    width: 100%; /* Inputs take full width of their group */
-    box-sizing: border-box; /* Include padding/border in element's total width */
-}
-
-.modal-content .auth-container button[type="submit"] {
-    width: 100%; /* Make submit button full width within the form */
-    max-width: 200px; /* Limit its max width */
-    margin-top: 1rem;
-}
-
-/* Center content within the footer */
-.footer-content {
     display: flex;
-    flex-wrap: wrap; /* Allow wrapping on smaller screens */
-    justify-content: center; /* Centers content horizontally */
-    text-align: center; /* Centers text within flex items */
-    gap: 2rem; /* Space between sections */
+    align-items: center;
 }
 
-.footer-section {
-    flex: 1; /* Allow sections to grow */
-    min-width: 180px; /* Minimum width for each section before wrapping */
-    max-width: 300px; /* Max width to prevent sections from becoming too wide on large screens */
+.prompt-tip-box .prompt-tip-header::before {
+    content: '💡'; /* Lightbulb icon */
+    margin-right: 0.5rem;
 }
 
-.footer-bottom {
-    text-align: center; /* Center the copyright text */
-    margin-top: 2rem;
-    padding-top: 1rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.2); /* A subtle separator */
+.prompt-tip-box .prompt-tip-content {
+    margin: 0;
+}
+
+
+/* New styles for welcome.html */
+
+.hero-section {
+    background: linear-gradient(135deg, #6366f1, #9333ea); /* Gradient background */
+    color: white;
+    padding: 4rem 1rem;
+    text-align: center;
+    border-radius: 0.5rem;
+    margin-bottom: 3rem;
+}
+
+.hero-section h2 {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    font-weight: 700;
+}
+
+.hero-section .hero-tagline {
+    font-size: 1.25rem;
+    max-width: 600px;
+    margin: 0 auto 2rem auto;
+    opacity: 0.9;
+}
+
+.how-it-works-section {
+    padding: 2rem 0;
+    text-align: center;
+}
+
+.how-it-works-section h3 {
+    font-size: 2rem;
+    margin-bottom: 2.5rem;
+    color: #1f2937;
+}
+
+.steps-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 2rem;
+    margin-bottom: 3rem;
+}
+
+.step-item {
+    background-color: #ffffff;
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.step-item img {
+    max-width: 100%; /* Ensure images fit */
+    height: auto;
+    border-radius: 0.375rem;
+    margin-bottom: 1rem;
+    object-fit: cover; /* Cover ensures the image fills the space without distortion */
+    aspect-ratio: 16 / 9; /* Maintain a consistent aspect ratio for all step images */
+    width: 100%; /* Ensure width fills container */
+    background-color: #e0e7ff; /* Placeholder background for missing images */
+}
+/* You should create actual image files for step1_choose_tattoo.png, etc. in frontend/img/ */
+
+
+.step-item h4 {
+    font-size: 1.25rem;
+    color: #3b82f6; /* Blue for step headers */
+    margin-bottom: 0.75rem;
+}
+
+.step-item p {
+    font-size: 0.95rem;
+    color: #4b5563;
 }

@@ -142,13 +142,13 @@ const auth = {
             body.username = username;
         }
         // --- START DEBUGGING SNIPPET for handleAuthSubmit ---
-console.log('DEBUG: Attempting authentication API call.');
-console.log('DEBUG: Endpoint:', `<span class="math-inline">\{CONFIG\.API\_URL\}/auth/</span>{endpoint}`);
-console.log('DEBUG: Request Body:', JSON.stringify(body));
-// --- END DEBUGGING SNIPPET ---
+        console.log('DEBUG: Attempting authentication API call.');
+        console.log('DEBUG: Endpoint:', `${CONFIG.API_URL}/auth/${endpoint}`);
+        console.log('DEBUG: Request Body:', JSON.stringify(body));
+        // --- END DEBUGGING SNIPPET ---
 
         try {
-    const response = await fetch(`<span class="math-inline">\{CONFIG\.API\_URL\}/auth/</span>{endpoint}`, {
+            const response = await fetch(`${CONFIG.API_URL}/auth/${endpoint}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

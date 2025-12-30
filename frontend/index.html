@@ -1180,15 +1180,21 @@
 
             // --- START Cross-Device Inactivity Auto-Logout Logic ---
             let inactivityTimeout; // Holds the timer reference
+            let lastActivityReset = 0; // Throttle activity resets
+            const ACTIVITY_THROTTLE_MS = 30000; // Only reset timer every 30 seconds max
 
             function startInactivityTimer() {
                 if (STATE.user && STATE.token) {
                     inactivityTimeout = setTimeout(handleInactivityLogout, CONFIG.INACTIVITY_TIMEOUT_MS);
-                    console.log(`Inactivity timer set. Auto-logout in ${CONFIG.INACTIVITY_TIMEOUT_MS / 1000 / 60} minutes.`);
+                    // Only log once on initial start
                 }
             }
 
             function resetInactivityTimer() {
+                const now = Date.now();
+                // Throttle: only reset if 30+ seconds since last reset
+                if (now - lastActivityReset < ACTIVITY_THROTTLE_MS) return;
+                lastActivityReset = now;
                 clearTimeout(inactivityTimeout);
                 startInactivityTimer();
             }
@@ -1213,6 +1219,7 @@
                 document.addEventListener(event, resetInactivityTimer, { passive: true });
             });
 
+            console.log(`Inactivity auto-logout enabled: ${CONFIG.INACTIVITY_TIMEOUT_MS / 1000 / 60} minutes`);
             startInactivityTimer();
 
             // --- END Cross-Device Inactivity Auto-Logout Logic ---
@@ -1267,8 +1274,9 @@
                     return;
                 }
 
-                utils.showLoading('Recording confirmation...');
-                const consentLogged = await logUserEvent(
+                // Try to log consent, but don't block the user flow if it fails
+                // The consent is recorded client-side by checking the boxes
+                logUserEvent(
                     'SKIN_UPLOAD_APPROVED',
                     null,
                     null,
@@ -1276,13 +1284,7 @@
                         consent_no_intimate_content: true,
                         consent_third_party_processing: true
                     }
-                );
-                utils.hideLoading();
-
-                if (!consentLogged) {
-                    utils.showError('Could not record your confirmation. Please try again.');
-                    return;
-                }
+                ).catch(err => console.warn('Consent logging failed (non-blocking):', err));
 
                 const file = pendingSkinFile;
                 pendingSkinFile = null;

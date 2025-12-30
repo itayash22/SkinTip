@@ -220,22 +220,28 @@ app.get('/api/artists', async (req, res) => {
 // Get tattoo styles with their stencils (public endpoint)
 app.get('/api/styles-with-stencils', async (req, res) => {
     try {
-        // First get stencils
+        // First get stencils - try simpler query first
         const { data: stencils, error: stencilError } = await supabase
             .from('tattoo_sketches')
-            .select('id, style, image_url, tags, is_active, artist_id')
-            .eq('is_active', true)
-            .order('created_at', { ascending: false });
+            .select('*');
 
         if (stencilError) {
             console.error('Error fetching stencils:', stencilError);
-            return res.status(500).json({ error: 'Failed to fetch stencils', details: stencilError.message });
+            return res.status(500).json({ 
+                error: 'Failed to fetch stencils', 
+                details: stencilError.message,
+                code: stencilError.code,
+                hint: stencilError.hint
+            });
         }
         
         console.log('Fetched stencils count:', stencils?.length || 0);
+        
+        // Filter active stencils in code
+        const activeStencils = (stencils || []).filter(s => s.is_active !== false);
 
         // Get artists separately
-        const artistIds = [...new Set((stencils || []).map(s => s.artist_id).filter(Boolean))];
+        const artistIds = [...new Set(activeStencils.map(s => s.artist_id).filter(Boolean))];
         let artistMap = {};
         
         if (artistIds.length > 0) {
@@ -251,7 +257,7 @@ app.get('/api/styles-with-stencils', async (req, res) => {
 
         // Group stencils by style
         const styleMap = {};
-        (stencils || []).forEach(stencil => {
+        activeStencils.forEach(stencil => {
             const style = stencil.style || 'Other';
             if (!styleMap[style]) {
                 styleMap[style] = [];

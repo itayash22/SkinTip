@@ -185,6 +185,90 @@ app.post('/api/log-event', authenticateToken, async (req, res) => {
     }
 });
 
+// Get all artists (public endpoint)
+app.get('/api/artists', async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('artists')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('Error fetching artists:', error.message);
+            return res.status(500).json({ error: 'Failed to fetch artists' });
+        }
+
+        // Transform data for frontend compatibility
+        const artists = (data || []).map(artist => ({
+            id: artist.id,
+            name: artist.name,
+            location: artist.location || 'Unknown',
+            bio: artist.bio || '',
+            styles: artist.styles || [],
+            portfolio: artist.portfolio_urls || [],
+            whatsapp: artist.whatsapp || '',
+            likes: artist.likes || 0
+        }));
+
+        res.json(artists);
+    } catch (error) {
+        console.error('Error in /api/artists:', error.message);
+        res.status(500).json({ error: 'Failed to fetch artists' });
+    }
+});
+
+// Get tattoo styles with their stencils (public endpoint)
+app.get('/api/styles-with-stencils', async (req, res) => {
+    try {
+        const { data: stencils, error } = await supabase
+            .from('tattoo_sketches')
+            .select(`
+                id,
+                style,
+                image_url,
+                tags,
+                is_active,
+                artist_id,
+                artists (
+                    id,
+                    name,
+                    whatsapp
+                )
+            `)
+            .eq('is_active', true)
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('Error fetching stencils:', error.message);
+            return res.status(500).json({ error: 'Failed to fetch stencils' });
+        }
+
+        // Group stencils by style
+        const styleMap = {};
+        (stencils || []).forEach(stencil => {
+            const style = stencil.style || 'Other';
+            if (!styleMap[style]) {
+                styleMap[style] = [];
+            }
+            styleMap[style].push({
+                id: stencil.id,
+                imageUrl: stencil.image_url,
+                tags: stencil.tags || [],
+                artist: stencil.artists ? {
+                    id: stencil.artists.id,
+                    name: stencil.artists.name,
+                    whatsapp: stencil.artists.whatsapp
+                } : null
+            });
+        });
+
+        res.json(styleMap);
+    } catch (error) {
+        console.error('Error in /api/styles-with-stencils:', error.message);
+        res.status(500).json({ error: 'Failed to fetch stencils' });
+    }
+});
+
 app.post('/api/auth/register', async (req, res) => {
     try {
         const { email, password, username } = req.body;

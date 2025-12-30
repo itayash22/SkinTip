@@ -220,27 +220,31 @@ app.get('/api/artists', async (req, res) => {
 // Get tattoo styles with their stencils (public endpoint)
 app.get('/api/styles-with-stencils', async (req, res) => {
     try {
-        const { data: stencils, error } = await supabase
+        // First get stencils
+        const { data: stencils, error: stencilError } = await supabase
             .from('tattoo_sketches')
-            .select(`
-                id,
-                style,
-                image_url,
-                tags,
-                is_active,
-                artist_id,
-                artists (
-                    id,
-                    name,
-                    whatsapp
-                )
-            `)
+            .select('id, style, image_url, tags, is_active, artist_id')
             .eq('is_active', true)
             .order('created_at', { ascending: false });
 
-        if (error) {
-            console.error('Error fetching stencils:', error.message);
+        if (stencilError) {
+            console.error('Error fetching stencils:', stencilError.message);
             return res.status(500).json({ error: 'Failed to fetch stencils' });
+        }
+
+        // Get artists separately
+        const artistIds = [...new Set((stencils || []).map(s => s.artist_id).filter(Boolean))];
+        let artistMap = {};
+        
+        if (artistIds.length > 0) {
+            const { data: artists, error: artistError } = await supabase
+                .from('artists')
+                .select('id, name, whatsapp')
+                .in('id', artistIds);
+            
+            if (!artistError && artists) {
+                artists.forEach(a => { artistMap[a.id] = a; });
+            }
         }
 
         // Group stencils by style
@@ -250,14 +254,15 @@ app.get('/api/styles-with-stencils', async (req, res) => {
             if (!styleMap[style]) {
                 styleMap[style] = [];
             }
+            const artist = stencil.artist_id ? artistMap[stencil.artist_id] : null;
             styleMap[style].push({
                 id: stencil.id,
                 imageUrl: stencil.image_url,
                 tags: stencil.tags || [],
-                artist: stencil.artists ? {
-                    id: stencil.artists.id,
-                    name: stencil.artists.name,
-                    whatsapp: stencil.artists.whatsapp
+                artist: artist ? {
+                    id: artist.id,
+                    name: artist.name,
+                    whatsapp: artist.whatsapp
                 } : null
             });
         });

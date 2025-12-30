@@ -6,6 +6,7 @@ const CONFIG = {
     ALLOWED_FILE_TYPES: ['image/jpeg', 'image/png', 'image/webp'],
     DEFAULT_BRUSH_SIZE: 20,
     DAILY_LIMIT: 2, // This might become less relevant with token system
+    INACTIVITY_TIMEOUT_MS: 5 * 60 * 1000, // 5 minutes inactivity timeout
     
     // Define token costs for each API action
     TOKEN_COSTS: {

@@ -616,24 +616,78 @@ body {
     color: rgba(255, 255, 255, 0.6);
 }
 
-/* Responsive adjustments */
+/*
+ * RESPONSIVE BREAKPOINTS (Top 20 NA Mobile Devices)
+ * -------------------------------------------------
+ * 768px (md)  - Small tablets / iPad Mini / large phones landscape
+ * 600px (sm)  - Large phones (Pixel 6/7/8 Pro, Galaxy S series)
+ * 430px (xs)  - iPhone 15/14/13 Pro Max, larger Android phones
+ * 360px (xxs) - iPhone SE, Galaxy A series, smaller Android phones
+ *
+ * Tested devices: iPhone 15/14/13/12/11/SE, Galaxy S24/S23/S22/A54/A53,
+ *                 Pixel 8/7/6/Pro, OnePlus 12/11, Moto G series
+ */
+
+/* Responsive utility helpers */
+.stack-on-mobile {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.full-width-mobile {
+    max-width: 100%;
+}
+
+/* Tablet and below (768px) */
 @media (max-width: 768px) {
+    .container {
+        padding: 0 0.75rem;
+        max-width: 100%;
+    }
     .navbar .container {
-        flex-direction: column;
-        gap: 0.5rem;
+        flex-direction: row;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.5rem 1rem;
     }
     .nav-brand {
-        text-align: center;
+        text-align: left;
+        flex: 1;
+    }
+    .nav-brand h1 {
+        font-size: 1.25rem;
+    }
+    .nav-brand .tagline {
+        display: none; /* Hide tagline on mobile to save space */
     }
     .nav-menu {
-        width: 100%;
-        justify-content: center;
+        width: auto;
+        justify-content: flex-end;
+        gap: 0.5rem;
+    }
+    .nav-menu .user-info {
+        font-size: 0.8rem;
+        max-width: 100px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .nav-menu .btn {
+        padding: 0.4rem 0.75rem;
+        font-size: 0.85rem;
     }
     .hero-section h2 {
-        font-size: 2rem;
+        font-size: 1.75rem;
     }
     .hero-section .hero-tagline {
-        font-size: 1rem;
+        font-size: 0.95rem;
+    }
+    .section {
+        padding: 1.5rem 1rem;
+    }
+    .section-header h2 {
+        font-size: 1.5rem;
     }
     .steps-grid {
         grid-template-columns: 1fr;
@@ -641,8 +695,166 @@ body {
     .artists-grid {
         grid-template-columns: 1fr;
     }
+    .results-grid {
+        grid-template-columns: 1fr;
+    }
+    .modal-content {
+        padding: 1.25rem;
+        max-width: 96%;
+    }
     .footer-content {
         flex-direction: column;
         align-items: center;
+    }
+    .drawing-container {
+        max-width: 100%;
+    }
+    .drawing-tools {
+        gap: 0.75rem;
+    }
+}
+
+/* Large phones (600px) - Pixel, Galaxy S */
+@media (max-width: 600px) {
+    body {
+        font-size: 15px;
+    }
+    .stack-on-mobile {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .full-width-mobile {
+        width: 100% !important;
+    }
+    .section {
+        padding: 1.25rem 0.75rem;
+        margin-bottom: 1rem;
+    }
+    .section-header h2 {
+        font-size: 1.35rem;
+    }
+    .section-header p {
+        font-size: 0.9rem;
+    }
+    .upload-area {
+        padding: 1.5rem 1rem;
+    }
+    .results-grid {
+        gap: 1rem;
+    }
+    .result-item {
+        border-radius: 0.375rem;
+    }
+    .filters {
+        gap: 0.5rem;
+    }
+    .filter-select {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.9rem;
+    }
+}
+
+/* iPhone Pro Max, larger Android (430px) */
+@media (max-width: 430px) {
+    .container {
+        padding: 0 0.6rem;
+    }
+    .navbar {
+        padding: 0.75rem 0;
+    }
+    .nav-brand h1 {
+        font-size: 1.15rem;
+    }
+    .nav-menu .btn {
+        padding: 0.35rem 0.6rem;
+        font-size: 0.8rem;
+    }
+    .section {
+        padding: 1rem 0.5rem;
+        border-radius: 0.375rem;
+    }
+    .section-header h2 {
+        font-size: 1.25rem;
+    }
+    .btn {
+        padding: 0.5rem 1rem;
+        font-size: 0.9rem;
+    }
+    .btn-lg {
+        padding: 0.6rem 1.25rem;
+        font-size: 1rem;
+    }
+    /* Stack action buttons vertically */
+    .results-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .results-actions .btn {
+        width: 100%;
+        margin-bottom: 0.5rem;
+    }
+    .drawing-tools {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .drawing-tools .btn {
+        width: 100%;
+    }
+    .artist-card {
+        border-radius: 0.375rem;
+    }
+    .artist-info {
+        padding: 1rem;
+    }
+    .artist-info h3 {
+        font-size: 1.25rem;
+    }
+}
+
+/* Small phones - iPhone SE, Galaxy A (360px) */
+@media (max-width: 360px) {
+    body {
+        font-size: 14px;
+    }
+    .container {
+        padding: 0 0.5rem;
+    }
+    .nav-brand h1 {
+        font-size: 1.05rem;
+    }
+    .section {
+        padding: 0.75rem 0.4rem;
+    }
+    .section-header h2 {
+        font-size: 1.1rem;
+    }
+    .section-header p {
+        font-size: 0.85rem;
+    }
+    .btn {
+        padding: 0.45rem 0.9rem;
+        font-size: 0.85rem;
+    }
+    .modal-content {
+        padding: 1rem;
+    }
+    .auth-container h2 {
+        font-size: 1.4rem;
+    }
+    .auth-container .form-group input {
+        padding: 0.6rem;
+        font-size: 0.95rem;
+    }
+    .drawing-container {
+        min-height: 280px;
+    }
+    .portfolio-gallery {
+        height: 160px;
+    }
+    .footer {
+        padding: 1.5rem 0;
+    }
+    .footer-section {
+        min-width: 140px;
     }
 }

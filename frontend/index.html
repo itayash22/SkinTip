@@ -590,7 +590,7 @@
                         location: artist.location || '',
                         styles: Array.from(stylesByArtist[artist.id] || []),
                         bio: artist.bio || '',
-                        likes: artist.likes || '',
+                        likes: artist.likes || artist.likes_count || 0,
                         whatsapp: artist.whatsapp_number || artist.whatsapp || '',
                         portfolio: mergedPortfolio.slice(0, 6)
                     };

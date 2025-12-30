@@ -105,6 +105,21 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'OK', message: 'SLATE API is running' });
 });
 
+app.get('/api/artists', async (req, res) => {
+    try {
+        const { data: artists, error } = await supabase
+            .from('artists')
+            .select('*')
+            .order('name', { ascending: true });
+
+        if (error) throw error;
+        res.json(artists || []);
+    } catch (error) {
+        console.error('Error fetching artists:', error);
+        res.status(500).json({ error: 'Failed to fetch artists' });
+    }
+});
+
 const authenticateToken = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
@@ -280,9 +295,13 @@ app.get('/api/styles-with-stencils', async (req, res) => {
                 name: stencil.name,
                 imageUrl: stencil.image_url,
                 price: stencil.stencil_price,
-                artist: {
-                    name: stencil.artists ? stencil.artists.name : 'Unknown Artist',
-                    whatsapp: stencil.artists ? stencil.artists.whatsapp_number : ''
+                artist: stencil.artists ? {
+                    id: stencil.artists.id,
+                    name: stencil.artists.name,
+                    whatsapp: stencil.artists.whatsapp_number
+                } : {
+                    name: 'Unknown Artist',
+                    whatsapp: ''
                 }
             };
 

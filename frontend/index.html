@@ -883,6 +883,12 @@
                 const card = document.createElement('div');
                 card.className = 'sketch-card';
                 card.dataset.stencilId = stencil.id;
+                
+                // Get display name from tags or use a fallback
+                const displayName = (stencil.tags && stencil.tags.length > 0) 
+                    ? stencil.tags.slice(0, 2).join(' ') 
+                    : stencil.name || 'Tattoo Design';
+                
                 const artistName = stencil.artist?.name || stencil.artist?.id || '';
                 const artistLoc = stencil.artist?.location || '';
                 const artistIg = stencil.artist?.instagram || '';
@@ -895,9 +901,9 @@
                 ` : '';
 
                 card.innerHTML = `
-                    <img src="${stencil.imageUrl}" alt="${stencil.name}" loading="lazy">
+                    <img src="${stencil.imageUrl}" alt="${displayName}" loading="lazy">
                     <div class="sketch-card-info">
-                        <h4>${stencil.name}</h4>
+                        <h4>${displayName}</h4>
                         ${artistBlock}
                     </div>
                 `;

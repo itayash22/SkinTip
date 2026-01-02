@@ -180,8 +180,9 @@
                     <select id="styleFilter" class="filter-select">
                         <option value="">All Styles</option>
                         <option value="Traditional">Traditional</option>
-                        <option value="Neo-Traditional">Neo-Traditional</option>
+                        <option value="Neo-Trad">Neo-Trad</option>
                         <option value="Realism">Realism</option>
+                        <option value="B&G Realism">B&G Realism</option>
                         <option value="Blackwork">Blackwork</option>
                         <option value="Watercolor">Watercolor</option>
                         <option value="Japanese">Japanese</option>
@@ -189,6 +190,8 @@
                         <option value="Geometric">Geometric</option>
                         <option value="Fine Line">Fine Line</option>
                         <option value="Tribal">Tribal</option>
+                        <option value="BioMech">BioMech</option>
+                        <option value="Ignorant">Ignorant</option>
                     </select>
                 </div>
 
@@ -732,9 +735,21 @@
                 let allSketches = [];
 
                 // Iterate through each style category
+                const categoryDisplayNameMap = {
+                    'Neo-Traditional': 'Neo-Trad',
+                    'Black & Grey Realism': 'B&G Realism',
+                    'Black and Grey Realism': 'B&G Realism',
+                    'Biomechanical': 'BioMech',
+                    'BioMechanical': 'BioMech',
+                    'Ignorant Style': 'Ignorant',
+                    'Ignotant style': 'Ignorant'
+                };
+
                 for (const style in stencilData) {
                     const stencils = stencilData[style];
                     if (!stencils || stencils.length === 0) continue;
+
+                    const displayStyle = categoryDisplayNameMap[style] || style;
 
                     // Collect for Featured Section
                     allSketches = allSketches.concat(stencils);
@@ -756,7 +771,7 @@
                     ).join('');
 
                     header.innerHTML = `
-                        <h3 class="style-category-title">${style} <span style="font-size: 0.9rem; color: #94a3b8; font-weight: normal;">(${stencils.length})</span></h3>
+                        <h3 class="style-category-title">${displayStyle} <span style="font-size: 0.9rem; color: #94a3b8; font-weight: normal;">(${stencils.length})</span></h3>
                         <div class="style-category-thumbs">
                             ${thumbsHTML}
                         </div>

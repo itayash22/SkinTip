@@ -15,7 +15,7 @@ import sizeOf from 'image-size'; // image-size default export might be different
 
 // Import our new modularized services
 import tokenService from './modules/tokenService.js'; // Added .js extension
-import fluxKontextHandler from './modules/fluxPlacementHandler.js'; // Added .js extension
+import fluxKontextHandler, { IMAGE_TTL_SECONDS } from './modules/fluxPlacementHandler.js'; // Added .js extension
 // --- END OF ACTUAL IMPORTS ---
 
 // Function to generate a dynamic timestamp for deployment tracking
@@ -870,7 +870,8 @@ app.post('/api/generate-final-tattoo',
 
             res.json({
                 images: generatedImageUrls,
-                tokens_remaining: newTokens
+                tokens_remaining: newTokens,
+                image_expiry_seconds: IMAGE_TTL_SECONDS
             });
 
         } catch (error) {

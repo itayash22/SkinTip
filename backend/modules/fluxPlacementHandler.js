@@ -16,6 +16,39 @@ const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'generate
 // Get Remove.bg API Key
 const REMOVE_BG_API_KEY = process.env.REMOVE_BG_API_KEY; // Make sure to set this in Render environment variables!
 
+// Image TTL for automatic deletion
+const IMAGE_TTL_SECONDS = Number(process.env.IMAGE_TTL_SECONDS || '300'); // 5 minutes default
+const TEMP_IMAGE_TTL_MS = IMAGE_TTL_SECONDS * 1000;
+const deletionTimers = new Map();
+
+function scheduleImageDeletion(filePath, label = 'image', ttlMs = TEMP_IMAGE_TTL_MS) {
+  if (!filePath || !ttlMs || ttlMs <= 0) return;
+
+  if (deletionTimers.has(filePath)) {
+    clearTimeout(deletionTimers.get(filePath));
+  }
+
+  console.log(`[TTL] Scheduled deletion for ${filePath} in ${Math.round(ttlMs / 1000)} seconds (${label}).`);
+
+  const timer = setTimeout(() => {
+    deletionTimers.delete(filePath);
+    (async () => {
+      try {
+        const { error } = await supabase.storage.from(SUPABASE_STORAGE_BUCKET).remove([filePath]);
+        if (error) {
+          console.warn(`[TTL] Failed to delete ${filePath}: ${error.message}`);
+        } else {
+          console.log(`[TTL] Deleted ${filePath} after TTL (${label}).`);
+        }
+      } catch (err) {
+        console.warn(`[TTL] Exception while deleting ${filePath}: ${err.message}`);
+      }
+    })();
+  }, ttlMs);
+
+  deletionTimers.set(filePath, timer);
+}
+
 // HELPER FUNCTION: To find the bounding box of the white area in a raw grayscale mask buffer
 async function getMaskBoundingBox(maskBuffer, width, height) {
     let minX = width, minY = height, maxX = 0, maxY = 0;
@@ -141,7 +174,7 @@ const fluxPlacementHandler = {
     },
 
     /**
-     * Uploads an image buffer to Supabase Storage and returns its public URL.
+     * Uploads an image buffer to Supabase Storage and returns its public URL with expiry info.
      */
     uploadToSupabaseStorage: async (imageBuffer, fileName, userId, folder = '', contentType = 'image/jpeg') => {
         // Fix: Ensure correct path construction without double slashes
@@ -168,7 +201,13 @@ const fluxPlacementHandler = {
         }
 
         console.log('Image uploaded to Supabase:', publicUrlData.publicUrl);
-        return publicUrlData.publicUrl;
+        scheduleImageDeletion(filePath, 'result');
+        const expiresAt = TEMP_IMAGE_TTL_MS > 0 ? new Date(Date.now() + TEMP_IMAGE_TTL_MS).toISOString() : null;
+        return {
+            url: publicUrlData.publicUrl,
+            path: filePath,
+            expires_at: expiresAt
+        };
     },
 
     /**
@@ -402,3 +441,4 @@ const fluxPlacementHandler = {
 };
 
 export default fluxPlacementHandler;
+export { IMAGE_TTL_SECONDS };

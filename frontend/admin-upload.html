@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - Upload Tattoo Sketches</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <script src="https://unpkg.com/jwt-decode/build/jwt-decode.js"></script>
+    <style>
+        body {
+            background-color: #f8fafc;
+            color: #1e293b;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 2rem;
+        }
+
+        .upload-container {
+            background-color: white;
+            padding: 2.5rem;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            width: 100%;
+            max-width: 500px;
+        }
+
+        .upload-container h1 {
+            margin-top: 0;
+            margin-bottom: 1.5rem;
+            color: #0f172a;
+            font-size: 1.875rem;
+            text-align: center;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: #475569;
+        }
+
+        .form-group input[type="text"],
+        .form-group select,
+        .form-group input[type="file"] {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input[type="text"]:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #6366f1;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+        }
+
+        .btn-upload {
+            width: 100%;
+            padding: 0.75rem;
+            background-color: #4f46e5;
+            color: white;
+            border: none;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .btn-upload:hover {
+            background-color: #4338ca;
+        }
+
+        .btn-upload:disabled {
+            background-color: #94a3b8;
+            cursor: not-allowed;
+        }
+
+        .preview-image {
+            display: none;
+            width: 100%;
+            max-height: 300px;
+            object-fit: contain;
+            margin-top: 1rem;
+            border-radius: 0.5rem;
+            border: 1px dashed #cbd5e1;
+            padding: 0.5rem;
+        }
+
+        .message {
+            margin-top: 1rem;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            display: none;
+            text-align: center;
+        }
+
+        .message.success {
+            background-color: #dcfce7;
+            color: #166534;
+        }
+
+        .message.error {
+            background-color: #fee2e2;
+            color: #991b1b;
+        }
+        
+        /* Optional: Toggle for new artist fields */
+        .new-artist-fields {
+            display: none;
+            margin-top: 1rem;
+            padding: 1rem;
+            background-color: #f1f5f9;
+            border-radius: 0.5rem;
+        }
+        
+        .toggle-artist-mode {
+            font-size: 0.875rem;
+            color: #6366f1;
+            cursor: pointer;
+            text-decoration: underline;
+            margin-top: 0.5rem;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+
+<div class="upload-container">
+    <h1>Upload Sketch</h1>
+    
+    <div class="form-group">
+        <label for="sketchFile">Sketch Image (PNG/JPG)</label>
+        <input type="file" id="sketchFile" accept="image/png, image/jpeg, image/webp">
+        <img id="imagePreview" class="preview-image" alt="Preview">
+    </div>
+
+    <div class="form-group">
+        <label for="sketchStyle">Style / Category</label>
+        <select id="sketchStyle">
+            <option value="">-- Select Style --</option>
+            <option value="Traditional">Traditional (Old School)</option>
+            <option value="Neo-Traditional">Neo-Traditional</option>
+            <option value="Realism">Realism</option>
+            <option value="Black & Grey Realism">Black & Grey Realism</option>
+            <option value="Watercolor">Watercolor</option>
+            <option value="Tribal">Tribal</option>
+            <option value="Japanese">Japanese (Irezumi)</option>
+            <option value="Fine Line">Fine Line</option>
+            <option value="Minimalist">Minimalist</option>
+            <option value="Geometric">Geometric</option>
+            <option value="Dotwork">Dotwork</option>
+            <option value="Blackwork">Blackwork</option>
+            <option value="Lettering">Lettering</option>
+            <option value="Illustrative">Illustrative</option>
+            <option value="WildCard">WildCard</option>
+            <option value="Surrealism">Surrealism</option>
+            <option value="Biomechanical">Biomechanical</option>
+            <option value="New School">New School</option>
+            <option value="Ignorant Style">Ignorant Style</option>
+            <option value="Chicano">Chicano</option>
+        </select>
+    </div>
+
+    <div class="form-group" style="background: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0;">
+        <label style="display: flex; align-items: center; cursor: pointer;">
+            <input type="checkbox" id="isArtistSketch" style="width: auto; margin-right: 0.75rem;">
+            <span>Is this a real Artist Sketch? (Enables artist info)</span>
+        </label>
+    </div>
+
+    <div id="artistSection" style="display: none;">
+        <div class="form-group">
+            <label>Artist</label>
+            <select id="artistSelect">
+                <option value="">-- Select Existing Artist --</option>
+                <!-- Populated via API -->
+            </select>
+            <span class="toggle-artist-mode" id="toggleArtistMode">Or create new artist</span>
+        </div>
+
+        <div id="artistInfo" class="form-group" style="display: none; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 0.5rem; padding: 0.75rem;">
+            <strong id="artistInfoName"></strong>
+            <div id="artistInfoLocation" style="color:#475569; font-size: 0.9rem;"></div>
+            <div id="artistInfoWhatsapp" style="color:#475569; font-size: 0.9rem;"></div>
+            <div id="artistInfoInstagram" style="color:#475569; font-size: 0.9rem;"></div>
+        </div>
+
+        <div id="newArtistFields" class="new-artist-fields">
+            <div class="form-group">
+                <label for="newArtistName">Artist Name</label>
+                <input type="text" id="newArtistName" placeholder="Artist Name">
+            </div>
+            <div class="form-group">
+                <label for="newArtistWhatsapp">WhatsApp Number</label>
+                <input type="text" id="newArtistWhatsapp" placeholder="+1234567890">
+            </div>
+            <div class="form-group">
+                <label for="newArtistLocation">Location (Optional)</label>
+                <input type="text" id="newArtistLocation" placeholder="City, Country">
+            </div>
+            <div class="form-group">
+                <label for="newArtistInstagram">Instagram Link (Optional)</label>
+                <input type="url" id="newArtistInstagram" placeholder="https://instagram.com/artist">
+            </div>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label for="sketchTags">Tags (comma separated, optional)</label>
+        <input type="text" id="sketchTags" placeholder="dragon, arm, flower">
+    </div>
+
+    <button id="uploadBtn" class="btn-upload">Upload Sketch</button>
+    <div id="statusMessage" class="message"></div>
+</div>
+
+<script src="js/config.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const fileInput = document.getElementById('sketchFile');
+            const previewImg = document.getElementById('imagePreview');
+            const uploadBtn = document.getElementById('uploadBtn');
+            const statusMsg = document.getElementById('statusMessage');
+            const artistSelect = document.getElementById('artistSelect');
+            const toggleArtistMode = document.getElementById('toggleArtistMode');
+            const newArtistFields = document.getElementById('newArtistFields');
+            const isArtistSketchCheckbox = document.getElementById('isArtistSketch');
+            const artistSection = document.getElementById('artistSection');
+            const artistInfo = document.getElementById('artistInfo');
+            const artistInfoName = document.getElementById('artistInfoName');
+            const artistInfoLocation = document.getElementById('artistInfoLocation');
+            const artistInfoWhatsapp = document.getElementById('artistInfoWhatsapp');
+            const artistInfoInstagram = document.getElementById('artistInfoInstagram');
+            
+            let isNewArtistMode = false;
+            let token = localStorage.getItem('jwt_token');
+            let artistMap = {};
+
+            // Toggle Artist Section Visibility
+            isArtistSketchCheckbox.addEventListener('change', (e) => {
+                artistSection.style.display = e.target.checked ? 'block' : 'none';
+            });
+
+            // 1. Check Auth (Admin check could be added here or relied on backend failure)
+            if (!token) {
+                statusMsg.textContent = "You must be logged in to upload.";
+                statusMsg.className = "message error";
+                statusMsg.style.display = "block";
+                // uploadBtn.disabled = true; // Strict mode
+            }
+
+            // 2. Fetch Artists
+            async function loadArtists() {
+                try {
+                    const res = await fetch(`${CONFIG.API_URL}/artists`); // We need to ensure this endpoint exists or create it
+                    if (res.ok) {
+                        const artists = await res.json();
+                        artistSelect.innerHTML = '<option value="">-- Select Existing Artist --</option>';
+                        artistMap = {};
+                        artists.forEach(a => {
+                            const opt = document.createElement('option');
+                            opt.value = a.id;
+                            opt.textContent = `${a.name} (${a.location || 'Unknown'})`;
+                            artistSelect.appendChild(opt);
+                            artistMap[a.id] = a;
+                        });
+                    }
+                } catch (err) {
+                    console.error("Failed to load artists", err);
+                }
+            }
+            
+            // Basic endpoint to list artists if not exists, we'll need to create it or assume manual entry
+            loadArtists();
+
+            function renderArtistInfo(id) {
+                if (!id || !artistMap[id]) {
+                    artistInfo.style.display = 'none';
+                    artistInfoName.textContent = '';
+                    artistInfoLocation.textContent = '';
+                    artistInfoWhatsapp.textContent = '';
+                    artistInfoInstagram.textContent = '';
+                    return;
+                }
+                const a = artistMap[id];
+                artistInfoName.textContent = a.name || '';
+                artistInfoLocation.textContent = a.location ? `Location: ${a.location}` : '';
+                artistInfoWhatsapp.textContent = a.whatsapp_number ? `WhatsApp: ${a.whatsapp_number}` : '';
+                artistInfoInstagram.textContent = a.instagram ? `Instagram: ${a.instagram}` : '';
+                artistInfo.style.display = 'block';
+            }
+
+            artistSelect.addEventListener('change', () => {
+                renderArtistInfo(artistSelect.value);
+            });
+
+            // 3. Image Preview
+            fileInput.addEventListener('change', () => {
+                const file = fileInput.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        previewImg.src = e.target.result;
+                        previewImg.style.display = 'block';
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    previewImg.style.display = 'none';
+                }
+            });
+
+            // 4. Toggle Artist Mode
+            toggleArtistMode.addEventListener('click', () => {
+                isNewArtistMode = !isNewArtistMode;
+                if (isNewArtistMode) {
+                    newArtistFields.style.display = 'block';
+                    artistSelect.disabled = true;
+                    toggleArtistMode.textContent = "Cancel (Select existing artist)";
+                } else {
+                    newArtistFields.style.display = 'none';
+                    artistSelect.disabled = false;
+                    toggleArtistMode.textContent = "Or create new artist";
+                }
+            });
+
+            // --- IMAGE RESIZING LOGIC ---
+            function resizeImage(file, maxWidth, maxHeight, quality) {
+                return new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.readAsDataURL(file);
+                    reader.onload = (event) => {
+                        const img = new Image();
+                        img.src = event.target.result;
+                        img.onload = () => {
+                            const canvas = document.createElement('canvas');
+                            let width = img.width;
+                            let height = img.height;
+
+                            if (width > height) {
+                                if (width > maxWidth) {
+                                    height = Math.round((height *= maxWidth / width));
+                                    width = maxWidth;
+                                }
+                            } else {
+                                if (height > maxHeight) {
+                                    width = Math.round((width *= maxHeight / height));
+                                    height = maxHeight;
+                                }
+                            }
+
+                            canvas.width = width;
+                            canvas.height = height;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0, width, height);
+                            
+                            canvas.toBlob((blob) => {
+                                resolve(blob);
+                            }, 'image/jpeg', quality);
+                        };
+                    };
+                });
+            }
+            // ---------------------------
+
+            // 5. Upload Handler
+            uploadBtn.addEventListener('click', async () => {
+                const originalFile = fileInput.files[0];
+                const style = document.getElementById('sketchStyle').value.trim();
+                const tags = document.getElementById('sketchTags').value;
+                const isArtistSketch = isArtistSketchCheckbox.checked;
+                
+                if (!originalFile) {
+                    showStatus('Please select a file.', 'error');
+                    return;
+                }
+                if (!style) {
+                    showStatus('Please enter a style.', 'error');
+                    return;
+                }
+
+                // Resize before upload
+                showStatus('Compressing image...', 'success');
+                let fileToUpload = originalFile;
+                
+                // Only resize if image is large (>1MB) or dimensions are huge
+                if (originalFile.size > 1024 * 1024) { 
+                     try {
+                        const resizedBlob = await resizeImage(originalFile, 1200, 1200, 0.85); // Max 1200px, 85% quality
+                        fileToUpload = new File([resizedBlob], originalFile.name, { type: 'image/jpeg' });
+                     } catch (e) {
+                        console.warn("Resize failed, uploading original.", e);
+                     }
+                }
+
+                const formData = new FormData();
+                formData.append('image', fileToUpload);
+                formData.append('style', style);
+                formData.append('isArtistSketch', isArtistSketch);
+                if (tags) formData.append('tags', tags);
+
+                if (isArtistSketch) {
+                    if (isNewArtistMode) {
+                        const newName = document.getElementById('newArtistName').value.trim();
+                        const newWhatsapp = document.getElementById('newArtistWhatsapp').value.trim();
+                        const newLocation = document.getElementById('newArtistLocation').value.trim();
+                        const newInstagram = document.getElementById('newArtistInstagram').value.trim();
+                        
+                        if (!newName) {
+                            showStatus('Artist Name is required for new artist.', 'error');
+                            return;
+                        }
+                        formData.append('newArtistName', newName);
+                        if (newWhatsapp) formData.append('newArtistWhatsapp', newWhatsapp);
+                        if (newLocation) formData.append('newArtistLocation', newLocation);
+                        if (newInstagram) formData.append('newArtistInstagram', newInstagram);
+                    } else {
+                        const artistId = artistSelect.value;
+                        if (artistId) {
+                            formData.append('artistId', artistId);
+                        }
+                    }
+                }
+
+                uploadBtn.disabled = true;
+                uploadBtn.textContent = "Uploading...";
+                
+                try {
+                    const res = await fetch(`${CONFIG.API_URL}/admin/upload-sketch`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}` 
+                        },
+                        body: formData
+                    });
+
+                    const data = await res.json();
+
+                    if (!res.ok) {
+                        throw new Error(data.error || 'Upload failed');
+                    }
+
+                    showStatus('Upload successful!', 'success');
+                    // Reset form
+                    fileInput.value = '';
+                    previewImg.style.display = 'none';
+                    // Reload artists if we added a new one
+                    if (isNewArtistMode) {
+                       loadArtists();
+                       // Reset UI mode
+                       toggleArtistMode.click(); 
+                    }
+
+                } catch (err) {
+                    console.error(err);
+                    showStatus(err.message, 'error');
+                } finally {
+                    uploadBtn.disabled = false;
+                    uploadBtn.textContent = "Upload Sketch";
+                }
+            });
+
+            function showStatus(msg, type) {
+                statusMsg.textContent = msg;
+                statusMsg.className = `message ${type}`;
+                statusMsg.style.display = 'block';
+            }
+        });
+    </script>
+
+</body>
+</html>
+

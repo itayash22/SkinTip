@@ -716,6 +716,77 @@ app.post('/api/admin/add-tokens', authenticateToken, requireAdmin, async (req, r
     }
 });
 
+// Admin-only endpoint to upload new sketches to the database (RESTORED)
+app.post('/api/admin/upload-sketch', authenticateToken, requireAdmin, upload.single('image'), async (req, res) => {
+    try {
+        const { style, isArtistSketch, tags, artistId, newArtistName, newArtistWhatsapp, newArtistLocation, newArtistInstagram } = req.body;
+        const imageFile = req.file;
+
+        if (!imageFile) {
+            return res.status(400).json({ error: 'Image file is required.' });
+        }
+
+        let finalArtistId = artistId;
+
+        // 1. Handle New Artist creation if needed
+        if (isArtistSketch === 'true' && newArtistName) {
+            const { data: newArtist, error: artistError } = await supabase
+                .from('artists')
+                .insert({
+                    name: newArtistName,
+                    whatsapp_number: newArtistWhatsapp || '',
+                    location: newArtistLocation || '',
+                    portfolio_urls: newArtistInstagram ? [newArtistInstagram] : []
+                })
+                .select()
+                .single();
+
+            if (artistError) throw artistError;
+            finalArtistId = newArtist.id;
+        }
+
+        // 2. Upload image to Supabase Storage
+        const fileName = `${Date.now()}-${imageFile.originalname}`;
+        const filePath = `sketches/${fileName}`;
+        
+        const { error: uploadError } = await supabase.storage
+            .from(process.env.SUPABASE_STORAGE_BUCKET || 'generated-tattoos')
+            .upload(filePath, imageFile.buffer, {
+                contentType: imageFile.mimetype,
+                upsert: true
+            });
+
+        if (uploadError) throw uploadError;
+
+        // Get Public URL
+        const { data: { publicUrl } } = supabase.storage
+            .from(process.env.SUPABASE_STORAGE_BUCKET || 'generated-tattoos')
+            .getPublicUrl(filePath);
+
+        // 3. Insert record into tattoo_sketches
+        const { data: sketch, error: sketchError } = await supabase
+            .from('tattoo_sketches')
+            .insert({
+                image_url: publicUrl,
+                style: style || 'Freestyle',
+                is_artist_sketch: isArtistSketch === 'true',
+                artist_id: finalArtistId || null,
+                tags: tags ? tags.split(',').map(t => t.trim()) : [],
+                is_active: true
+            })
+            .select()
+            .single();
+
+        if (sketchError) throw sketchError;
+
+        res.json({ success: true, sketch });
+
+    } catch (error) {
+        console.error('Error in upload-sketch:', error);
+        res.status(500).json({ error: error.message || 'Failed to upload sketch' });
+    }
+});
+
 app.post('/api/generate-final-tattoo',
     authenticateToken,
     expensiveLimiter,

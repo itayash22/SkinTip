@@ -41,8 +41,6 @@ const auth = {
         console.log('Auth init: Raw saved token:', savedToken);
         console.log('Auth init: Raw saved user:', savedUser);
 
-        const currentPage = window.location.pathname.split('/').pop();
-
         if (savedToken && savedUser) {
             STATE.token = savedToken;
             try {
@@ -58,29 +56,26 @@ const auth = {
         } else {
             // Not logged in
             auth.updateUIForAuth(false); // Update UI for logged-out state
-            // If on the welcome page AND not logged in, explicitly hide the modal on load
-            if (currentPage === 'welcome.html' && auth.modal) {
-                auth.hideModal(); // Ensure it's hidden if it's the welcome page and user is not logged in
-            }
-        }
-
-        // --- Handle Redirection based on Auth Status ---
-        // This must come AFTER auth.updateUIForAuth because it relies on STATE.token to be set
-        if (!STATE.token && currentPage === 'index.html') {
-            // Not logged in and trying to access main app, redirect to welcome
-            window.location.href = 'welcome.html';
-            return; // Stop further execution for this page load
-        } else if (STATE.token && currentPage === 'welcome.html') {
-            // Logged in and on welcome page, redirect to main app
-            window.location.href = 'index.html';
-            return; // Stop further execution for this page load
         }
 
         // Only set up event listeners if on a page that uses the modal or logout button
-        if (auth.modal) { // Check if modal elements are present on this page (e.g., welcome.html)
+        if (auth.modal) { 
              auth.authForm.addEventListener('submit', auth.handleAuthSubmit);
              auth.authSwitchLink.addEventListener('click', auth.toggleAuthMode);
+             
+             // NEW: Close modal button
+             const closeBtn = document.getElementById('closeAuthModalBtn');
+             if (closeBtn) {
+                 closeBtn.addEventListener('click', auth.hideModal);
+             }
         }
+        
+        // NEW: Login/Register buttons in navbar (if they exist)
+        const navLoginBtn = document.getElementById('loginBtn');
+        const navRegisterBtn = document.getElementById('registerBtn');
+        if (navLoginBtn) navLoginBtn.addEventListener('click', () => auth.showModal('login'));
+        if (navRegisterBtn) navRegisterBtn.addEventListener('click', () => auth.showModal('register'));
+
         if (auth.logoutBtn) { // Logout button is in index.html
             auth.logoutBtn.addEventListener('click', auth.logout);
         }
@@ -90,7 +85,7 @@ const auth = {
     // Show auth modal, optionally setting mode
     showModal: (mode = 'login') => {
         if (auth.modal) {
-            auth.modal.style.display = 'block';
+            auth.modal.style.display = 'flex'; // Use flex for centering
             auth.authError.textContent = ''; // Clear previous errors
             auth.authForm.reset(); // Clear form fields
             auth.setAuthMode(mode === 'register');
@@ -186,10 +181,13 @@ const auth = {
     auth.hideModal();
     auth.updateUIForAuth(true); // Call updateUIForAuth to refresh display
 
-    // Redirect to index.html after successful auth, if on welcome.html
-    if (window.location.pathname.split('/').pop() === 'welcome.html') {
-        window.location.href = 'index.html';
-    }
+    // No longer redirecting to index.html from welcome.html as we are staying on index.html
+    // if (window.location.pathname.split('/').pop() === 'welcome.html') {
+    //     window.location.href = 'index.html';
+    // }
+    
+    // Refresh page to ensure all states are clean if needed, or just let it be
+    // location.reload(); 
 
 } catch (error) {
     utils.hideLoading();
@@ -216,8 +214,9 @@ const auth = {
     logout: () => {
         auth.clearAuthData();
         auth.updateUIForAuth(false);
-        // Redirect to welcome page after logout
-        window.location.href = 'welcome.html';
+        // No longer redirecting to welcome page
+        // window.location.href = 'index.html'; // Optionally refresh the page
+        location.reload(); 
     },
 
     clearAuthData: () => {
@@ -232,9 +231,9 @@ const auth = {
         // Ensure userInfoSpan and logoutBtn are correctly referenced before using them
         const userInfoSpan = document.getElementById('userInfo');
         const logoutBtn = document.getElementById('logoutBtn');
-        const loginBtn = document.getElementById('loginBtn'); // For welcome.html
-        const registerBtn = document.getElementById('registerBtn'); // For welcome.html
-        const heroRegisterBtn = document.getElementById('heroRegisterBtn'); // For welcome.html
+        const loginBtn = document.getElementById('loginBtn');
+        const registerBtn = document.getElementById('registerBtn');
+        const deleteAccountBtn = document.getElementById('deleteAccountBtn');
 
         if (isAuthenticated) {
             if (userInfoSpan && STATE.user) { // Check STATE.user exists too
@@ -244,13 +243,12 @@ const auth = {
             if (logoutBtn) {
                 logoutBtn.style.display = 'inline-block';
             }
-            // Hide welcome page buttons if on welcome.html and logged in
-            const currentPage = window.location.pathname.split('/').pop();
-            if (currentPage === 'welcome.html') {
-                if (loginBtn) loginBtn.style.display = 'none';
-                if (registerBtn) registerBtn.style.display = 'none';
-                if (heroRegisterBtn) heroRegisterBtn.style.display = 'none';
+            if (deleteAccountBtn) {
+                deleteAccountBtn.style.display = 'inline-block';
             }
+            if (loginBtn) loginBtn.style.display = 'none';
+            if (registerBtn) registerBtn.style.display = 'none';
+            
             utils.updateTokenDisplay(); // Refresh token display on app page (index.html)
         } else { // Not authenticated
             if (userInfoSpan) {
@@ -260,13 +258,11 @@ const auth = {
             if (logoutBtn) {
                 logoutBtn.style.display = 'none';
             }
-            // Show welcome page buttons if on welcome.html and logged out
-            const currentPage = window.location.pathname.split('/').pop();
-            if (currentPage === 'welcome.html') {
-                if (loginBtn) loginBtn.style.display = 'inline-block';
-                if (registerBtn) registerBtn.style.display = 'inline-block';
-                if (heroRegisterBtn) heroRegisterBtn.style.display = 'inline-block';
+            if (deleteAccountBtn) {
+                deleteAccountBtn.style.display = 'none';
             }
+            if (loginBtn) loginBtn.style.display = 'inline-block';
+            if (registerBtn) registerBtn.style.display = 'inline-block';
         }
     }
 };

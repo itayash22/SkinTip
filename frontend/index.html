@@ -939,13 +939,6 @@
                 document.getElementById('styleSelectionSection').style.display = 'none';
                 const skinSection = document.getElementById('skinPhotoUploadSection');
                 skinSection.style.display = 'block';
-
-                // On mobile, scroll the user to the upload/CTA area instead of jumping to bottom
-                if (window.innerWidth <= 768) {
-                    setTimeout(() => {
-                        skinSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    }, 50);
-                }
             }
 
             // Remove old event listeners that are no longer needed since we generate cards dynamically with listeners

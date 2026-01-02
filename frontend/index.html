@@ -1190,6 +1190,8 @@
                     // Only log once on initial start
                 }
             }
+            // Expose globally so auth.js can call it after login
+            window.startInactivityTimer = startInactivityTimer;
 
             function resetInactivityTimer() {
                 const now = Date.now();

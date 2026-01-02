@@ -250,6 +250,11 @@ const auth = {
             if (registerBtn) registerBtn.style.display = 'none';
             
             utils.updateTokenDisplay(); // Refresh token display on app page (index.html)
+            
+            // Start inactivity timer after successful authentication
+            if (typeof window.startInactivityTimer === 'function') {
+                window.startInactivityTimer();
+            }
         } else { // Not authenticated
             if (userInfoSpan) {
                 userInfoSpan.textContent = '';

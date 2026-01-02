@@ -1193,6 +1193,15 @@
             // Expose globally so auth.js can call it after login
             window.startInactivityTimer = startInactivityTimer;
 
+            // Extend the inactivity timer by additional milliseconds (e.g., during FLUX generation)
+            function extendInactivityTimer(extraMs = 60000) {
+                if (!STATE.user || !STATE.token) return;
+                clearTimeout(inactivityTimeout);
+                inactivityTimeout = setTimeout(handleInactivityLogout, CONFIG.INACTIVITY_TIMEOUT_MS + extraMs);
+                console.log(`Inactivity timer extended by ${extraMs / 1000} seconds for API wait`);
+            }
+            window.extendInactivityTimer = extendInactivityTimer;
+
             function resetInactivityTimer() {
                 const now = Date.now();
                 // Throttle: only reset if 30+ seconds since last reset
@@ -1471,6 +1480,11 @@
                 // Detect mobile device to adjust mask growth logic on backend
                 const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (window.innerWidth <= 768);
                 formData.append('isMobile', isMobile.toString());
+
+                // Extend inactivity timer by 1 minute while waiting for FLUX response
+                if (typeof extendInactivityTimer === 'function') {
+                    extendInactivityTimer(60000); // Add 1 minute
+                }
 
                 const response = await fetch(`${CONFIG.API_URL}/generate-final-tattoo`, {
                     method: 'POST',

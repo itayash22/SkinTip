@@ -398,6 +398,7 @@ app.get('/api/styles-with-stencils', async (req, res) => {
                 id: stencil.id,
                 imageUrl: stencil.image_url,
                 tags: stencil.tags || [],
+                isArtistSketch: !!stencil.is_artist_sketch,
                 artist: artist ? {
                     id: artist.id,
                     name: artist.name,

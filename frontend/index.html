@@ -527,21 +527,26 @@
                         if (!portfolioByArtist[artistId]) portfolioByArtist[artistId] = [];
                         if (stencil.isArtistSketch && stencil.imageUrl) {
                             portfolioByArtist[artistId].push(stencil.imageUrl);
+                            console.log(`[artists] Added stencil to portfolio for artist ${artistId}:`, stencil.imageUrl);
                         }
                     });
                 });
 
                 allArtists = (apiArtists || []).map((artist) => {
+                    // Combine portfolio from stencils and from artist's own portfolio_urls
+                    // Note: backend /api/artists returns 'portfolio' while stencil mapping uses 'id'
                     const mergedPortfolio = [
                         ...(portfolioByArtist[artist.id] || []),
-                        ...(Array.isArray(artist.portfolio_urls) ? artist.portfolio_urls : [])
+                        ...(Array.isArray(artist.portfolio) ? artist.portfolio : [])
                     ].filter(Boolean);
+                    
                     return {
+                        id: artist.id,
                         name: artist.name || 'Unknown Artist',
                         location: artist.location || '',
-                        styles: Array.from(stylesByArtist[artist.id] || []),
+                        styles: Array.from(stylesByArtist[artist.id] || artist.styles || []),
                         bio: artist.bio || '',
-                        likes: artist.likes || '',
+                        likes: artist.likes || 0,
                         whatsapp: artist.whatsapp_number || artist.whatsapp || '',
                         portfolio: mergedPortfolio.slice(0, 6)
                     };

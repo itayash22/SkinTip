@@ -920,6 +920,11 @@ app.post('/api/generate-final-tattoo',
     }
 );
 
+// 404 handler for API routes
+app.use('/api/*', (req, res) => {
+    res.status(404).json({ error: `API route not found: ${req.originalUrl}` });
+});
+
 // Error handling middleware (catches errors from previous middleware/routes)
 app.use((error, req, res, next) => {
     if (error instanceof multer.MulterError) {

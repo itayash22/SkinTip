@@ -337,8 +337,8 @@ app.get('/api/artists', async (req, res) => {
             bio: artist.bio || '',
             styles: artist.styles || [],
             portfolio: artist.portfolio_urls || [],
-            whatsapp: artist.whatsapp || '',
-            likes: artist.likes || 0
+            whatsapp: artist.whatsapp_number || '',
+            likes: artist.likes_count || artist.likes || 0
         }));
 
         res.json(artists);
@@ -378,7 +378,7 @@ app.get('/api/styles-with-stencils', async (req, res) => {
         if (artistIds.length > 0) {
             const { data: artists, error: artistError } = await supabasePublic
                 .from('artists')
-                .select('id, name, whatsapp')
+                .select('id, name, whatsapp_number')
                 .in('id', artistIds);
             
             if (!artistError && artists) {
@@ -402,7 +402,7 @@ app.get('/api/styles-with-stencils', async (req, res) => {
                 artist: artist ? {
                     id: artist.id,
                     name: artist.name,
-                    whatsapp: artist.whatsapp
+                    whatsapp: artist.whatsapp_number
                 } : null
             });
         });

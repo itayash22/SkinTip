@@ -16,6 +16,8 @@ import sizeOf from 'image-size'; // image-size default export might be different
 // Import our new modularized services
 import tokenService from './modules/tokenService.js'; // Added .js extension
 import fluxKontextHandler, { IMAGE_TTL_SECONDS } from './modules/fluxPlacementHandler.js'; // Added .js extension
+import geoService from './modules/geoService.js'; // Analytics geo/device tracking
+import analyticsService from './modules/analyticsService.js'; // Analytics data queries
 // --- END OF ACTUAL IMPORTS ---
 
 // Function to generate a dynamic timestamp for deployment tracking
@@ -291,6 +293,14 @@ app.post('/api/log-event', authenticateToken, async (req, res) => {
             return res.status(400).json({ error: 'Invalid stencil ID format' });
         }
 
+        // Get client info for analytics (non-blocking)
+        let clientInfo = { ip: null, country: null, city: null, deviceType: null, userAgent: null };
+        try {
+            clientInfo = await geoService.getClientInfo(req);
+        } catch (err) {
+            console.warn('[Analytics] Failed to get client info for event:', err.message);
+        }
+
         const { error } = await supabase
             .from('user_events')
             .insert({
@@ -299,7 +309,13 @@ app.post('/api/log-event', authenticateToken, async (req, res) => {
                 artist_id: artistId || null,
                 stencil_id: stencilId || null,
                 extra_details: extraDetails || null,
-                created_at: timestamp || new Date().toISOString()
+                created_at: timestamp || new Date().toISOString(),
+                ip_address: clientInfo.ip,
+                geo_country: clientInfo.country,
+                geo_city: clientInfo.city,
+                device_type: clientInfo.deviceType,
+                user_agent: clientInfo.userAgent,
+                referrer: req.headers.referer || null
             });
 
         if (error) {
@@ -453,6 +469,17 @@ app.post('/api/auth/register', async (req, res) => {
 
         const passwordHash = await bcryptjs.hash(password, 12); // Increased rounds
 
+        // Get client info for signup analytics
+        let clientInfo = { country: 'Unknown', deviceType: 'unknown' };
+        try {
+            clientInfo = await geoService.getClientInfo(req);
+        } catch (err) {
+            console.warn('[Analytics] Failed to get client info for signup:', err.message);
+        }
+
+        // Get UTM source from query params or referrer
+        const signupSource = req.query.utm_source || req.headers.referer || 'direct';
+
         const { data: newUser, error } = await supabase
             .from('users')
             .insert({
@@ -460,7 +487,12 @@ app.post('/api/auth/register', async (req, res) => {
                 password_hash: passwordHash,
                 username,
                 tokens_remaining: 20,
-                is_admin: false
+                is_admin: false,
+                signup_geo: clientInfo.country,
+                signup_device: clientInfo.deviceType,
+                signup_source: signupSource,
+                last_login_at: new Date().toISOString(),
+                login_count: 1
             })
             .select()
             .single();
@@ -469,6 +501,8 @@ app.post('/api/auth/register', async (req, res) => {
             console.error('Registration error:', error);
             return res.status(500).json({ error: 'Failed to create user' });
         }
+        
+        console.log(`[Analytics] New user registered: ${newUser.id} from ${clientInfo.country} (${clientInfo.deviceType})`);
 
         // Generate short-lived access token
         const accessToken = jwt.sign(
@@ -551,6 +585,16 @@ app.post('/api/auth/login', async (req, res) => {
             token: refreshToken,
             expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
         });
+
+        // Track login analytics (non-blocking)
+        geoService.getClientInfo(req).then(clientInfo => {
+            supabase.from('users').update({
+                last_login_at: new Date().toISOString(),
+                login_count: (user.login_count || 0) + 1
+            }).eq('id', user.id).then(() => {
+                console.log(`[Analytics] Login tracked for user ${user.id} from ${clientInfo.country}`);
+            }).catch(err => console.warn('[Analytics] Failed to update login stats:', err.message));
+        }).catch(err => console.warn('[Analytics] Failed to get client info:', err.message));
 
         res.json({
             message: 'Login successful',
@@ -663,6 +707,117 @@ app.post('/api/auth/logout', authenticateToken, async (req, res) => {
         res.status(500).json({ error: 'Logout failed' });
     }
 });
+
+// ============================================
+// ANALYTICS ENDPOINTS (Admin-only)
+// ============================================
+
+// Analytics Overview KPIs
+app.get('/api/admin/analytics/overview', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const data = await analyticsService.getOverview();
+        res.json(data);
+    } catch (error) {
+        console.error('Analytics overview error:', error);
+        res.status(500).json({ error: 'Failed to fetch analytics overview' });
+    }
+});
+
+// User Growth Data
+app.get('/api/admin/analytics/users', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const days = parseInt(req.query.days) || 30;
+        const growth = await analyticsService.getUserGrowth(days);
+        const devices = await analyticsService.getDeviceDistribution();
+        res.json({ growth, devices });
+    } catch (error) {
+        console.error('Analytics users error:', error);
+        res.status(500).json({ error: 'Failed to fetch user analytics' });
+    }
+});
+
+// Retention Cohort Data
+app.get('/api/admin/analytics/retention', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const data = await analyticsService.getRetention();
+        res.json(data);
+    } catch (error) {
+        console.error('Analytics retention error:', error);
+        res.status(500).json({ error: 'Failed to fetch retention data' });
+    }
+});
+
+// Geographic Distribution
+app.get('/api/admin/analytics/geo', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const data = await analyticsService.getGeoDistribution();
+        res.json(data);
+    } catch (error) {
+        console.error('Analytics geo error:', error);
+        res.status(500).json({ error: 'Failed to fetch geo data' });
+    }
+});
+
+// Event Funnel Data
+app.get('/api/admin/analytics/events', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const funnel = await analyticsService.getEventFunnel();
+        const topArtists = await analyticsService.getTopArtists();
+        res.json({ funnel, topArtists });
+    } catch (error) {
+        console.error('Analytics events error:', error);
+        res.status(500).json({ error: 'Failed to fetch event analytics' });
+    }
+});
+
+// Revenue/Cost Data
+app.get('/api/admin/analytics/revenue', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const days = parseInt(req.query.days) || 30;
+        const data = await analyticsService.getRevenue(days);
+        res.json(data);
+    } catch (error) {
+        console.error('Analytics revenue error:', error);
+        res.status(500).json({ error: 'Failed to fetch revenue data' });
+    }
+});
+
+// Alerts
+app.get('/api/admin/analytics/alerts', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const alerts = await analyticsService.getAlerts();
+        res.json(alerts);
+    } catch (error) {
+        console.error('Analytics alerts error:', error);
+        res.status(500).json({ error: 'Failed to fetch alerts' });
+    }
+});
+
+// Check and generate alerts (can be called by cron)
+app.post('/api/admin/analytics/check-alerts', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const newAlerts = await analyticsService.checkAlerts();
+        res.json({ newAlerts: newAlerts.length, alerts: newAlerts });
+    } catch (error) {
+        console.error('Analytics check-alerts error:', error);
+        res.status(500).json({ error: 'Failed to check alerts' });
+    }
+});
+
+// Get recommendations
+app.get('/api/admin/analytics/recommendations', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const recommendations = await analyticsService.getRecommendations();
+        res.json(recommendations);
+    } catch (error) {
+        console.error('Analytics recommendations error:', error);
+        res.status(500).json({ error: 'Failed to fetch recommendations' });
+    }
+});
+
+// ============================================
+// END ANALYTICS ENDPOINTS
+// ============================================
 
 function isValidBase64(str) {
     if (!str || str.length < 100) return false;

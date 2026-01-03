@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SkinTip Analytics Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            min-height: 100vh;
+        }
+        
+        .header {
+            background: #1e293b;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #334155;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #f8fafc;
+        }
+        
+        .header .subtitle {
+            font-size: 0.875rem;
+            color: #94a3b8;
+        }
+        
+        .back-link {
+            color: #60a5fa;
+            text-decoration: none;
+            font-size: 0.875rem;
+        }
+        
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 1.5rem;
+        }
+        
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .kpi-card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 1.25rem;
+            border: 1px solid #334155;
+        }
+        
+        .kpi-card .label {
+            font-size: 0.75rem;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+        }
+        
+        .kpi-card .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #f8fafc;
+        }
+        
+        .kpi-card .change {
+            font-size: 0.875rem;
+            margin-top: 0.25rem;
+        }
+        
+        .kpi-card .change.positive { color: #22c55e; }
+        .kpi-card .change.negative { color: #ef4444; }
+        
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        @media (max-width: 1024px) {
+            .grid-2 { grid-template-columns: 1fr; }
+        }
+        
+        .card {
+            background: #1e293b;
+            border-radius: 12px;
+            border: 1px solid #334155;
+            overflow: hidden;
+        }
+        
+        .card-header {
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid #334155;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .card-header h2 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #f8fafc;
+        }
+        
+        .card-body {
+            padding: 1.25rem;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #334155;
+        }
+        
+        th {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #94a3b8;
+            text-transform: uppercase;
+        }
+        
+        td {
+            font-size: 0.875rem;
+            color: #e2e8f0;
+        }
+        
+        .retention-cell {
+            text-align: center;
+            padding: 0.5rem;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+        
+        .funnel-bar {
+            background: #334155;
+            border-radius: 4px;
+            overflow: hidden;
+            height: 32px;
+            margin-bottom: 0.75rem;
+            position: relative;
+        }
+        
+        .funnel-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            display: flex;
+            align-items: center;
+            padding-left: 1rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: width 0.5s ease;
+        }
+        
+        .funnel-label {
+            position: absolute;
+            right: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 0.75rem;
+            color: #94a3b8;
+        }
+        
+        .alert-item {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 0.75rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+        }
+        
+        .alert-item.warning {
+            background: rgba(234, 179, 8, 0.1);
+            border: 1px solid rgba(234, 179, 8, 0.3);
+        }
+        
+        .alert-item.critical {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        
+        .alert-item.info {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+        
+        .alert-icon {
+            font-size: 1.25rem;
+        }
+        
+        .alert-content {
+            flex: 1;
+        }
+        
+        .alert-title {
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+        
+        .alert-message {
+            font-size: 0.875rem;
+            color: #94a3b8;
+        }
+        
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 200px;
+            color: #94a3b8;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #334155;
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 2rem;
+            color: #64748b;
+        }
+        
+        .refresh-btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .refresh-btn:hover {
+            background: #2563eb;
+        }
+        
+        .last-updated {
+            font-size: 0.75rem;
+            color: #64748b;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div>
+            <h1>Analytics Dashboard</h1>
+            <span class="subtitle">SkinTip Performance Metrics</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 1rem;">
+            <span class="last-updated" id="lastUpdated">Loading...</span>
+            <button class="refresh-btn" onclick="refreshData()">Refresh</button>
+            <a href="index.html" class="back-link">← Back to App</a>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- KPI Cards -->
+        <div class="kpi-grid" id="kpiGrid">
+            <div class="kpi-card">
+                <div class="label">Total Users</div>
+                <div class="value" id="kpiTotalUsers">-</div>
+            </div>
+            <div class="kpi-card">
+                <div class="label">New Today</div>
+                <div class="value" id="kpiNewToday">-</div>
+            </div>
+            <div class="kpi-card">
+                <div class="label">Active Today</div>
+                <div class="value" id="kpiActiveToday">-</div>
+            </div>
+            <div class="kpi-card">
+                <div class="label">WhatsApp Contacts</div>
+                <div class="value" id="kpiContacts">-</div>
+            </div>
+            <div class="kpi-card">
+                <div class="label">API Cost (30d)</div>
+                <div class="value" id="kpiApiCost">-</div>
+            </div>
+            <div class="kpi-card">
+                <div class="label">DAU/Total Ratio</div>
+                <div class="value" id="kpiDauRatio">-</div>
+            </div>
+        </div>
+
+        <!-- Charts Row 1 -->
+        <div class="grid-2">
+            <div class="card">
+                <div class="card-header">
+                    <h2>User Growth (30 days)</h2>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="userGrowthChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <h2>Geographic Distribution</h2>
+                </div>
+                <div class="card-body">
+                    <div id="geoList" class="loading"><div class="spinner"></div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Row 2 -->
+        <div class="grid-2">
+            <div class="card">
+                <div class="card-header">
+                    <h2>Device Distribution</h2>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container" style="height: 250px;">
+                        <canvas id="deviceChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <h2>Conversion Funnel (30 days)</h2>
+                </div>
+                <div class="card-body">
+                    <div id="funnelContainer" class="loading"><div class="spinner"></div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Row 3: Retention & Artists -->
+        <div class="grid-2">
+            <div class="card">
+                <div class="card-header">
+                    <h2>Retention Cohorts</h2>
+                </div>
+                <div class="card-body" style="overflow-x: auto;">
+                    <div id="retentionTable" class="loading"><div class="spinner"></div></div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <h2>Top Artists by Engagement</h2>
+                </div>
+                <div class="card-body">
+                    <div id="artistsTable" class="loading"><div class="spinner"></div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alerts Section -->
+        <div class="card" style="margin-top: 1.5rem;">
+            <div class="card-header">
+                <h2>Alerts & Recommendations</h2>
+            </div>
+            <div class="card-body">
+                <div id="alertsContainer" class="loading"><div class="spinner"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'https://skintip-backend.onrender.com/api';
+        let charts = {};
+
+        async function getAuthHeaders() {
+            const token = localStorage.getItem('jwt_token');
+            return {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            };
+        }
+
+        async function fetchWithAuth(endpoint) {
+            const headers = await getAuthHeaders();
+            const response = await fetch(`${API_URL}${endpoint}`, { headers });
+            if (!response.ok) {
+                if (response.status === 401 || response.status === 403) {
+                    alert('Access denied. Admin privileges required.');
+                    window.location.href = 'index.html';
+                }
+                throw new Error(`HTTP ${response.status}`);
+            }
+            return response.json();
+        }
+
+        async function loadOverview() {
+            try {
+                const data = await fetchWithAuth('/admin/analytics/overview');
+                document.getElementById('kpiTotalUsers').textContent = data.totalUsers.toLocaleString();
+                document.getElementById('kpiNewToday').textContent = data.newUsersToday.toLocaleString();
+                document.getElementById('kpiActiveToday').textContent = data.activeUsersToday.toLocaleString();
+                document.getElementById('kpiContacts').textContent = data.totalContacts.toLocaleString();
+                document.getElementById('kpiApiCost').textContent = '$' + data.totalApiCost;
+                document.getElementById('kpiDauRatio').textContent = data.dauMauRatio + '%';
+            } catch (err) {
+                console.error('Failed to load overview:', err);
+            }
+        }
+
+        async function loadUserGrowth() {
+            try {
+                const data = await fetchWithAuth('/admin/analytics/users');
+                
+                // User growth chart
+                const ctx = document.getElementById('userGrowthChart').getContext('2d');
+                if (charts.userGrowth) charts.userGrowth.destroy();
+                
+                charts.userGrowth = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: data.growth.map(d => d.date.slice(5)),
+                        datasets: [{
+                            label: 'New Users',
+                            data: data.growth.map(d => d.newUsers),
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            fill: true,
+                            tension: 0.3
+                        }, {
+                            label: 'Cumulative',
+                            data: data.growth.map(d => d.cumulative),
+                            borderColor: '#8b5cf6',
+                            borderDash: [5, 5],
+                            fill: false,
+                            tension: 0.3,
+                            yAxisID: 'y1'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { labels: { color: '#94a3b8' } } },
+                        scales: {
+                            x: { ticks: { color: '#64748b' }, grid: { color: '#334155' } },
+                            y: { ticks: { color: '#64748b' }, grid: { color: '#334155' } },
+                            y1: { position: 'right', ticks: { color: '#64748b' }, grid: { display: false } }
+                        }
+                    }
+                });
+
+                // Device chart
+                const deviceCtx = document.getElementById('deviceChart').getContext('2d');
+                if (charts.device) charts.device.destroy();
+                
+                charts.device = new Chart(deviceCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: data.devices.map(d => d.device),
+                        datasets: [{
+                            data: data.devices.map(d => d.users),
+                            backgroundColor: ['#3b82f6', '#8b5cf6', '#22c55e', '#eab308']
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { position: 'right', labels: { color: '#94a3b8' } } }
+                    }
+                });
+            } catch (err) {
+                console.error('Failed to load user data:', err);
+            }
+        }
+
+        async function loadGeo() {
+            try {
+                const data = await fetchWithAuth('/admin/analytics/geo');
+                const container = document.getElementById('geoList');
+                
+                if (data.length === 0) {
+                    container.innerHTML = '<div class="empty-state">No geographic data available yet</div>';
+                    return;
+                }
+
+                container.innerHTML = `
+                    <table>
+                        <thead>
+                            <tr><th>Country</th><th>Users</th><th>Events</th></tr>
+                        </thead>
+                        <tbody>
+                            ${data.map(g => `
+                                <tr>
+                                    <td>${g.country}</td>
+                                    <td>${g.uniqueUsers}</td>
+                                    <td>${g.totalEvents}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+            } catch (err) {
+                console.error('Failed to load geo:', err);
+                document.getElementById('geoList').innerHTML = '<div class="empty-state">Failed to load data</div>';
+            }
+        }
+
+        async function loadFunnel() {
+            try {
+                const data = await fetchWithAuth('/admin/analytics/events');
+                const container = document.getElementById('funnelContainer');
+                
+                const maxUsers = Math.max(...data.funnel.steps.map(s => s.users), 1);
+                
+                container.innerHTML = data.funnel.steps.map(step => `
+                    <div class="funnel-bar">
+                        <div class="funnel-fill" style="width: ${(step.users / maxUsers) * 100}%">
+                            ${step.name}: ${step.users}
+                        </div>
+                        <span class="funnel-label">${step.rate}%</span>
+                    </div>
+                `).join('');
+            } catch (err) {
+                console.error('Failed to load funnel:', err);
+                document.getElementById('funnelContainer').innerHTML = '<div class="empty-state">Failed to load data</div>';
+            }
+        }
+
+        async function loadRetention() {
+            try {
+                const data = await fetchWithAuth('/admin/analytics/retention');
+                const container = document.getElementById('retentionTable');
+                
+                if (data.length === 0) {
+                    container.innerHTML = '<div class="empty-state">No retention data available yet</div>';
+                    return;
+                }
+
+                const getColor = (rate) => {
+                    const r = parseFloat(rate);
+                    if (r >= 50) return 'background: rgba(34, 197, 94, 0.3)';
+                    if (r >= 25) return 'background: rgba(234, 179, 8, 0.3)';
+                    if (r >= 10) return 'background: rgba(249, 115, 22, 0.3)';
+                    return 'background: rgba(239, 68, 68, 0.2)';
+                };
+
+                container.innerHTML = `
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Cohort</th>
+                                <th>Size</th>
+                                <th>Week 0</th>
+                                <th>Week 1</th>
+                                <th>Week 2</th>
+                                <th>Week 3</th>
+                                <th>Week 4</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.map(cohort => `
+                                <tr>
+                                    <td>${cohort.cohortWeek}</td>
+                                    <td>${cohort.cohortSize}</td>
+                                    ${cohort.weeks.map(w => `
+                                        <td><div class="retention-cell" style="${getColor(w.rate)}">${w.rate}%</div></td>
+                                    `).join('')}
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+            } catch (err) {
+                console.error('Failed to load retention:', err);
+                document.getElementById('retentionTable').innerHTML = '<div class="empty-state">Failed to load data</div>';
+            }
+        }
+
+        async function loadArtists() {
+            try {
+                const data = await fetchWithAuth('/admin/analytics/events');
+                const container = document.getElementById('artistsTable');
+                
+                if (data.topArtists.length === 0) {
+                    container.innerHTML = '<div class="empty-state">No artist data available yet</div>';
+                    return;
+                }
+
+                container.innerHTML = `
+                    <table>
+                        <thead>
+                            <tr><th>Artist</th><th>Clicks</th><th>Contacts</th><th>Users</th></tr>
+                        </thead>
+                        <tbody>
+                            ${data.topArtists.map(a => `
+                                <tr>
+                                    <td>${a.name}<br><small style="color:#64748b">${a.location}</small></td>
+                                    <td>${a.clicks}</td>
+                                    <td>${a.contacts}</td>
+                                    <td>${a.uniqueUsers}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+            } catch (err) {
+                console.error('Failed to load artists:', err);
+                document.getElementById('artistsTable').innerHTML = '<div class="empty-state">Failed to load data</div>';
+            }
+        }
+
+        async function loadAlerts() {
+            try {
+                const [alerts, recommendations] = await Promise.all([
+                    fetchWithAuth('/admin/analytics/alerts'),
+                    fetchWithAuth('/admin/analytics/recommendations').catch(() => [])
+                ]);
+                const container = document.getElementById('alertsContainer');
+                
+                let html = '';
+                
+                // Show alerts
+                if (alerts.length > 0) {
+                    html += alerts.map(alert => `
+                        <div class="alert-item ${alert.severity}">
+                            <span class="alert-icon">${alert.severity === 'critical' ? '🔴' : alert.severity === 'warning' ? '⚠️' : 'ℹ️'}</span>
+                            <div class="alert-content">
+                                <div class="alert-title">${alert.alert_type.replace(/_/g, ' ')}</div>
+                                <div class="alert-message">${alert.message}</div>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+                
+                // Show recommendations
+                if (recommendations.length > 0) {
+                    html += '<div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #334155;"><h3 style="font-size: 0.875rem; color: #94a3b8; margin-bottom: 0.75rem;">RECOMMENDATIONS</h3></div>';
+                    html += recommendations.map(rec => `
+                        <div class="alert-item info">
+                            <span class="alert-icon">💡</span>
+                            <div class="alert-content">
+                                <div class="alert-title">${rec.type.replace(/_/g, ' ')}</div>
+                                <div class="alert-message">${rec.message}</div>
+                                <div style="margin-top: 0.5rem; font-size: 0.75rem; color: #3b82f6;">Action: ${rec.action}</div>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+                
+                if (html === '') {
+                    html = `
+                        <div class="alert-item info">
+                            <span class="alert-icon">✓</span>
+                            <div class="alert-content">
+                                <div class="alert-title">All Clear</div>
+                                <div class="alert-message">No active alerts at this time. System is operating normally.</div>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                container.innerHTML = html;
+            } catch (err) {
+                console.error('Failed to load alerts:', err);
+                document.getElementById('alertsContainer').innerHTML = '<div class="empty-state">Failed to load alerts</div>';
+            }
+        }
+
+        async function refreshData() {
+            document.getElementById('lastUpdated').textContent = 'Refreshing...';
+            await Promise.all([
+                loadOverview(),
+                loadUserGrowth(),
+                loadGeo(),
+                loadFunnel(),
+                loadRetention(),
+                loadArtists(),
+                loadAlerts()
+            ]);
+            document.getElementById('lastUpdated').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+        }
+
+        // Check auth on load
+        document.addEventListener('DOMContentLoaded', () => {
+            const token = localStorage.getItem('jwt_token');
+            if (!token) {
+                alert('Please log in first');
+                window.location.href = 'index.html';
+                return;
+            }
+            refreshData();
+        });
+    </script>
+</body>
+</html>
+

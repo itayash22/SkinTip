@@ -166,32 +166,48 @@
         }
         
         .funnel-bar {
-            background: #334155;
-            border-radius: 4px;
-            overflow: hidden;
-            height: 32px;
-            margin-bottom: 0.75rem;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            overflow: visible;
+            height: 50px;
+            margin-bottom: 1rem;
             position: relative;
+            padding: 0.5rem;
         }
         
         .funnel-fill {
             height: 100%;
-            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            border-radius: 6px;
             display: flex;
             align-items: center;
-            padding-left: 1rem;
+            justify-content: space-between;
+            padding: 0 1rem;
             font-size: 0.875rem;
-            font-weight: 500;
+            font-weight: 600;
             transition: width 0.5s ease;
+            position: relative;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
         }
         
+        .funnel-fill.step-1 { background: linear-gradient(90deg, #3b82f6, #2563eb); }
+        .funnel-fill.step-2 { background: linear-gradient(90deg, #8b5cf6, #7c3aed); }
+        .funnel-fill.step-3 { background: linear-gradient(90deg, #ec4899, #db2777); }
+        .funnel-fill.step-4 { background: linear-gradient(90deg, #22c55e, #16a34a); }
+        
         .funnel-label {
-            position: absolute;
-            right: 1rem;
-            top: 50%;
-            transform: translateY(-50%);
+            color: #ffffff;
+            font-weight: 600;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+        }
+        
+        .funnel-rate {
+            color: #e2e8f0;
             font-size: 0.75rem;
-            color: #94a3b8;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            white-space: nowrap;
         }
         
         .alert-item {
@@ -544,12 +560,12 @@
                 
                 const maxUsers = Math.max(...data.funnel.steps.map(s => s.users), 1);
                 
-                container.innerHTML = data.funnel.steps.map(step => `
+                container.innerHTML = data.funnel.steps.map((step, idx) => `
                     <div class="funnel-bar">
-                        <div class="funnel-fill" style="width: ${(step.users / maxUsers) * 100}%">
-                            ${step.name}: ${step.users}
+                        <div class="funnel-fill step-${idx + 1}" style="width: ${(step.users / maxUsers) * 100}%">
+                            <span class="funnel-label">${step.name}: ${step.users} users</span>
+                            <span class="funnel-rate">${step.rate}%</span>
                         </div>
-                        <span class="funnel-label">${step.rate}%</span>
                     </div>
                 `).join('');
             } catch (err) {

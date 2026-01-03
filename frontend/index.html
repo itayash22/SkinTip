@@ -940,6 +940,9 @@
                 document.getElementById('styleSelectionSection').style.display = 'none';
                 const skinSection = document.getElementById('skinPhotoUploadSection');
                 skinSection.style.display = 'block';
+                
+                // Prevent auto-scroll - keep page at top
+                window.scrollTo(0, 0);
             }
 
             // Remove old event listeners that are no longer needed since we generate cards dynamically with listeners

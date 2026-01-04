@@ -37,25 +37,46 @@ const auth = {
 
         // Load token and user info from localStorage on init
         const savedToken = localStorage.getItem('jwt_token');
+        const savedRefreshToken = localStorage.getItem('refresh_token');
         const savedUser = localStorage.getItem('user_info');
+        const savedExpiresAt = localStorage.getItem('token_expires_at');
         console.log('Auth init: Raw saved token:', savedToken);
         console.log('Auth init: Raw saved user:', savedUser);
 
         if (savedToken && savedUser) {
             STATE.token = savedToken;
+            STATE.refreshToken = savedRefreshToken;
+            STATE.tokenExpiresAt = savedExpiresAt ? parseInt(savedExpiresAt) : null;
+            
             try {
                 STATE.user = JSON.parse(savedUser);
-                STATE.userTokens = STATE.user.tokens_remaining; // Load tokens from saved user info
+                STATE.userTokens = STATE.user.tokens_remaining;
                 console.log('Auth init: STATE.user.tokens_remaining from localStorage:', STATE.userTokens);
-                auth.updateUIForAuth(true); // Update UI for logged-in state
+                
+                // Check if token is expired or about to expire
+                const now = Date.now();
+                if (STATE.tokenExpiresAt && STATE.tokenExpiresAt <= now) {
+                    // Token already expired - try to refresh immediately
+                    console.log('Token expired, attempting refresh...');
+                    auth.refreshAccessToken().then(success => {
+                        if (!success) {
+                            utils.showToast('Session expired. Please log in again.', 'info', 0, 'Log In', () => auth.showModal('login'));
+                            auth.forceLogoutAndShowModal();
+                        }
+                    });
+                } else if (STATE.tokenExpiresAt) {
+                    // Schedule refresh before expiry
+                    auth.scheduleTokenRefresh();
+                }
+                
+                auth.updateUIForAuth(true);
             } catch (e) {
                 console.error('Failed to parse user info from localStorage:', e);
-                auth.clearAuthData(); // Clear corrupted data
+                auth.clearAuthData();
                 auth.updateUIForAuth(false);
             }
         } else {
-            // Not logged in
-            auth.updateUIForAuth(false); // Update UI for logged-out state
+            auth.updateUIForAuth(false);
         }
 
         // Only set up event listeners if on a page that uses the modal or logout button
@@ -173,13 +194,21 @@ const auth = {
 
     // Authentication successful
     STATE.token = data.token;
+    STATE.refreshToken = data.refreshToken;
     STATE.user = data.user;
-    STATE.userTokens = data.user.tokens_remaining; // Update global state
+    STATE.userTokens = data.user.tokens_remaining;
+    STATE.tokenExpiresAt = Date.now() + CONFIG.ACCESS_TOKEN_DURATION_MS;
+    
     localStorage.setItem('jwt_token', data.token);
+    localStorage.setItem('refresh_token', data.refreshToken);
     localStorage.setItem('user_info', JSON.stringify(data.user));
+    localStorage.setItem('token_expires_at', STATE.tokenExpiresAt.toString());
+
+    // Schedule automatic token refresh before expiry
+    auth.scheduleTokenRefresh();
 
     auth.hideModal();
-    auth.updateUIForAuth(true); // Call updateUIForAuth to refresh display
+    auth.updateUIForAuth(true);
 
     // No longer redirecting to index.html from welcome.html as we are staying on index.html
     // if (window.location.pathname.split('/').pop() === 'welcome.html') {
@@ -220,11 +249,76 @@ const auth = {
     },
 
     clearAuthData: () => {
+        // Clear refresh timer
+        if (STATE.tokenRefreshTimer) {
+            clearTimeout(STATE.tokenRefreshTimer);
+            STATE.tokenRefreshTimer = null;
+        }
         STATE.token = null;
+        STATE.refreshToken = null;
+        STATE.tokenExpiresAt = null;
         STATE.user = null;
         STATE.userTokens = 0;
         localStorage.removeItem('jwt_token');
+        localStorage.removeItem('refresh_token');
         localStorage.removeItem('user_info');
+        localStorage.removeItem('token_expires_at');
+    },
+
+    // Schedule automatic token refresh before expiry
+    scheduleTokenRefresh: () => {
+        if (STATE.tokenRefreshTimer) {
+            clearTimeout(STATE.tokenRefreshTimer);
+        }
+        
+        const timeUntilExpiry = STATE.tokenExpiresAt - Date.now();
+        const refreshIn = Math.max(0, timeUntilExpiry - CONFIG.TOKEN_REFRESH_BUFFER_MS);
+        
+        console.log(`Token refresh scheduled in ${Math.round(refreshIn / 1000)} seconds`);
+        
+        STATE.tokenRefreshTimer = setTimeout(async () => {
+            console.log('Auto-refreshing access token...');
+            const success = await auth.refreshAccessToken();
+            if (!success) {
+                utils.showToast('Session expired. Please log in again.', 'info', 0, 'Log In', () => auth.showModal('login'));
+                auth.forceLogoutAndShowModal();
+            }
+        }, refreshIn);
+    },
+
+    // Refresh access token using refresh token
+    refreshAccessToken: async () => {
+        if (!STATE.refreshToken) {
+            console.log('No refresh token available');
+            return false;
+        }
+        
+        try {
+            const response = await fetch(`${CONFIG.API_URL}/auth/refresh-token`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refreshToken: STATE.refreshToken })
+            });
+            
+            if (!response.ok) {
+                console.error('Token refresh failed:', response.status);
+                return false;
+            }
+            
+            const data = await response.json();
+            STATE.token = data.token;
+            STATE.tokenExpiresAt = Date.now() + CONFIG.ACCESS_TOKEN_DURATION_MS;
+            localStorage.setItem('jwt_token', data.token);
+            localStorage.setItem('token_expires_at', STATE.tokenExpiresAt.toString());
+            
+            // Schedule next refresh
+            auth.scheduleTokenRefresh();
+            console.log('Access token refreshed successfully');
+            return true;
+        } catch (error) {
+            console.error('Token refresh error:', error);
+            return false;
+        }
     },
 
     // Force logout and show login modal (called when token expires during API call)

@@ -7,6 +7,8 @@ const CONFIG = {
     DEFAULT_BRUSH_SIZE: 20,
     DAILY_LIMIT: 2, // This might become less relevant with token system
     INACTIVITY_TIMEOUT_MS: 5 * 60 * 1000, // 5 minutes inactivity timeout
+    ACCESS_TOKEN_DURATION_MS: 15 * 60 * 1000, // 15 minutes (must match backend)
+    TOKEN_REFRESH_BUFFER_MS: 2 * 60 * 1000, // Refresh 2 minutes before expiry
     
     // Define token costs for each API action
     TOKEN_COSTS: {
@@ -18,8 +20,11 @@ const CONFIG = {
 const STATE = {
     user: null, // Stores authenticated user info
     token: null, // Stores JWT token for API authentication
-    userTokens: 0, // NEW: Tracks the user's current token balance
-    uploadedTattooDesignBase64: null, // NEW: Stores the Base64 of the user's uploaded tattoo design
+    refreshToken: null, // Refresh token for auto-renewal
+    tokenExpiresAt: null, // Timestamp when access token expires
+    tokenRefreshTimer: null, // Timer for auto-refresh
+    userTokens: 0, // Tracks the user's current token balance
+    uploadedTattooDesignBase64: null, // Stores the Base64 of the user's uploaded tattoo design
     currentImage: null, // Stores the user's uploaded skin photo (File object)
     currentMask: null, // Stores the Base64 of the drawing mask
     generatedImages: [], // Stores URLs of generated tattoo images from Flux

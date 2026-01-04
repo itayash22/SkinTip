@@ -1190,7 +1190,7 @@
             // --- START Cross-Device Inactivity Auto-Logout Logic ---
             let inactivityTimeout; // Holds the timer reference
             let lastActivityReset = 0; // Throttle activity resets
-            const ACTIVITY_THROTTLE_MS = 30000; // Only reset timer every 30 seconds max
+            const ACTIVITY_THROTTLE_MS = 5000; // Only reset timer every 5 seconds max (reduced from 30s)
 
             function startInactivityTimer() {
                 if (STATE.user && STATE.token) {
@@ -1211,27 +1211,29 @@
             window.extendInactivityTimer = extendInactivityTimer;
 
             function resetInactivityTimer() {
+                if (!STATE.user || !STATE.token) return; // Don't reset if not logged in
                 const now = Date.now();
-                // Throttle: only reset if 30+ seconds since last reset
+                // Throttle: only reset if 5+ seconds since last reset
                 if (now - lastActivityReset < ACTIVITY_THROTTLE_MS) return;
                 lastActivityReset = now;
                 clearTimeout(inactivityTimeout);
                 startInactivityTimer();
+                console.log('Inactivity timer reset due to user activity');
             }
 
             function handleInactivityLogout() {
                 console.log('User inactive for too long. Forcing logout.');
-                utils.showToast('You were logged out due to inactivity.', 'info', 0, 'Log Back In', () => auth.showModal('login'));
-                if (typeof auth !== 'undefined' && auth.logout) {
-                    auth.logout();
-                } else {
-                    STATE.user = null;
-                    STATE.token = null;
-                    STATE.userTokens = 0;
-                    localStorage.removeItem('jwt_token');
-                    localStorage.removeItem('user_info');
-                    window.location.href = 'welcome.html';
-                }
+                
+                // Clear auth data first
+                auth.clearAuthData();
+                
+                // Show toast with login button (don't reload page so toast is visible)
+                utils.showToast('You were logged out due to inactivity.', 'warning', 0, 'Log Back In', () => {
+                    auth.showModal('login');
+                });
+                
+                // Update UI without page reload
+                auth.updateUIForAuth(false);
             }
 
             const activityEvents = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart', 'touchmove', 'touchend'];

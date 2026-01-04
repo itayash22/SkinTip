@@ -214,6 +214,98 @@ app.post('/api/internal/cleanup-expired-images', async (req, res) => {
     }
 });
 
+// Internal endpoint for daily token top-up (cron-triggered)
+app.post('/api/internal/daily-token-topup', async (req, res) => {
+    // Verify cron secret
+    const cronSecret = req.headers['x-cron-secret'];
+    if (cronSecret !== process.env.CRON_SECRET) {
+        return res.status(403).json({ error: 'Invalid cron secret' });
+    }
+    
+    try {
+        const MAX_TOKENS = 100;
+        
+        // Find all users with < 100 tokens (excludes users with 100+ from admin grants)
+        const { data: usersToTopUp, error: fetchError } = await supabase
+            .from('users')
+            .select('id, email, username, tokens_remaining')
+            .lt('tokens_remaining', MAX_TOKENS);
+        
+        if (fetchError) {
+            throw new Error(`Failed to fetch users: ${fetchError.message}`);
+        }
+        
+        if (!usersToTopUp || usersToTopUp.length === 0) {
+            console.log('Daily top-up: No users need top-up');
+            return res.json({ 
+                success: true, 
+                message: 'No users need top-up',
+                toppedUpCount: 0 
+            });
+        }
+        
+        let toppedUpCount = 0;
+        const topUpResults = [];
+        
+        for (const user of usersToTopUp) {
+            try {
+                const tokensToAdd = MAX_TOKENS - user.tokens_remaining;
+                
+                if (tokensToAdd <= 0) continue; // Should not happen due to query, but safety check
+                
+                // Update user balance to exactly 100
+                const { error: updateError } = await supabase
+                    .from('users')
+                    .update({ tokens_remaining: MAX_TOKENS })
+                    .eq('id', user.id);
+                
+                if (updateError) {
+                    console.error(`Failed to top up user ${user.id}:`, updateError.message);
+                    continue;
+                }
+                
+                // Log the transaction
+                await supabase
+                    .from('transactions')
+                    .insert({
+                        user_id: user.id,
+                        action_type: 'DAILY_TOPUP',
+                        tokens_amount: tokensToAdd,
+                        description: `Daily top-up: ${user.tokens_remaining} → ${MAX_TOKENS}`
+                    });
+                
+                toppedUpCount++;
+                topUpResults.push({
+                    userId: user.id,
+                    username: user.username || user.email,
+                    previousBalance: user.tokens_remaining,
+                    addedTokens: tokensToAdd,
+                    newBalance: MAX_TOKENS
+                });
+                
+                console.log(`Daily top-up: User ${user.username || user.email}: +${tokensToAdd} tokens (${user.tokens_remaining} → ${MAX_TOKENS})`);
+                
+            } catch (err) {
+                console.error(`Error topping up user ${user.id}:`, err);
+            }
+        }
+        
+        console.log(`Daily top-up complete: ${toppedUpCount} users topped up to ${MAX_TOKENS} tokens`);
+        
+        res.json({ 
+            success: true, 
+            message: `Topped up ${toppedUpCount} users to ${MAX_TOKENS} tokens`,
+            toppedUpCount,
+            totalEligible: usersToTopUp.length,
+            sampleResults: topUpResults.slice(0, 5) // Return first 5 for logging
+        });
+        
+    } catch (error) {
+        console.error('Daily top-up error:', error);
+        res.status(500).json({ error: 'Daily top-up failed', details: error.message });
+    }
+});
+
 const authenticateToken = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
@@ -479,7 +571,7 @@ app.post('/api/auth/register', async (req, res) => {
                 email,
                 password_hash: passwordHash,
                 username,
-                tokens_remaining: 20,
+                tokens_remaining: 100,
                 is_admin: false,
                 signup_geo: clientInfo.country,
                 signup_device: clientInfo.deviceType,

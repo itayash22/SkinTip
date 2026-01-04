@@ -26,88 +26,77 @@ sharp.concurrency(2);          // Allow 2 concurrent Sharp operations
 
 /**
  * Schedule image deletion in database (multi-instance safe).
- * Replaces in-memory timers that don't work with autoscaling.
+ * Fire-and-forget: does not block the calling function.
  */
-async function scheduleImageDeletion(filePath, label = 'image', ttlMs = TEMP_IMAGE_TTL_MS) {
+function scheduleImageDeletion(filePath, label = 'image', ttlMs = TEMP_IMAGE_TTL_MS) {
   if (!filePath || !ttlMs || ttlMs <= 0) return;
 
-  const deleteAt = new Date(Date.now() + ttlMs).toISOString();
-  console.log(`[TTL] Scheduling deletion for ${filePath} at ${deleteAt} (${label}).`);
+  // Fire-and-forget: schedule in background without blocking
+  setImmediate(async () => {
+    const deleteAt = new Date(Date.now() + ttlMs).toISOString();
+    try {
+      const { error } = await supabase
+        .from('scheduled_deletions')
+        .upsert({
+          file_path: filePath,
+          bucket: SUPABASE_STORAGE_BUCKET,
+          delete_at: deleteAt,
+          label: label
+        }, { onConflict: 'file_path' });
 
-  try {
-    // Insert into scheduled_deletions table (create if needed via SQL migration)
-    const { error } = await supabase
-      .from('scheduled_deletions')
-      .upsert({
-        file_path: filePath,
-        bucket: SUPABASE_STORAGE_BUCKET,
-        delete_at: deleteAt,
-        label: label
-      }, { onConflict: 'file_path' });
-
-    if (error) {
-      console.warn(`[TTL] Failed to schedule deletion for ${filePath}: ${error.message}`);
+      if (error) {
+        // Table might not exist yet - fail silently
+        if (!error.message.includes('does not exist')) {
+          console.warn(`[TTL] Schedule failed for ${filePath}: ${error.message}`);
+        }
+      }
+    } catch (err) {
+      // Fail silently - deletion scheduling is not critical
     }
-  } catch (err) {
-    console.warn(`[TTL] Exception scheduling deletion for ${filePath}: ${err.message}`);
-  }
+  });
 }
 
 /**
  * Cleanup expired images from storage (multi-instance safe, idempotent).
- * Can be called by any instance - uses database as source of truth.
+ * Runs in background, fails silently if table doesn't exist.
  */
 async function cleanupExpiredImages() {
   try {
-    // Get all files that should be deleted
     const { data: expiredFiles, error: fetchError } = await supabase
       .from('scheduled_deletions')
       .select('*')
       .lte('delete_at', new Date().toISOString());
 
+    // Fail silently if table doesn't exist
     if (fetchError) {
-      console.warn('[TTL Cleanup] Failed to fetch expired files:', fetchError.message);
+      if (!fetchError.message.includes('does not exist')) {
+        console.warn('[TTL Cleanup] Fetch error:', fetchError.message);
+      }
       return;
     }
 
-    if (!expiredFiles || expiredFiles.length === 0) {
-      return; // Nothing to clean up
-    }
+    if (!expiredFiles || expiredFiles.length === 0) return;
 
-    console.log(`[TTL Cleanup] Found ${expiredFiles.length} expired files to delete.`);
+    console.log(`[TTL Cleanup] Deleting ${expiredFiles.length} expired files.`);
 
     for (const file of expiredFiles) {
       try {
-        // Delete from storage
-        const { error: storageError } = await supabase.storage
-          .from(file.bucket)
-          .remove([file.file_path]);
-
-        if (storageError) {
-          console.warn(`[TTL Cleanup] Storage delete failed for ${file.file_path}: ${storageError.message}`);
-        } else {
-          console.log(`[TTL Cleanup] Deleted ${file.file_path} (${file.label}).`);
-        }
-
-        // Remove from scheduled_deletions table
-        await supabase
-          .from('scheduled_deletions')
-          .delete()
-          .eq('file_path', file.file_path);
-
+        await supabase.storage.from(file.bucket).remove([file.file_path]);
+        await supabase.from('scheduled_deletions').delete().eq('file_path', file.file_path);
+        console.log(`[TTL Cleanup] Deleted ${file.file_path}`);
       } catch (err) {
-        console.warn(`[TTL Cleanup] Exception deleting ${file.file_path}: ${err.message}`);
+        // Continue with next file
       }
     }
   } catch (err) {
-    console.warn('[TTL Cleanup] Exception during cleanup:', err.message);
+    // Fail silently
   }
 }
 
-// Run cleanup every 60 seconds (each instance can run this safely)
-setInterval(cleanupExpiredImages, 60 * 1000);
-// Also run once on startup after 10 seconds
-setTimeout(cleanupExpiredImages, 10 * 1000);
+// Run cleanup every 2 minutes (reduced frequency for less overhead)
+setInterval(cleanupExpiredImages, 2 * 60 * 1000);
+// Run once on startup after 30 seconds (delayed to not impact startup)
+setTimeout(cleanupExpiredImages, 30 * 1000);
 
 // HELPER FUNCTION: To find the bounding box of the white area in a raw grayscale mask buffer
 async function getMaskBoundingBox(maskBuffer, width, height) {

@@ -227,6 +227,13 @@ const auth = {
         localStorage.removeItem('user_info');
     },
 
+    // Force logout and show login modal (called when token expires during API call)
+    forceLogoutAndShowModal: () => {
+        auth.clearAuthData();
+        auth.updateUIForAuth(false);
+        auth.showModal('login');
+    },
+
     updateUIForAuth: (isAuthenticated) => {
         // Ensure userInfoSpan and logoutBtn are correctly referenced before using them
         const userInfoSpan = document.getElementById('userInfo');

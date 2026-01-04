@@ -1507,21 +1507,18 @@
                 });
 
                 if (!response.ok) {
-                    const errorData = await response.json(); // Renamed 'error' to 'errorData' for clarity
+                    const errorData = await response.json();
 
-                    // --- START Mobile-specific JWT expired handling ---
-                    // Check for 401 status and if the error message includes 'jwt expired'
-                    if (response.status === 401 && (errorData.error && errorData.error.includes('jwt expired'))) {
+                    // Handle expired/invalid token - prompt user to login again
+                    if ((response.status === 401 || response.status === 403) && 
+                        errorData.error && (errorData.error.includes('expired') || errorData.error.includes('Invalid'))) {
                         utils.showToast('Session ended. Please log in again.', 'info', 0, 'Log In', () => auth.showModal('login'));
-                        // Call the dedicated logout function (from auth.js)
                         if (typeof auth !== 'undefined' && auth.forceLogoutAndShowModal) {
                             auth.forceLogoutAndShowModal();
                         }
-                        return; // Important: Stop execution here after handling the specific error
+                        return;
                     }
-                    // --- END Mobile-specific JWT expired handling ---
 
-                    // If it's not a JWT expired error, then throw the general error
                     throw new Error(errorData.error || 'Failed to generate tattoo');
                 }
 

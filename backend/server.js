@@ -251,7 +251,11 @@ const authenticateToken = async (req, res, next) => {
         next();
     } catch (error) {
         console.error('Authentication error:', error.message);
-        return res.status(403).json({ error: 'Invalid or expired token' });
+        // Return 401 for expired/invalid tokens so frontend can handle refresh
+        if (error.name === 'TokenExpiredError') {
+            return res.status(401).json({ error: 'jwt expired' });
+        }
+        return res.status(401).json({ error: 'Invalid or expired token' });
     }
 };
 

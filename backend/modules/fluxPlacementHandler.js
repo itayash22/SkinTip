@@ -1,5 +1,5 @@
 // backend/modules/fluxPlacementHandler.js
-console.log('FLUX_HANDLER_VERSION: 2025-06-23_V1.38_FINAL_ALL_FIXES'); // UPDATED VERSION LOG
+console.log('FLUX_HANDLER_VERSION: 2025-06-23_V1.39_AUTOSCALE_READY'); // UPDATED VERSION LOG
 
 import axios from 'axios';
 import sharp from 'sharp';
@@ -19,35 +19,95 @@ const REMOVE_BG_API_KEY = process.env.REMOVE_BG_API_KEY; // Make sure to set thi
 // Image TTL for automatic deletion
 const IMAGE_TTL_SECONDS = Number(process.env.IMAGE_TTL_SECONDS || '300'); // 5 minutes default
 const TEMP_IMAGE_TTL_MS = IMAGE_TTL_SECONDS * 1000;
-const deletionTimers = new Map();
 
-function scheduleImageDeletion(filePath, label = 'image', ttlMs = TEMP_IMAGE_TTL_MS) {
+// Sharp optimization for 2GB RAM (Professional tier)
+sharp.cache({ memory: 512 });  // Use 512MB cache (default is ~50MB)
+sharp.concurrency(2);          // Allow 2 concurrent Sharp operations
+
+/**
+ * Schedule image deletion in database (multi-instance safe).
+ * Replaces in-memory timers that don't work with autoscaling.
+ */
+async function scheduleImageDeletion(filePath, label = 'image', ttlMs = TEMP_IMAGE_TTL_MS) {
   if (!filePath || !ttlMs || ttlMs <= 0) return;
 
-  if (deletionTimers.has(filePath)) {
-    clearTimeout(deletionTimers.get(filePath));
+  const deleteAt = new Date(Date.now() + ttlMs).toISOString();
+  console.log(`[TTL] Scheduling deletion for ${filePath} at ${deleteAt} (${label}).`);
+
+  try {
+    // Insert into scheduled_deletions table (create if needed via SQL migration)
+    const { error } = await supabase
+      .from('scheduled_deletions')
+      .upsert({
+        file_path: filePath,
+        bucket: SUPABASE_STORAGE_BUCKET,
+        delete_at: deleteAt,
+        label: label
+      }, { onConflict: 'file_path' });
+
+    if (error) {
+      console.warn(`[TTL] Failed to schedule deletion for ${filePath}: ${error.message}`);
+    }
+  } catch (err) {
+    console.warn(`[TTL] Exception scheduling deletion for ${filePath}: ${err.message}`);
   }
-
-  console.log(`[TTL] Scheduled deletion for ${filePath} in ${Math.round(ttlMs / 1000)} seconds (${label}).`);
-
-  const timer = setTimeout(() => {
-    deletionTimers.delete(filePath);
-    (async () => {
-      try {
-        const { error } = await supabase.storage.from(SUPABASE_STORAGE_BUCKET).remove([filePath]);
-        if (error) {
-          console.warn(`[TTL] Failed to delete ${filePath}: ${error.message}`);
-        } else {
-          console.log(`[TTL] Deleted ${filePath} after TTL (${label}).`);
-        }
-      } catch (err) {
-        console.warn(`[TTL] Exception while deleting ${filePath}: ${err.message}`);
-      }
-    })();
-  }, ttlMs);
-
-  deletionTimers.set(filePath, timer);
 }
+
+/**
+ * Cleanup expired images from storage (multi-instance safe, idempotent).
+ * Can be called by any instance - uses database as source of truth.
+ */
+async function cleanupExpiredImages() {
+  try {
+    // Get all files that should be deleted
+    const { data: expiredFiles, error: fetchError } = await supabase
+      .from('scheduled_deletions')
+      .select('*')
+      .lte('delete_at', new Date().toISOString());
+
+    if (fetchError) {
+      console.warn('[TTL Cleanup] Failed to fetch expired files:', fetchError.message);
+      return;
+    }
+
+    if (!expiredFiles || expiredFiles.length === 0) {
+      return; // Nothing to clean up
+    }
+
+    console.log(`[TTL Cleanup] Found ${expiredFiles.length} expired files to delete.`);
+
+    for (const file of expiredFiles) {
+      try {
+        // Delete from storage
+        const { error: storageError } = await supabase.storage
+          .from(file.bucket)
+          .remove([file.file_path]);
+
+        if (storageError) {
+          console.warn(`[TTL Cleanup] Storage delete failed for ${file.file_path}: ${storageError.message}`);
+        } else {
+          console.log(`[TTL Cleanup] Deleted ${file.file_path} (${file.label}).`);
+        }
+
+        // Remove from scheduled_deletions table
+        await supabase
+          .from('scheduled_deletions')
+          .delete()
+          .eq('file_path', file.file_path);
+
+      } catch (err) {
+        console.warn(`[TTL Cleanup] Exception deleting ${file.file_path}: ${err.message}`);
+      }
+    }
+  } catch (err) {
+    console.warn('[TTL Cleanup] Exception during cleanup:', err.message);
+  }
+}
+
+// Run cleanup every 60 seconds (each instance can run this safely)
+setInterval(cleanupExpiredImages, 60 * 1000);
+// Also run once on startup after 10 seconds
+setTimeout(cleanupExpiredImages, 10 * 1000);
 
 // HELPER FUNCTION: To find the bounding box of the white area in a raw grayscale mask buffer
 async function getMaskBoundingBox(maskBuffer, width, height) {

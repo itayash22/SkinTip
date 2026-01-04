@@ -50,7 +50,53 @@ const utils = {
     },
 
     showError: (message) => {
-        alert(`Error: ${message}`);
+        utils.showToast(message, 'error');
+    },
+
+    showToast: (message, type = 'info', duration = 5000, actionText = null, actionCallback = null) => {
+        // Remove existing toast if any
+        const existing = document.getElementById('skintip-toast');
+        if (existing) existing.remove();
+
+        const toast = document.createElement('div');
+        toast.id = 'skintip-toast';
+        toast.className = `skintip-toast skintip-toast-${type}`;
+        
+        const messageSpan = document.createElement('span');
+        messageSpan.textContent = message;
+        toast.appendChild(messageSpan);
+
+        if (actionText && actionCallback) {
+            const actionBtn = document.createElement('button');
+            actionBtn.textContent = actionText;
+            actionBtn.className = 'toast-action-btn';
+            actionBtn.onclick = () => {
+                actionCallback();
+                toast.remove();
+            };
+            toast.appendChild(actionBtn);
+        }
+
+        const closeBtn = document.createElement('button');
+        closeBtn.innerHTML = '&times;';
+        closeBtn.className = 'toast-close-btn';
+        closeBtn.onclick = () => toast.remove();
+        toast.appendChild(closeBtn);
+
+        document.body.appendChild(toast);
+
+        // Animate in
+        requestAnimationFrame(() => {
+            toast.classList.add('show');
+        });
+
+        // Auto-dismiss
+        if (duration > 0) {
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, duration);
+        }
     },
 
     // Get authorization headers for API requests

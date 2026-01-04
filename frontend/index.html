@@ -733,7 +733,7 @@
                 } catch (error) {
                     console.error('Error fetching stencil data:', error);
                     if (window.utils && utils.showError) {
-                        utils.showError('Could not load tattoo styles. Please try again later.');
+                        utils.showError('Couldn\'t load designs. Please refresh the page.');
                     }
                 } finally {
                     if (window.utils && utils.hideLoading) {
@@ -979,7 +979,11 @@
 
             async function handleTattooDesignFile(file) {
                 if (!CONFIG.ALLOWED_FILE_TYPES.includes(file.type)) {
-                    utils.showError('Please upload a JPEG, PNG, or WebP image for your tattoo design.');
+                    utils.showError('Please upload a JPG, PNG, or WebP image.');
+                    return;
+                }
+                if (file.size > CONFIG.MAX_FILE_SIZE) {
+                    utils.showError('This image is too large. Please use a photo under 5MB.');
                     return;
                 }
                 utils.showLoading('Processing tattoo design...');
@@ -1217,7 +1221,7 @@
 
             function handleInactivityLogout() {
                 console.log('User inactive for too long. Forcing logout.');
-                utils.showError('Session expired. Please log in again.');
+                utils.showToast('You were logged out due to inactivity.', 'info', 0, 'Log Back In', () => auth.showModal('login'));
                 if (typeof auth !== 'undefined' && auth.logout) {
                     auth.logout();
                 } else {
@@ -1280,12 +1284,12 @@
 
             skinConfirmBtn?.addEventListener('click', async () => {
                 if (!skinCheckbox1?.checked || !skinCheckbox2?.checked) {
-                    utils.showError('Please confirm both checkboxes before continuing.');
+                    utils.showError('Please check both boxes to continue.');
                     return;
                 }
 
                 if (!pendingSkinFile) {
-                    utils.showError('No file selected. Please choose a skin photo again.');
+                    utils.showError('Something went wrong. Please select your photo again.');
                     closeSkinConfirmModal();
                     return;
                 }
@@ -1330,11 +1334,15 @@
 
             async function handleSkinPhotoFile(file) {
                 if (!hasSkinUploadConsent) {
-                    utils.showError('Please confirm the upload requirements before continuing.');
+                    utils.showError('Please check both boxes to continue.');
                     return;
                 }
                 if (!CONFIG.ALLOWED_FILE_TYPES.includes(file.type)) {
-                    utils.showError('Please upload a JPEG, PNG, or WebP image for your skin photo.');
+                    utils.showError('Please upload a JPG, PNG, or WebP image.');
+                    return;
+                }
+                if (file.size > CONFIG.MAX_FILE_SIZE) {
+                    utils.showError('This image is too large. Please use a photo under 5MB.');
                     return;
                 }
 
@@ -1360,7 +1368,7 @@
                       ?? STATE.selectedStencil?.imageUrl;
 
                     if (!tattooImageUrl) {
-                        utils.showError('No stencil selected or uploaded. Please go back and choose a stencil or upload one.');
+                        utils.showError('Please select or upload a tattoo design first.');
                         return;
                     }
 
@@ -1378,17 +1386,17 @@
         continueBtn?.addEventListener('click', async () => { // Changed to async
             // Ensure user is logged in
             if (!STATE.user || !STATE.token) {
-                utils.showError('You must be logged in to generate tattoos.');
+                utils.showError('Please log in to generate your tattoo.');
                 auth.showModal();
                 return;
             }
 
             if (!STATE.userTokens || STATE.userTokens < CONFIG.TOKEN_COSTS.FLUX_PLACEMENT) {
-                utils.showError(`Not enough tokens! This action costs ${CONFIG.TOKEN_COSTS.FLUX_PLACEMENT} tokens. You have ${STATE.userTokens || 0}.`);
+                utils.showError('Oops, your daily token count is up. See you tomorrow :)');
                 return;
             }
             if ((!STATE.selectedStencil && !STATE.uploadedTattooDesignBase64) || !STATE.currentImage) {
-                utils.showError('Please ensure you have selected a stencil or uploaded a design, and uploaded a skin photo.');
+                utils.showError('Please select a tattoo design and upload a skin photo first.');
                 return;
             }
 
@@ -1396,12 +1404,12 @@
             if (window.drawing && drawing.updateMask) {
                 await drawing.updateMask(); // It's async now because of image cloning
             } else {
-                 utils.showError('Drawing module not ready.');
+                 utils.showError('Still loading. Please wait a moment and try again.');
                  return;
             }
 
             if (!drawing.selectedArea) {
-                utils.showError('Could not generate the tattoo mask. Please try again.');
+                utils.showError('Something went wrong. Please try again.');
                 return;
             }
 
@@ -1504,7 +1512,7 @@
                     // --- START Mobile-specific JWT expired handling ---
                     // Check for 401 status and if the error message includes 'jwt expired'
                     if (response.status === 401 && (errorData.error && errorData.error.includes('jwt expired'))) {
-                        utils.showError('Your session has expired. Please log in again.');
+                        utils.showToast('Session ended. Please log in again.', 'info', 0, 'Log In', () => auth.showModal('login'));
                         // Call the dedicated logout function (from auth.js)
                         if (typeof auth !== 'undefined' && auth.forceLogoutAndShowModal) {
                             auth.forceLogoutAndShowModal();
@@ -1593,14 +1601,25 @@
                 // If it's a TypeError (like 'Failed to fetch') or other unhandled network/API error,
                 // assume session might be the issue and force logout.
                 if (error.message.includes('Failed to fetch') || (error instanceof TypeError)) {
-                     utils.showError('There was a network or server issue. Your session might have expired. Please log in again.');
+                     utils.showError('Couldn\'t connect. Please check your internet and try again.');
                      if (typeof auth !== 'undefined' && auth.forceLogoutAndShowModal) {
                          auth.forceLogoutAndShowModal();
                      }
-                } else if (!error.message.includes('Your session has expired')) { // Avoid double message if already handled above
-                     utils.showError(`Tattoo generation failed: ${error.message}`);
-                } else { // Fallback for any other unhandled errors.
-                     utils.showError(`Tattoo generation failed: ${error.message}`);
+                } else if (!error.message.includes('Session ended')) { // Avoid double message if already handled above
+                     // Map technical errors to user-friendly messages
+                     let userMessage = 'Something went wrong. Please try again.';
+                     if (error.message.includes('Content Moderated') || error.message.includes('intimate')) {
+                         userMessage = 'Can\'t use this photo. It shows bare intimate body areas. Try again please.';
+                     } else if (error.message.includes('dimensions')) {
+                         userMessage = 'Something went wrong with the image size. Please re-upload your skin photo and draw the tattoo area again.';
+                     } else if (error.message.includes('timeout') || error.message.includes('Timeout')) {
+                         userMessage = 'Generation is taking too long. Please try again.';
+                     } else if (error.message.includes('No images were generated')) {
+                         userMessage = 'Generation failed. Please try again with a different design or photo.';
+                     } else if (error.message.includes('mask') && error.message.includes('small')) {
+                         userMessage = 'Please draw a larger area for the tattoo placement.';
+                     }
+                     utils.showError(userMessage);
                 }
                 // --- END Robust Logout for Generic Fetch Errors ---
             }
@@ -1611,7 +1630,7 @@
         shareToInstagramBtn?.addEventListener('click', () => {
             const urls = getGeneratedImageUrls();
             if (!urls.length) {
-                utils.showError('No images generated yet to share.');
+                utils.showError('Generate a tattoo preview first, then share it.');
                 return;
             }
             alert('To share to Instagram:\n1. Right-click (or long-press on mobile) on the image(s) below to save them to your device.\n2. Open the Instagram app and upload the saved image(s) as a new post.');
@@ -1622,7 +1641,7 @@
         document.getElementById('downloadAllBtn')?.addEventListener('click', async () => {
             const urls = getGeneratedImageUrls();
             if (!urls.length) {
-                utils.showError('No images generated to download.');
+                utils.showError('Generate a tattoo preview first, then download it.');
                 return;
             }
             utils.showLoading('Preparing images for download...');
@@ -1643,7 +1662,7 @@
                     URL.revokeObjectURL(url);
                 } catch (error) {
                     console.error('Failed to download image:', imageUrl, error);
-                    utils.showError('Failed to download one or more images.');
+                    utils.showError('Download failed. Try a screenshot instead?');
                     break;
                 }
             }
@@ -1689,7 +1708,7 @@
             // Confirm account deletion
             deleteAccountConfirmBtn?.addEventListener('click', async () => {
                 if (!STATE.token) {
-                    utils.showError('You must be logged in to delete your account.');
+                    utils.showError('Please log in first.');
                     return;
                 }
 
@@ -1723,7 +1742,7 @@
                 } catch (error) {
                     utils.hideLoading();
                     console.error('Delete account error:', error);
-                    utils.showError(error.message || 'Failed to delete account. Please try again.');
+                    utils.showError('Couldn\'t delete your account right now. Please try again.');
                 }
             });
 

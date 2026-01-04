@@ -199,7 +199,7 @@ const auth = {
 
     // If it's a network error during login, it's often a sign of session issues or backend problems
     if (error.message.includes('Failed to fetch') || (error instanceof TypeError)) {
-         utils.showError('Login failed: Network or server issue. Please try again.');
+         utils.showError('Couldn\'t connect. Please check your internet and try again.');
          // Optionally, if login specifically fails due to network, you might also trigger a hard logout/modal
          // if you suspect a deeper issue preventing *any* communication with the backend.
          // For now, let's just log and display the error message.

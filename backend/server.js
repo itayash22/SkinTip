@@ -101,18 +101,7 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// Expensive endpoint rate limiter (for generate-final-tattoo: 20/hour)
-const expensiveLimiter = rateLimit({
-    windowMs: 60 * 60 * 1000, // 1 hour
-    max: 20, // 20 requests per hour
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: 'Too many generation requests. Please try again later. Limit: 20 per hour.' },
-    keyGenerator: (req) => {
-        // Use user ID if authenticated, otherwise IP
-        return req.user?.id || req.ip;
-    }
-});
+// Rate limiting for generate endpoint removed - tokens already limit usage
 
 const upload = multer({
     storage: multer.memoryStorage(),
@@ -945,7 +934,6 @@ app.post('/api/admin/upload-sketch', authenticateToken, requireAdmin, upload.sin
 
 app.post('/api/generate-final-tattoo',
     authenticateToken,
-    expensiveLimiter,
     upload.fields([
         { name: 'skinImage', maxCount: 1 },
         { name: 'tattooDesignImage', maxCount: 1 }
@@ -978,7 +966,7 @@ app.post('/api/generate-final-tattoo',
             const tokensRequired = process.env.NODE_ENV === 'development' ? 0 : 15;
             const hasEnoughTokens = await tokenService.checkTokens(userId, 'FLUX_PLACEMENT', tokensRequired);
             if (!hasEnoughTokens) {
-                return res.status(402).json({ error: `Insufficient tokens. This action costs ${tokensRequired} tokens.` });
+                return res.status(402).json({ error: 'Oops, your daily token count is up. See you tomorrow :)' });
             }
 
             const skinImageBuffer = skinImageFile.buffer;
@@ -1001,7 +989,7 @@ app.post('/api/generate-final-tattoo',
 
                 if (skinImageDimensions.width !== maskDimensions.width || skinImageDimensions.height !== maskDimensions.height) {
                     console.error('Skin image and Mask dimensions do NOT match!');
-                    return res.status(400).json({ error: 'Skin image and mask dimensions must be identical.' });
+                    return res.status(400).json({ error: 'Something went wrong with the image size. Please re-upload your skin photo and draw the tattoo area again.' });
                 }
             } catch (dimError) {
                 console.error('Error getting image/mask dimensions:', dimError.message);
@@ -1032,9 +1020,9 @@ app.post('/api/generate-final-tattoo',
         } catch (error) {
             console.error('API Error in /api/generate-final-tattoo:', error);
 
-            if (error.message.includes('Flux API: Content Moderated')) {
+            if (error.message.includes('Flux API: Content Moderated') || error.message.includes('Content Moderated')) {
                 return res.status(403).json({
-                    error: error.message,
+                    error: 'Can\'t use this photo. It shows bare intimate body areas. Try again please.',
                 });
             }
 
